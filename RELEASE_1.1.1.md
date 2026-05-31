@@ -1,5 +1,10 @@
 # Ize Compose v1.1.1
 
+> **Repository moved**
+>
+> This repository is no longer updated. Future updates will be maintained at
+> [ize-studio/ize-compose](https://github.com/ize-studio/ize-compose).
+
 Release date: 2026-05-31
 
 This is a maintenance release focused on Arabic-script rendering and a cleaner
