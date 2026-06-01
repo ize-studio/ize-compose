@@ -34,7 +34,7 @@ const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 bool isFirmwareUpdateMode = false;
-#define FIRMWARE_VERSION "v1.1.1" // Debugged build: input, file list, web list, preview, battery cache 
+#define FIRMWARE_VERSION "v1.1.2" // Keyboard state, Dvorak caps, and persisted settings fixes
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
 enum AppMode { TYPING_MODE, FILE_MENU_MODE, INITIAL_MODE, SEARCH_MODE, WIFI_SCAN_MODE, WIFI_PASSWORD_MODE };

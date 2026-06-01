@@ -2,9 +2,9 @@
 
 Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a Korean-input firmware, now supports 92 keyboard layouts across dozens of scripts.
 
-Current release: **v1.1.1**
+Current release: **v1.1.2**
 
-v1.1.1 improves Arabic-script connected glyph rendering and adds a clean install package layout under `Ize-compose/`.
+v1.1.2 fixes English/Dvorak Caps Lock behavior and persists system menu settings. v1.1.1 improved Arabic-script connected glyph rendering and added a clean install package layout under `Ize-compose/`.
 
 > **Hardware scope warning**
 >
@@ -70,7 +70,7 @@ Dvorak, QWERTY, 한국어, Shqip, العربية, Հայերեն, Deutsch (AT/DE
 
 The firmware has a built-in Latin fallback font. The full Latin font and all non-Latin script fonts are loaded from SD card at boot when the font files are present.
 
-In the v1.1.1 install package, these files are already arranged under:
+In the release install package, these files are already arranged under:
 
 `Ize-compose/sdcard/ize_compose/hwalja/`
 
@@ -208,6 +208,7 @@ Ize-compose/
   lib/InkplateLibrary/   — local Inkplate driver required for build
   others/                — font sources and helper tools, not compiled
   INSTALL.md             — install/build notes
+  RELEASE_1.1.2.md       — v1.1.2 release notes
   RELEASE_1.1.1.md       — v1.1.1 release notes
 
 src/
