@@ -34,7 +34,7 @@ const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 bool isFirmwareUpdateMode = false;
-#define FIRMWARE_VERSION "v1.1.0" // USB bootstrap build: fixes the web updater before OTA testing 
+#define FIRMWARE_VERSION "v1.1.1" // Debugged build: input, file list, web list, preview, battery cache 
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
 enum AppMode { TYPING_MODE, FILE_MENU_MODE, INITIAL_MODE, SEARCH_MODE, WIFI_SCAN_MODE, WIFI_PASSWORD_MODE };
@@ -63,9 +63,12 @@ void handleTextUploadComplete();
 
 TaskHandle_t CalcTaskHandle;
 volatile bool needCountUpdate = false; 
+volatile bool calcBufferInUse = false;
 String calcBuffer = "";               
-int sharedWordCount = 0;               
-int sharedCharCount = 0;
+volatile int sharedWordCount = 0;               
+volatile int sharedCharCount = 0;
+unsigned long lastCountRequestMs = 0;
+const unsigned long COUNT_UPDATE_INTERVAL_MS = 500;
 AppMode lastMode = TYPING_MODE; 
 NetworkSubMode lastNetSubMode = NET_MAIN;
 
@@ -88,7 +91,14 @@ struct FileInfo {
     float sizeKB;
     uint32_t time;
 };
-FileInfo files[65]; 
+
+struct WrapMetrics {
+    int lineCount;
+    int lastLineWidth;
+};
+
+const int MAX_DOCUMENT_FILES = 256;
+FileInfo files[MAX_DOCUMENT_FILES + 1]; 
 int fileCount = 0;
 
 uint8_t *imgBuffer = NULL;
@@ -100,7 +110,7 @@ int lineSpacing = 2;
 int letterSpacing = 0;   
 int typingSpeed = 0;     
 int leftMenuOffset = 0;
-int countMode = 0;
+int countMode = 2;
 int charwordcount = 0;
 int latinMode = 0;
 int englishLayoutIndex = 1;
@@ -131,6 +141,14 @@ bool isCtrlPressed = false;
 bool isCapsLockOn = false; 
 unsigned long lastKeyPress = 0; 
 bool statusBarNeedsUpdate = true; 
+volatile int cachedBatteryPct = 0;
+volatile bool cachedBatteryValid = false;
+volatile bool displayIoBusy = false;
+unsigned long lastBatteryReadMs = 0;
+int statusBatteryPct = 0;
+bool statusBatteryValid = false;
+unsigned long lastStatusBatteryFetchMs = 0;
+bool forceSafeFullTextRedraw = false;
 unsigned long showSavedMessageTime = 0; 
 bool savedMessageVisible = false;
 bool updateScreenDrawn = false;
@@ -143,6 +161,7 @@ unsigned long lastInputTime = 0;
 int startIdx = 0;
 int menuFocusSide = 0;   
 int leftMenuIndex = 0;   
+const int FILE_MENU_ITEMS_PER_PAGE = 12;
 int fileScrollOffset = 0; 
 bool isEditingValue = false; 
 bool inSystemSubMenu = false; 
@@ -185,23 +204,57 @@ U8G2_FOR_ADAFRUIT_GFX u8g2_for_adafruit_gfx;
 int getTrueLength(String text) {
   int count = 0;
   for (int i = 0; i < text.length(); ) {
-    int l = 1; if ((text[i] & 0x80) != 0) { if ((text[i] & 0xE0) == 0xC0) l = 2; else if ((text[i] & 0xF0) == 0xE0) l = 3; else l = 4; }
+    int l = 1;
+    unsigned char c = (unsigned char)text[i];
+    if ((c & 0x80) != 0) {
+      if ((c & 0xE0) == 0xC0) l = 2;
+      else if ((c & 0xF0) == 0xE0) l = 3;
+      else if ((c & 0xF8) == 0xF0) l = 4;
+      else l = 1;
+    }
+    if (i + l > text.length()) l = 1;
     i += l; count++;
   }
   return count;
 }
 
+
+String utf8Truncate(const String& text, int maxChars) {
+    String out = "";
+    int p = 0;
+    int count = 0;
+    while (p < text.length() && count < maxChars) {
+        unsigned char c = (unsigned char)text[p];
+        int len = 1;
+        if ((c & 0x80) == 0) len = 1;
+        else if ((c & 0xE0) == 0xC0) len = 2;
+        else if ((c & 0xF0) == 0xE0) len = 3;
+        else if ((c & 0xF8) == 0xF0) len = 4;
+        else break;  // Invalid UTF-8 leading byte: do not copy broken preview bytes.
+        if (p + len > text.length()) break;  // Avoid copying a partial multibyte char from a 128-byte preview read.
+        bool complete = true;
+        for (int i = 1; i < len; i++) {
+            if (((unsigned char)text[p + i] & 0xC0) != 0x80) { complete = false; break; }
+        }
+        if (!complete) break;
+        out += text.substring(p, p + len);
+        p += len;
+        count++;
+    }
+    return out;
+}
+
 int utf8PrevStart(const String& text, int pos) {
     if (pos <= 0) return 0;
     int p = pos - 1;
-    while (p > 0 && ((text[p] & 0xC0) == 0x80)) p--;
+    while (p > 0 && (((unsigned char)text[p] & 0xC0) == 0x80)) p--;
     return p;
 }
 
 int utf8NextStart(const String& text, int pos) {
     if (pos >= text.length()) return text.length();
     int n = pos + 1;
-    while (n < text.length() && ((text[n] & 0xC0) == 0x80)) n++;
+    while (n < text.length() && (((unsigned char)text[n] & 0xC0) == 0x80)) n++;
     return n;
 }
 
@@ -229,16 +282,20 @@ void doBackspace() {
     bool textChanged = false;
     KeyEngineScript activeEngine = getSelectedKeyEngine();
     if (currentMode == SEARCH_MODE) {
-        if (searchQuery.length() > 0) {
+        if (keyEngineHandleBackspace(activeEngine)) {
+            searchMatchEnd = -1;
+        } else if (searchQuery.length() > 0) {
             int p = searchQuery.length() - 1;
-            while (p > 0 && (searchQuery[p] & 0xC0) == 0x80) p--;
+            while (p > 0 && (((unsigned char)searchQuery[p] & 0xC0) == 0x80)) p--;
             searchQuery = searchQuery.substring(0, p);
             searchMatchEnd = -1;
         } else {
-            keyEngineReset(activeEngine);
+            keyEngineClearComposition(activeEngine);
+            searchMatchEnd = -1;
             currentMode = TYPING_MODE;
         }
     } else if (keyEngineHandleBackspace(activeEngine)) { 
+        forceSafeFullTextRedraw = true;
     } else if (cursorPos > 0) { 
       if (isCtrlPressed) { 
             int p = cursorPos - 1;
@@ -257,13 +314,16 @@ void doBackspace() {
         else{
             
             int p = cursorPos - 1;
-            while (p > 0 && (fullText[p] & 0xC0) == 0x80) p--; 
+            while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--; 
             fullText = fullText.substring(0, p) + fullText.substring(cursorPos); 
             cursorPos = p;
             textChanged = true;
         }
     } 
-    if (textChanged) keyEngineAfterEdit(activeEngine);
+    if (textChanged) {
+        keyEngineAfterEdit(activeEngine);
+        forceSafeFullTextRedraw = true;
+    }
     needUpdate = true; 
     statusBarNeedsUpdate = true; 
 }
@@ -272,9 +332,8 @@ void setupUSB() {
 }
 
 void handleUSB() {
-  if (Serial.available()) {
-    String incoming = Serial.readStringUntil('\n');
-  }
+  // Intentionally no-op. The keyboard UART must be owned by loop() only;
+  // reading Serial here can steal keystrokes and cause writing/menu interference.
 }
 
 #include <BleKeyboard.h>
@@ -345,10 +404,12 @@ void insertText(String str) {
         searchQuery += str; 
         searchMatchEnd = -1;
     } else {
+        bool simpleTailAppend = (cursorPos == fullText.length() && str.indexOf('\n') < 0 && getTrueLength(str) == 1);
         keyEngineClampCursorToUtf8Boundary();
         fullText = fullText.substring(0, cursorPos) + str + fullText.substring(cursorPos); 
         cursorPos += str.length();
         keyEngineClampCursorToUtf8Boundary();
+        if (!simpleTailAppend) forceSafeFullTextRedraw = true;
     }
 }
 
@@ -392,26 +453,30 @@ int lastRenderedTextLen = -1;
 int lastRenderedCursorPos = -1;
 int lastRenderedTailStart = -1;
 int lastRenderedTailLineCount = -1;
+int lastRenderedTailLineWidth = 0;
 bool lastRenderedTailRtl = false;
 
-int countWrappedLinesInRange(const String& text, int start, int end, int maxWidth) {
-    if (start >= end) return 1;
-    int count = 1;
-    int width = 0;
+WrapMetrics getWrappedMetricsInRange(const String& text, int start, int end, int maxWidth) {
+    WrapMetrics metrics = {1, 0};
+    if (start >= end) return metrics;
     for (int k = start; k < end; ) {
         int l = zwUtf8CharLen(text, k);
         if (l <= 0) l = 1;
         uint32_t cp = zwUtf8Codepoint(text.c_str() + k, l);
         int charWidth = zwGlyphAdvance(cp, l, false);
-        if (width + charWidth > maxWidth && width > 0) {
-            count++;
-            width = charWidth;
+        if (metrics.lastLineWidth + charWidth > maxWidth && metrics.lastLineWidth > 0) {
+            metrics.lineCount++;
+            metrics.lastLineWidth = charWidth;
         } else {
-            width += charWidth;
+            metrics.lastLineWidth += charWidth;
         }
         k += l;
     }
-    return count;
+    return metrics;
+}
+
+int countWrappedLinesInRange(const String& text, int start, int end, int maxWidth) {
+    return getWrappedMetricsInRange(text, start, end, maxWidth).lineCount;
 }
 
 void adjustViewBottom() {
@@ -565,7 +630,10 @@ String getStatusLanguageLabel() {
     String label;
     if (isKoreanMode) label = getKeyboardModeName();
     else label = getEnglishKeyboardModeName();
-    if (isCapsLockOn && !isKoreanMode) label.toUpperCase();
+    if (!isKoreanMode) {
+        if (isCapsLockOn) label.toUpperCase();
+        else label.toLowerCase();
+    }
     if (getTrueLength(label) > 6) label = utf8LimitLabel(label, 4);
     return "[" + label + "]";
 }
@@ -600,8 +668,22 @@ String getAutoSleepDisplayLabel() {
     return "OFF";
 }
 
+String menuFitToWidth(String text, int maxWidth) {
+    if (zwMeasureTextWidth(text, true) <= maxWidth) return text;
+    const String ellipsis = "..";
+    int p = text.length();
+    while (p > 0) {
+        p = utf8PrevStart(text, p);
+        String candidate = text.substring(0, p) + ellipsis;
+        if (zwMeasureTextWidth(candidate, true) <= maxWidth) return candidate;
+    }
+    return ellipsis;
+}
+
 void printMenuEntry(String text, int x, int y, bool isSelected, bool isRightSide) {
+    const int maxTextWidth = isRightSide ? 520 : 185;
     String displayText = (rtlTextMode && isRightSide) ? makeRtlVisualText(text) : text;
+    displayText = menuFitToWidth(displayText, maxTextWidth);
     int drawX = (int)(x * displayScale);
     int drawY = (int)(y * displayScale);
     int boxW = isRightSide ? (int)(540 * displayScale) : (int)(190 * displayScale);
@@ -637,16 +719,21 @@ void refreshFileList() {
       fnLower.toLowerCase();
       
       if (fnLower.endsWith(".txt") && !fn.startsWith(".") && !fn.startsWith("._")) {
+        if (fileCount >= MAX_DOCUMENT_FILES) {
+          file.close();
+          break;
+        }
         fileCount++;
         files[fileCount].name = fn;
         files[fileCount].sizeKB = file.fileSize() / 1024.0; 
         
-        char buf[33];
-        int n = file.read(buf, 32);
+        char buf[129];
+        int n = file.read(buf, 128);
         if (n > 0) buf[n] = '\0'; else buf[0] = '\0';
         String pv = String(buf);
+        pv.replace("\r", " ");
         pv.replace("\n", " ");
-        files[fileCount].preview = pv;
+        files[fileCount].preview = utf8Truncate(pv, 14);
         
         
         int docNum = 0;
@@ -658,7 +745,6 @@ void refreshFileList() {
     }
     file.close();
     yield();
-    if (fileCount >= 64) break;
   }
   root.close();
   
@@ -709,6 +795,7 @@ void moveCursorToLineStart() {
           while (p > 0 && fullText[p-1] != ' ' && fullText[p-1] != '\n') p--;
           
           cursorPos = (p < 0) ? 0 : p;
+          forceSafeFullTextRedraw = true;
           needUpdate = true;    
 }
 
@@ -737,6 +824,7 @@ void moveCursorToLineEnd() {
       while (n < fullText.length() && fullText[n] != ' ' && fullText[n] != '\n') n++;
       
       cursorPos = n;
+      forceSafeFullTextRedraw = true;
       needUpdate = true;
 }
 
@@ -756,6 +844,7 @@ void moveCursorToParagraphStart() {
       }
     
     cursorPos = 0;
+    forceSafeFullTextRedraw = true;
     
     needUpdate = true;
 }
@@ -776,6 +865,7 @@ void moveCursorToParagraphEnd() {
       }
     
     cursorPos = fullText.length();
+    forceSafeFullTextRedraw = true;
     needUpdate = true;
 }
 
@@ -793,7 +883,7 @@ void selectLeft() {
           jung = -1; 
           jong = -1;
       }
-      if (cursorPos > 0) cursorPos = utf8PrevStart(fullText, cursorPos); 
+      if (cursorPos > 0) { cursorPos = utf8PrevStart(fullText, cursorPos); forceSafeFullTextRedraw = true; }
       needUpdate = true; 
   }
 
@@ -811,7 +901,7 @@ void selectRight() {
           jung = -1; 
           jong = -1;
       }
-      if (cursorPos < fullText.length()) cursorPos = utf8NextStart(fullText, cursorPos); 
+      if (cursorPos < fullText.length()) { cursorPos = utf8NextStart(fullText, cursorPos); forceSafeFullTextRedraw = true; }
       needUpdate = true; 
   }
 void selectUp() { 
@@ -856,6 +946,7 @@ void moveCursorUp() {
     
     int prevLineEnd = lineStart - 1;
     cursorPos = utf8OffsetForColumn(fullText, prevLineStart, prevLineEnd, column);
+    forceSafeFullTextRedraw = true;
     needUpdate = true;
 }
 
@@ -896,6 +987,7 @@ void moveCursorDown() {
 
     
     cursorPos = utf8OffsetForColumn(fullText, nextLineStart, nextLineEnd, column);
+    forceSafeFullTextRedraw = true;
     needUpdate = true;
 }
 
@@ -936,59 +1028,51 @@ void loadFile() {
         }
         f.close();
         cursorPos = fullText.length();
+        forceSafeFullTextRedraw = true;
     }
 }
 
 void createNewDoc() { 
     int n = 1; SdFile temp; 
     while (temp.open(("doc_" + String(n) + ".txt").c_str(), O_RDONLY)) { temp.close(); n++; } 
-    currentFileName = "doc_" + String(n) + ".txt"; fullText = ""; cursorPos = 0; 
+    currentFileName = "doc_" + String(n) + ".txt"; fullText = ""; cursorPos = 0; forceSafeFullTextRedraw = true; 
     saveFile(); currentMode = TYPING_MODE; needUpdate = true; 
 }
 
 void CalculationTask(void * pvParameters) {
     for(;;) {
-
-        
-        if (currentNetSubMode != NET_MAIN) {
-            if (Serial.available() > 0) {
-                byte k = Serial.peek(); 
-                if (k == 243) { 
-                    Serial.read(); 
-                    isCtrlPressed = false;  // release event is consumed here
-                     
-                    
-                    unsigned long t = millis();
-                    while (millis() - t < 100) { 
-                        if (Serial.available() > 0) {
-                            byte k2 = Serial.read();
-                            if (k2 == 246) {
-                                
-                                __atomic_store_n(&networkExitRequested, true, __ATOMIC_SEQ_CST);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+        unsigned long nowMs = millis();
+        if (statusBarNeedsUpdate && (!cachedBatteryValid || nowMs - lastBatteryReadMs >= 30000UL) &&
+            !displayIoBusy && currentNetSubMode == NET_MAIN && updateState == UPD_NONE &&
+            (currentMode == TYPING_MODE || currentMode == SEARCH_MODE)) {
+            float batV = display.readBattery();
+            int pct = constrain((int)((batV - 3.3) / (4.2 - 3.3) * 100), 0, 100);
+            cachedBatteryPct = pct;
+            cachedBatteryValid = true;
+            lastBatteryReadMs = nowMs;
         }
+
+
+        // Do not read keyboard Serial on Core0.
+        // The main loop owns all key bytes; sharing Serial here caused lost Ctrl/Menu events
+        // and random input interference in network/BLE modes.
 
         
         if (needCountUpdate) {
-            portENTER_CRITICAL(&timerMux);
-            String tempBuffer = calcBuffer; 
-            portEXIT_CRITICAL(&timerMux);
-            sharedCharCount = getTrueLength(tempBuffer);
+            // Main loop never writes calcBuffer while needCountUpdate is true.
+            // Count directly from calcBuffer to avoid an extra heap-allocating String copy on Core0.
+            calcBufferInUse = true;
+
+            sharedCharCount = getTrueLength(calcBuffer);
             int words = 0;
             bool inWord = false;
-            for (int i = 0; i < tempBuffer.length(); i++) {
-                if (isspace(tempBuffer[i])) inWord = false;
+            for (int i = 0; i < calcBuffer.length(); i++) {
+                if (isspace((unsigned char)calcBuffer[i])) inWord = false;
                 else if (!inWord) { inWord = true; words++; }
             }
             sharedWordCount = words;
-            portENTER_CRITICAL(&timerMux);   
             needCountUpdate = false;
-            portEXIT_CRITICAL(&timerMux);
+            calcBufferInUse = false;
         }
         vTaskDelay(10); 
     }
@@ -1113,7 +1197,10 @@ void setup() {
         
         preloadInitialImage(); 
         refreshFileList();
-        if (fileCount > 0) currentFileName = files[1].name; 
+        if (fileCount > 0) {
+            if (rightFileIndex < 1 || rightFileIndex > fileCount) rightFileIndex = 1;
+            currentFileName = files[rightFileIndex].name;
+        }
         loadFile();
     }
     
@@ -1143,9 +1230,16 @@ void saveSystemSettings() {
     prefs.putBool("isCaps", isCapsLockOn);
     prefs.putInt("fIndex", rightFileIndex);
     prefs.putInt("latin", latinMode);
+    prefs.putInt("count", countMode);
     prefs.putInt("engKbd", englishLayoutIndex);
     prefs.putInt("kbd", keyboardLayoutIndex);
     prefs.putInt("fSlot", currentFontSlot);  
+    prefs.putFloat("scale", displayScale);
+    prefs.putInt("lineSp", lineSpacing);
+    prefs.putInt("letterSp", letterSpacing);
+    prefs.putInt("typeSpd", typingSpeed);
+    prefs.putInt("refresh", refreshLimit);
+    prefs.putInt("sleep", autoSleepIndex);
     prefs.end();
 }
 
@@ -1155,6 +1249,8 @@ void loadSystemSettings() {
     isCapsLockOn = prefs.getBool("isCaps", false);
     rightFileIndex = prefs.getInt("fIndex", 0);
     latinMode = prefs.getInt("latin", 0);
+    countMode = prefs.getInt("count", 2);
+    if (countMode < 0 || countMode > 2) countMode = 2;
     englishLayoutIndex = prefs.getInt("engKbd", 1);
     if (englishLayoutIndex < 0 || englishLayoutIndex > 1) englishLayoutIndex = 1;
     keyboardLayoutIndex = prefs.getInt("kbd", 2);
@@ -1162,6 +1258,18 @@ void loadSystemSettings() {
     previewEnglishLayoutIndex = englishLayoutIndex;
     previewKeyboardLayoutIndex = keyboardLayoutIndex;
     currentFontSlot = prefs.getInt("fSlot", 1);  
+    displayScale = prefs.getFloat("scale", 2.0f);
+    if (displayScale < 0.5f || displayScale > 3.5f) displayScale = 2.0f;
+    lineSpacing = prefs.getInt("lineSp", 2);
+    if (lineSpacing < 0 || lineSpacing > 30) lineSpacing = 2;
+    letterSpacing = prefs.getInt("letterSp", 0);
+    if (letterSpacing < -5 || letterSpacing > 10) letterSpacing = 0;
+    typingSpeed = prefs.getInt("typeSpd", 0);
+    if (typingSpeed < 0 || typingSpeed > 10) typingSpeed = 0;
+    refreshLimit = prefs.getInt("refresh", 2000);
+    if (refreshLimit < 0 || refreshLimit > 5000) refreshLimit = 2000;
+    autoSleepIndex = prefs.getInt("sleep", 2);
+    if (autoSleepIndex < 0 || autoSleepIndex > 6) autoSleepIndex = 2;
     prefs.end();
 }
 
@@ -1585,7 +1693,7 @@ KeyEngineScript getSelectedKeyEngine() {
     return KEY_ENGINE_NONE;
 }
 
-String getKeyboardMappedInput(byte k, bool shift, bool alt, const char* engMap, const char* shiftMap, size_t mapSize, char fallback) {
+String getKeyboardMappedInput(byte k, bool shift, bool alt, bool caps, const char* engMap, const char* shiftMap, size_t mapSize, char fallback) {
     if (k >= mapSize) return fallback == 0 ? String("") : String(fallback);
     char base = engMap[k];
     if (base == 0 || base == '\b' || base == '\t' || base == '\n' || base == ' ') return fallback == 0 ? String("") : String(fallback);
@@ -1595,9 +1703,16 @@ String getKeyboardMappedInput(byte k, bool shift, bool alt, const char* engMap, 
     const KeyboardKeyMap* map = keyboardGetMap(layoutId, total);
     for (uint8_t i = 0; i < total; i++) {
         if (strcmp(map[i].key, keyBuf) == 0) {
-            const char* value = alt ? (shift ? map[i].altShift : map[i].alt) : (shift ? map[i].shift : map[i].normal);
-            if (value == nullptr && shift && !alt) value = map[i].normal;
-            if (value == nullptr && shift && alt) value = map[i].alt;
+            bool useShift = shift;
+            if (caps && !alt && map[i].normal != nullptr && map[i].shift != nullptr &&
+                strlen(map[i].normal) == 1 && strlen(map[i].shift) == 1 &&
+                map[i].normal[0] >= 'a' && map[i].normal[0] <= 'z' &&
+                map[i].shift[0] == (char)(map[i].normal[0] - 'a' + 'A')) {
+                useShift = !shift;
+            }
+            const char* value = alt ? (useShift ? map[i].altShift : map[i].alt) : (useShift ? map[i].shift : map[i].normal);
+            if (value == nullptr && useShift && !alt) value = map[i].normal;
+            if (value == nullptr && useShift && alt) value = map[i].alt;
             if (value == nullptr && layoutId == KB_ETHIOPIC && !shift && !alt && (base == 'e' || base == 'u' || base == 'i' || base == 'o' || base == 'a')) return String(base);
             if (value == nullptr && !alt && fallback != 0) return String(fallback);
             if (value == nullptr) return String("");
@@ -1642,6 +1757,7 @@ void showInitialImage() {
     isCtrlPressed = false;
     isShiftPressed = false;
     isAltPressed = false;
+    lastKeyPress = millis();
     currentMode = TYPING_MODE; 
     needUpdate = true; 
     statusBarNeedsUpdate = true; 
@@ -1659,8 +1775,8 @@ if (currentNetSubMode == NET_WIFI || updateState == UPD_WIFI_WAITING) {
     }
     
     if (updateState == UPD_WIFI_WAITING) {
-        server.handleClient(); 
-        
+        // server.handleClient() is already called above for this state.
+        // Avoid double servicing the web server in the same loop tick.
         while (Serial.available() > 0) {
             byte k = Serial.read();
             if (k == 246) { 
@@ -1789,19 +1905,19 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     lastKeyPress = millis(); 
     if (currentNetSubMode == NET_MAIN) {
         needUpdate = true; 
-        statusBarNeedsUpdate = true;
     } else {
         needUpdate = false;
         statusBarNeedsUpdate = false;
     }
     
-    if (k == 240) { isShiftPressed = true; continue; } 
-    if (k == 241) { isShiftPressed = false; continue; } 
-    if (k == 242) { isCtrlPressed = true; continue; } 
-    if (k == 243) { isCtrlPressed = false; continue; }
+    if (k == 240) { isShiftPressed = true; needUpdate = false; statusBarNeedsUpdate = false; continue; } 
+    if (k == 241) { isShiftPressed = false; needUpdate = false; statusBarNeedsUpdate = false; continue; } 
+    if (k == 242) { isCtrlPressed = true; needUpdate = false; statusBarNeedsUpdate = false; continue; } 
+    if (k == 243) { isCtrlPressed = false; needUpdate = false; statusBarNeedsUpdate = false; continue; }
 
     if (k == 244) { 
         isAltPressed = true;
+        bool accentApplied = false;
         
         KeyboardLayoutId activeLayout = getSelectedKeyboardLayoutId();
         if ((activeLayout == KB_QWERTY || activeLayout == KB_DVORAK) && (millis() - lastTypingTime <= 3000)) {
@@ -1812,14 +1928,19 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                 insertText(newChar); 
                 lastTypingTime = millis(); 
                 needUpdate = true;
+                accentApplied = true;
             }
         }
+        // Alt no-op: do not redraw unless an accent replacement actually happened.
+        if (!accentApplied) { needUpdate = false; statusBarNeedsUpdate = false; }
         continue; 
     } 
-    if (k == 245) { isAltPressed = false; continue; }
+    if (k == 245) { isAltPressed = false; needUpdate = false; statusBarNeedsUpdate = false; continue; }
 
     if (k == 28) {
         isCapsLockOn = !isCapsLockOn;
+        needUpdate = true;
+        statusBarNeedsUpdate = true;
         continue; 
     }
     const char engMap[] = { '`','1','2','3','4','5','6','7','8','9','0','-','=','\b','\t','q','w','e','r','t','y','u','i','o','p','[',']','\\',0,'a','s','d','f','g','h','j','k','l',';','\'','\n',0,'z','x','c','v','b','n','m',',','.','/',0,0,0,0,0,' ',0,0,0 }; 
@@ -1840,6 +1961,13 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
         if (k == 56) real = ' '; 
         
+    bool isNavigationOrMenuKey = (k == 57 || k == 58 || k == 59 || k == 60 || k == 246);
+    if (real == 0 && k != 56 && !isNavigationOrMenuKey) {
+        // Unknown/non-printing scan code: do not trigger a redraw or typing delay.
+        needUpdate = false;
+        statusBarNeedsUpdate = false;
+        continue;
+    }
     
     if (isCtrlPressed) {
       if (currentNetSubMode != NET_MAIN && k == 246) {
@@ -1856,7 +1984,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
           continue;
       }
       if (real == 'l' || real == 'L') { flushKorean(); isCtrlPressed = false; showInitialImage(); continue; }
-      if (real == 'c' || real == 'C') { flushKorean(); clipboard = fullText; continue; } 
+      if (real == 'c' || real == 'C') { flushKorean(); clipboard = fullText; needUpdate = false; statusBarNeedsUpdate = false; continue; } 
       if (real == 'v' || real == 'V') { flushKorean(); insertText(clipboard); continue; } 
       
       if (real == 's' || real == 'S') { flushKorean(); saveFile(); continue; }
@@ -1872,6 +2000,13 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       if (k == 60) { moveCursorToLineEnd(); continue; }   
       if (k == 58) { moveCursorToParagraphStart(); continue; } 
       if (k == 59) { moveCursorToParagraphEnd(); continue; }   
+      // Do not let unhandled Ctrl+letter combinations fall through as normal typing.
+      // Ctrl+Space and Ctrl+Backspace intentionally continue to the typing path below.
+      if (real != ' ' && real != '\b') {
+          needUpdate = false;
+          statusBarNeedsUpdate = false;
+          continue;
+      }
     }
     if (k == 246) { 
       if (currentMode == FILE_MENU_MODE && isEditingValue && inSystemSubMenu && (leftMenuIndex == 6 || leftMenuIndex == 7)) {
@@ -1896,6 +2031,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         tempNetCursor = currentNetSubMode;
         refreshFileList(); 
         rightFileIndex = 1;
+        fileScrollOffset = 0;  // Always show the first 12 documents when reopening the file menu.
         isDeletingFile = false; } 
       else {
         currentMode = TYPING_MODE;
@@ -1922,7 +2058,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       if (isDeletingFile) { 
         if (real == '\n') { 
           SdFile root; if (root.open("/", O_RDONLY)) { 
-            SdFile f; if (f.open(&root, files[rightFileIndex].name.c_str(), O_WRONLY)) { f.remove(); refreshFileList(); if (fileCount == 0) createNewDoc(); if (rightFileIndex > fileCount) rightFileIndex = fileCount; } 
+            SdFile f; if (f.open(&root, files[rightFileIndex].name.c_str(), O_WRONLY)) { f.remove(); refreshFileList(); if (fileCount == 0) createNewDoc(); if (rightFileIndex > fileCount) rightFileIndex = fileCount; int maxFileOffsetAfterDelete = fileCount - FILE_MENU_ITEMS_PER_PAGE; if (maxFileOffsetAfterDelete < 0) maxFileOffsetAfterDelete = 0; if (fileScrollOffset > maxFileOffsetAfterDelete) fileScrollOffset = maxFileOffsetAfterDelete; } 
             root.close(); 
           } 
           isDeletingFile = false; 
@@ -1972,11 +2108,12 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                     if (leftMenuIndex == 6) englishLayoutIndex = previewEnglishLayoutIndex <= 0 ? 0 : 1;
                     if (leftMenuIndex == 7) keyboardLayoutIndex = previewKeyboardLayoutIndex;
                     isEditingValue = false;
-                    saveSystemSettings();
                     isCapsLockOn = false;
+                    saveSystemSettings();
                     needUpdate = true;
                 } else {
                     isEditingValue = !isEditingValue;
+                    if (!isEditingValue) saveSystemSettings();
                 }
             }
         } 
@@ -2052,7 +2189,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                 
                 if (leftMenuIndex == 0) createNewDoc(); 
                 else if (leftMenuIndex == 1) { saveFile(); currentMode = TYPING_MODE; } 
-                else if (leftMenuIndex == 2) { countMode = (countMode + 1) % 3; needUpdate = true; }
+                else if (leftMenuIndex == 2) { countMode = (countMode + 1) % 3; saveSystemSettings(); needUpdate = true; }
                 else if (leftMenuIndex == 3) { 
                     isEditingValue = true;
                 }
@@ -2079,16 +2216,20 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                         isEditingValue = false;
                         updateState = UPD_PIN_INPUT;
                         currentMode = TYPING_MODE;
+                        isCtrlPressed = false;
+                        isShiftPressed = false;
+                        isAltPressed = false;
                         needUpdate = true;
+                        statusBarNeedsUpdate = false;
                         return;  // Preserve needUpdate for the PIN screen on the next loop.
                     } else if (isEditingValue) {
                         if (leftMenuIndex == 6 || leftMenuIndex == 7) {
                             if (leftMenuIndex == 6) englishLayoutIndex = previewEnglishLayoutIndex <= 0 ? 0 : 1;
                             if (leftMenuIndex == 7) keyboardLayoutIndex = previewKeyboardLayoutIndex;
                             isEditingValue = false;
-                            saveSystemSettings();
                             needUpdate = true;
                             isCapsLockOn = false;
+                            saveSystemSettings();
                         } else {
                             isEditingValue = false;
                         }
@@ -2106,8 +2247,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         }
         } else {
           
-          int maxVisibleItems = ((display.height() / displayScale) - 70) / (baseFontSize + lineSpacing + 6);
-          if (maxVisibleItems < 1) maxVisibleItems = 1;
+          const int maxVisibleItems = FILE_MENU_ITEMS_PER_PAGE;
           
           if (k == 58 && rightFileIndex > 1) { 
               rightFileIndex--;
@@ -2127,6 +2267,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
               if (fileCount > 0 && rightFileIndex <= fileCount) {
                   currentFileName = files[rightFileIndex].name;
                   loadFile();
+                  saveSystemSettings();
                   currentMode = TYPING_MODE;
                   needUpdate = true;
                   continue;
@@ -2149,7 +2290,6 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         if (ns != -1) { 
           int ne = fullText.indexOf('\n', ns + 1); 
           if (ne == -1) ne = fullText.length(); 
-          int nl = ne - (ns + 1); 
           int ls = fullText.lastIndexOf('\n', cursorPos - 1); 
           int col = utf8ColumnBetween(fullText, ls + 1, cursorPos); 
           cursorPos = utf8OffsetForColumn(fullText, ns + 1, ne, col); 
@@ -2181,6 +2321,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             isKoreanMode = !isKoreanMode; 
             isCapsLockOn = false;   
             isShiftPressed = false; 
+            statusBarNeedsUpdate = true;
             continue; 
         } 
         if (real == ' ' || real == '\n' || real == '\t') { 
@@ -2212,7 +2353,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
           processKoreanInput(k, real, isShiftPressed, engMap, shiftMap, sizeof(engMap));
         } else {
             
-            String insertStr = getKeyboardMappedInput(k, isShiftPressed, isAltPressed, engMap, shiftMap, sizeof(engMap), real);
+            String insertStr = getKeyboardMappedInput(k, isShiftPressed, isAltPressed, isCapsLockOn && !isKoreanMode, engMap, shiftMap, sizeof(engMap), real);
             if (insertStr != "") {
                 String processedStr = (currentMode == SEARCH_MODE) ? insertStr : keyEngineProcessMappedText(getSelectedKeyEngine(), insertStr);
                 insertedForAccent = processedStr;
@@ -2232,21 +2373,26 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         } else if (real != 0 && real != ' ' && real != '\n' && real != '\t') {
             lastBaseChar = 0;
         }
-      } 
+      }
       
       charCounter++;
-      if (typingSpeed > 0) delay(typingSpeed * 5); 
-      else yield();
+      yield();
     }
   } 
 
   if (needUpdate) {
+    displayIoBusy = true;
     rtlTextMode = isKoreanMode && keyboardLayoutIsRightToLeft(getSelectedKeyboardLayoutId());
-    if (!needCountUpdate) {
-        portENTER_CRITICAL(&timerMux); 
+    bool modeChanged = (currentMode != lastMode || currentNetSubMode != lastNetSubMode);
+    unsigned long countNowMs = millis();
+    bool inputQueueIdle = (Serial.available() == 0);
+    bool countDisplayActive = (countMode != 2);
+    if (statusBarNeedsUpdate && countDisplayActive && !needCountUpdate && !calcBufferInUse && (modeChanged || ((countNowMs - lastCountRequestMs >= COUNT_UPDATE_INTERVAL_MS) && inputQueueIdle))) {
+        // Snapshot only while the keyboard queue is idle and count display is active,
+        // so long documents do not pause burst typing when Count is OFF.
         calcBuffer = fullText;
-        portEXIT_CRITICAL(&timerMux);  
         needCountUpdate = true;
+        lastCountRequestMs = countNowMs;
     }
     
     
@@ -2257,7 +2403,6 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     if (maxVisibleMenu < 1) maxVisibleMenu = 1;
     bool doFullRefresh = false;
     if (currentMode == TYPING_MODE && refreshLimit > 0 && charCounter >= refreshLimit) { doFullRefresh = true; charCounter = 0; }
-    bool modeChanged = (currentMode != lastMode || currentNetSubMode != lastNetSubMode);
     if (modeChanged) {
         display.fillRect(0, 0, display.width(), display.height(), WHITE);
         lastSy = -1;
@@ -2325,8 +2470,16 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         else if(i == 4) valStr = String(typingSpeed);
         else if(i == 5) valStr = String(refreshLimit);
         
-        else if(i == 6) valStr = "";
-        else if(i == 7) valStr = "";
+        else if(i == 6) {
+            lbl = "Eng";
+            String nameLine = (isEditingValue && leftMenuIndex == i) ? getPreviewEnglishKeyboardModeName() : getEnglishKeyboardModeName();
+            lbl += (isEditingValue && leftMenuIndex == i) ? " <" + nameLine + ">" : " " + nameLine;
+        }
+        else if(i == 7) {
+            lbl = "Lang";
+            String nameLine = (isEditingValue && leftMenuIndex == i) ? getPreviewKeyboardModeName() : getKeyboardModeName();
+            lbl += (isEditingValue && leftMenuIndex == i) ? " <" + nameLine + ">" : " " + nameLine;
+        }
         
         if (valStr != "") {
             if (isEditingValue && leftMenuIndex == i) {
@@ -2366,12 +2519,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
 
     
     printMenuEntry(lbl, 25, menuY, (menuFocusSide == 0 && leftMenuIndex == i), false);
-    if (inSystemSubMenu && (i == 6 || i == 7)) {
-        String nameLine = (i == 6) ? (isEditingValue && leftMenuIndex == i ? getPreviewEnglishKeyboardModeName() : getEnglishKeyboardModeName()) : (isEditingValue && leftMenuIndex == i ? getPreviewKeyboardModeName() : getKeyboardModeName());
-        String keyboardLine = isEditingValue && leftMenuIndex == i ? "< " + nameLine + " >" : "  " + nameLine;
-        printMenuEntry(keyboardLine, 25, menuY + menuStep, (menuFocusSide == 0 && leftMenuIndex == i), false);
-        menuY += menuStep;
-    }
     menuY += menuStep;
 
         }
@@ -2380,7 +2527,7 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
             u8g2_for_adafruit_gfx.setBackgroundColor(WHITE); 
             printDualFont("=== DOCUMENTS ===", 245, 30, true); 
             
-            int maxVisibleItems = ((display.height() / displayScale) - 70) / (baseFontSize + lineSpacing + 6);
+            const int maxVisibleItems = FILE_MENU_ITEMS_PER_PAGE;
             for (int f=1; f<=fileCount; f++) { 
                 if (f > fileScrollOffset && f <= fileScrollOffset + maxVisibleItems) { 
                     String docLabel = "";
@@ -2390,7 +2537,7 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
                         docLabel = "Delete? (Enter: Yes / Other: Cancel)";
                     } else {
                         
-                        docLabel = String(f) + ". " + files[f].name + " [" + String(files[f].sizeKB, 1) + "KB] | " + files[f].preview;
+                        docLabel = String(f) + ". " + files[f].name + " [" + String(files[f].sizeKB, 1) + "KB] | " + utf8Truncate(files[f].preview, 12);
                     }
                     
                     printMenuEntry(docLabel, 225, 60 + ((f-fileScrollOffset-1)*(baseFontSize + lineSpacing + 6)), (menuFocusSide == 1 && rightFileIndex == f), true);
@@ -2398,7 +2545,34 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
             }
         }
     } 
-    else {adjustViewBottom();    
+    else {
+        int statusBarBottom = (int)(45 * displayScale);
+        int contentRight = (int)((display.width() / displayScale) - RIGHT_EDGE_MARGIN);
+        int maxWidth = contentRight - MARGIN_X;
+        bool canReuseTailWrap = false;
+        int tailStart = fullText.lastIndexOf('\n');
+        tailStart = (tailStart < 0) ? 0 : tailStart + 1;
+
+        if (currentMode == TYPING_MODE &&
+            cursorPos == fullText.length() &&
+            lastRenderedCursorPos == lastRenderedTextLen &&
+            lastRenderedTextLen >= 0 &&
+            fullText.length() > lastRenderedTextLen &&
+            tailStart == lastRenderedTailStart &&
+            rtlTextMode == lastRenderedTailRtl &&
+            !forceSafeFullTextRedraw &&
+            !doFullRefresh && !modeChanged) {
+            bool appendedHasNewline = false;
+            for (int p = lastRenderedTextLen; p < fullText.length(); p++) {
+                if (fullText[p] == '\n') { appendedHasNewline = true; break; }
+            }
+            if (!appendedHasNewline) {
+                WrapMetrics appendedMetrics = getWrappedMetricsInRange(fullText, lastRenderedTextLen, fullText.length(), maxWidth);
+                canReuseTailWrap = (appendedMetrics.lineCount == 1 &&
+                                    lastRenderedTailLineWidth + appendedMetrics.lastLineWidth <= maxWidth);
+            }
+        }
+        if (!canReuseTailWrap) adjustViewBottom();    
         
         
         String d = fullText;
@@ -2414,10 +2588,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         int renderEnd = viewBottomIdx;
         if (currentMode == TYPING_MODE && cursorPos <= viewBottomIdx) renderEnd += composing.length();
         if (renderEnd > d.length()) renderEnd = d.length();
-        int statusBarBottom = (int)(45 * displayScale);
-        int contentRight = (int)((display.width() / displayScale) - RIGHT_EDGE_MARGIN);
-        int maxWidth = contentRight - MARGIN_X;
-
         // Preserve the remainder of a visual line when the viewport boundary
         // lands in the middle of it during cursor navigation.
         if (renderEnd < d.length() && d[renderEnd] != '\n') {
@@ -2449,19 +2619,22 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
             }
         }
 
-        int tailStart = d.lastIndexOf('\n');
-        tailStart = (tailStart < 0) ? 0 : tailStart + 1;
-        int tailLineCount = countWrappedLinesInRange(d, tailStart, d.length(), maxWidth);
+        if (!canReuseTailWrap) {
+            tailStart = d.lastIndexOf('\n');
+            tailStart = (tailStart < 0) ? 0 : tailStart + 1;
+        }
+        int tailLineCount = canReuseTailWrap ? lastRenderedTailLineCount : countWrappedLinesInRange(d, tailStart, d.length(), maxWidth);
         bool fastTailRender = (currentMode == TYPING_MODE &&
                                composing.length() == 0 &&
                                cursorPos == fullText.length() &&
                                lastRenderedCursorPos == lastRenderedTextLen &&
                                lastRenderedTextLen >= 0 &&
                                fullText.length() > lastRenderedTextLen &&
-                               fullText.substring(lastRenderedTextLen).indexOf('\n') < 0 &&
+                               canReuseTailWrap &&
                                tailStart == lastRenderedTailStart &&
                                tailLineCount == lastRenderedTailLineCount &&
                                rtlTextMode == lastRenderedTailRtl &&
+                               !forceSafeFullTextRedraw &&
                                !doFullRefresh && !modeChanged);
 
         int currentY = (int)((display.height() / displayScale) - 25);
@@ -2483,7 +2656,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
                 String lines[40]; 
                 int lineStartIdx[40]; 
                 int lineCount = 0;
-                int visualLineCount = 0;
                 int currentLineWidth = 0; 
                 int currentLineStartK = i; 
 
@@ -2493,7 +2665,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
                     lines[0] = "";
                     lineStartIdx[0] = 0;
                     lineCount = 1;
-                    visualLineCount = 1;
                 } else {
                     
                     for(int k = i; k < lastLineEnd; ) {
@@ -2516,7 +2687,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
                                 lines[39] = d.substring(currentLineStartK, k);
                                 lineStartIdx[39] = currentLineStartK - i;
                             }
-                            visualLineCount++;
                             currentLineStartK = k; 
                             currentLineWidth = charWidth; 
                         } else {
@@ -2537,7 +2707,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
                         lines[39] = d.substring(currentLineStartK, lastLineEnd);
                         lineStartIdx[39] = currentLineStartK - i;
                     }
-                    if (currentLineStartK < lastLineEnd) visualLineCount++;
                 }
                 for (int j = lineCount - 1; j >= 0; j--) {
                     if (currentY > STATUS_Y + 20) {
@@ -2624,13 +2793,18 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
             lastRenderedCursorPos = cursorPos;
             lastRenderedTailStart = fullText.lastIndexOf('\n');
             lastRenderedTailStart = (lastRenderedTailStart < 0) ? 0 : lastRenderedTailStart + 1;
-            lastRenderedTailLineCount = countWrappedLinesInRange(fullText, lastRenderedTailStart, fullText.length(), maxWidth);
+            WrapMetrics tailMetrics = getWrappedMetricsInRange(fullText, lastRenderedTailStart, fullText.length(), maxWidth);
+            lastRenderedTailLineCount = tailMetrics.lineCount;
+            lastRenderedTailLineWidth = tailMetrics.lastLineWidth;
             lastRenderedTailRtl = rtlTextMode;
+            forceSafeFullTextRedraw = false;
         } else {
             lastRenderedTextLen = -1;
             lastRenderedCursorPos = -1;
             lastRenderedTailStart = -1;
             lastRenderedTailLineCount = -1;
+            lastRenderedTailLineWidth = 0;
+            forceSafeFullTextRedraw = false;
         }
 
         if (currentMode == SEARCH_MODE) {
@@ -2661,7 +2835,9 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
     
 
     
-    if (currentMode == TYPING_MODE || currentMode == SEARCH_MODE) {
+    bool drawStatusBar = (currentMode == TYPING_MODE || currentMode == SEARCH_MODE) &&
+                         (statusBarNeedsUpdate || modeChanged || currentMode == SEARCH_MODE || savedMessageVisible);
+    if (drawStatusBar) {
         int hY = 30;
         
         display.fillRect(0, 0, display.width(), (int)(40 * UI_SCALE), WHITE);
@@ -2712,9 +2888,13 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         }
 
         
-        float batV = display.readBattery();
-        int batPct = constrain((int)((batV - 3.3) / (4.2 - 3.3) * 100), 0, 100);
-        printStatusText(String(batPct) + "%   ", batteryX, hY);
+        unsigned long nowStatusMs = millis();
+        if (!statusBatteryValid || nowStatusMs - lastStatusBatteryFetchMs >= 30000UL) {
+            statusBatteryPct = cachedBatteryPct;
+            statusBatteryValid = cachedBatteryValid;
+            lastStatusBatteryFetchMs = nowStatusMs;
+        }
+        printStatusText(statusBatteryValid ? (String(statusBatteryPct) + "%   ") : String("--%   "), batteryX, hY);
         
         display.drawFastHLine(0, (int)(39 * UI_SCALE), display.width(), BLACK);
     }
@@ -2725,8 +2905,10 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
     else display.partialUpdate(false);
     if (CalcTaskHandle) vTaskResume(CalcTaskHandle);
     display.resetInternalCounter();
+    displayIoBusy = false;
 
     needUpdate = false;
+    statusBarNeedsUpdate = false;
     lastMode = currentMode;
     lastNetSubMode = currentNetSubMode;
   } 

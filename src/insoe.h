@@ -242,6 +242,9 @@ void printCleanText(U8G2_FOR_ADAFRUIT_GFX &u8g2, const String& text, int x, int 
             activeFont = selectedFont;
         }
         int adv = zwGlyphAdvance(cp, l, isMenu);
+        // Prevent the last glyph from spilling into the next UI column.
+        // This matters most in FILE_MENU_MODE where the left menu and document list sit side by side.
+        if (cx + adv > maxWidth) break;
         if (zwGlyphVisible(cp)) u8g2.drawUTF8(cx + zwGlyphDrawXOffset(cp), y + zwGlyphDrawYOffset(cp), glyph);
         cx += adv;
         i += l;
@@ -321,34 +324,100 @@ String nextDocFilename() {
     return "doc_" + String(maxNum + 1) + ".txt";
 }
 
+String htmlEscape(const String& src) {
+    String out = src;
+    out.replace("&", "&amp;");
+    out.replace("<", "&lt;");
+    out.replace(">", "&gt;");
+    out.replace("\"", "&quot;");
+    return out;
+}
+
+String urlEncode(const String& src) {
+    const char* hex = "0123456789ABCDEF";
+    String out = "";
+    for (int i = 0; i < src.length(); i++) {
+        unsigned char c = (unsigned char)src[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += (char)c;
+        } else {
+            out += '%';
+            out += hex[(c >> 4) & 0x0F];
+            out += hex[c & 0x0F];
+        }
+    }
+    return out;
+}
+
 void appendDocList(String& html) {
+    static const int WEB_DOCS_PER_PAGE = 12;
+    static const int WEB_MAX_DOCUMENT_FILES = 256;
     SdFile root;
     SdFile file;
     char name[64];
-    bool found = false;
+    // Keep these off the loop/web-handler stack. 256 String objects plus
+    // metadata is large enough to cause sporadic stack pressure on ESP32.
+    static int docNums[WEB_MAX_DOCUMENT_FILES];
+    static uint32_t docSizes[WEB_MAX_DOCUMENT_FILES];
+    static String docNames[WEB_MAX_DOCUMENT_FILES];
+    int totalDocs = 0;
+    int page = server.hasArg("page") ? server.arg("page").toInt() : 1;
+    if (page < 1) page = 1;
 
     if (!root.open("/", O_RDONLY)) {
         html += "<p class=\"empty\">SD open failed.</p>";
         return;
     }
 
-    html += "<table><thead><tr><th>File</th><th>Size</th><th>Actions</th></tr></thead><tbody>";
     while (file.openNext(&root, O_RDONLY)) {
         file.getName(name, sizeof(name));
         String fn = String(name);
-        if (!file.isDir() && isDocFilename(fn)) {
-            found = true;
-            html += "<tr><td>" + fn + "</td><td>" + String(file.fileSize()) + "</td><td>";
-            html += "<a href=\"/read?file=" + fn + "\">Read</a> ";
-            html += "<a href=\"/download?file=" + fn + "\">Download</a> ";
-            html += "<a href=\"/delete?file=" + fn + "\" onclick=\"return confirm('Delete " + fn + "?')\">Delete</a>";
-            html += "</td></tr>";
+        if (!file.isDir() && isDocFilename(fn) && totalDocs < WEB_MAX_DOCUMENT_FILES) {
+            docNums[totalDocs] = docNumberFromName(fn);
+            docSizes[totalDocs] = file.fileSize();
+            docNames[totalDocs] = fn;
+            totalDocs++;
         }
         file.close();
+        yield();
+    }
+    root.close();
+
+    for (int i = 0; i < totalDocs - 1; i++) {
+        for (int j = i + 1; j < totalDocs; j++) {
+            if (docNums[i] < docNums[j]) {
+                int tn = docNums[i]; docNums[i] = docNums[j]; docNums[j] = tn;
+                uint32_t ts = docSizes[i]; docSizes[i] = docSizes[j]; docSizes[j] = ts;
+                String tf = docNames[i]; docNames[i] = docNames[j]; docNames[j] = tf;
+            }
+        }
+    }
+
+    int start = (page - 1) * WEB_DOCS_PER_PAGE;
+    int end = start + WEB_DOCS_PER_PAGE;
+    if (start >= totalDocs && totalDocs > 0) {
+        page = ((totalDocs - 1) / WEB_DOCS_PER_PAGE) + 1;
+        start = (page - 1) * WEB_DOCS_PER_PAGE;
+        end = start + WEB_DOCS_PER_PAGE;
+    }
+    if (end > totalDocs) end = totalDocs;
+
+    html += "<table><thead><tr><th>File</th><th>Size</th><th>Actions</th></tr></thead><tbody>";
+    for (int i = start; i < end; i++) {
+        String fn = docNames[i];
+        String safeName = htmlEscape(fn);
+        String urlName = urlEncode(fn);
+        html += "<tr><td>" + safeName + "</td><td>" + String(docSizes[i]) + "</td><td>";
+        html += "<a href=\"/read?file=" + urlName + "\">Read</a> ";
+        html += "<a href=\"/download?file=" + urlName + "\">Download</a> ";
+        html += "<a href=\"/delete?file=" + urlName + "\" onclick=\"return confirm('Delete " + safeName + "?')\">Delete</a>";
+        html += "</td></tr>";
     }
     html += "</tbody></table>";
-    if (!found) html += "<p class=\"empty\">No documents found.</p>";
-    root.close();
+    if (totalDocs == 0) html += "<p class=\"empty\">No documents found.</p>";
+    html += "<p class=\"empty\">Page " + String(page) + "</p>";
+    if (page > 1) html += "<a href=\"/?page=" + String(page - 1) + "\">Previous</a> ";
+    if (end < totalDocs) html += "<a href=\"/?page=" + String(page + 1) + "\">Next</a>";
 }
 
 String pageStart(const String& title) {
@@ -360,7 +429,7 @@ String pageStart(const String& title) {
 
 void handleDocumentRoot(const String& message = "") {
     String html = pageStart("IZE Compose Documents");
-    if (message.length() > 0) html += "<p class=\"saved\">" + message + "</p>";
+    if (message.length() > 0) html += "<p class=\"saved\">" + htmlEscape(message) + "</p>";
     html += F("<section class=\"grid\"><div class=\"card wide\"><h2>Documents</h2>");
     appendDocList(html);
     html += F("</div><div class=\"card wide\"><h2>Upload Text File</h2><form method=\"POST\" action=\"/uploadText\" enctype=\"multipart/form-data\"><label for=\"textFile\">Text file</label><input type=\"file\" id=\"textFile\" name=\"file\" accept=\".txt,text/plain\" required><button type=\"submit\">Upload Text</button></form><p class=\"empty\">Uploaded text is saved as the next doc_N.txt file.</p></div></section></main></body></html>");

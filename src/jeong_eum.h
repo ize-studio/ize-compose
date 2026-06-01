@@ -8,6 +8,7 @@ extern int jong;
 extern char lastJongChar;
 extern String fullText;
 extern int cursorPos;
+extern bool forceSafeFullTextRedraw;
 
 void insertText(String str);
 
@@ -51,7 +52,7 @@ inline uint32_t keyEngineCodepointAt(const String& text, int index, int& charLen
 inline void keyEngineClampCursorToUtf8Boundary() {
     if (cursorPos < 0) cursorPos = 0;
     if (cursorPos > fullText.length()) cursorPos = fullText.length();
-    while (cursorPos > 0 && cursorPos < fullText.length() && ((fullText[cursorPos] & 0xC0) == 0x80)) cursorPos--;
+    while (cursorPos > 0 && cursorPos < fullText.length() && (((unsigned char)fullText[cursorPos] & 0xC0) == 0x80)) cursorPos--;
 }
 
 inline void keyEngineAppendUtf8(String& out, uint32_t cp) {
@@ -237,6 +238,15 @@ inline bool keyEngineNeedsComposition(KeyEngineScript engine) {
     return engine != KEY_ENGINE_NONE && engine != KEY_ENGINE_KOREAN;
 }
 
+inline void keyEngineClearComposition(KeyEngineScript engine) {
+    if (engine == KEY_ENGINE_KOREAN) {
+        cho = -1;
+        jung = -1;
+        jong = -1;
+        lastJongChar = 0;
+    }
+}
+
 inline void keyEngineReset(KeyEngineScript engine) {
     if (engine == KEY_ENGINE_KOREAN) flushKorean();
 }
@@ -244,21 +254,10 @@ inline void keyEngineReset(KeyEngineScript engine) {
 inline bool keyEngineHandleBackspace(KeyEngineScript engine) {
     if (engine != KEY_ENGINE_KOREAN) return false;
     if (cho == -1 && jung == -1) return false;
-    if (jong != -1) {
-        int split = keyEngineSplitCombinedJong(jong);
-        if (split != -1) {
-            jong = split;
-            lastJongChar = keyEngineJongKey(split);
-        } else {
-            jong = -1;
-            lastJongChar = 0;
-        }
-    } else if (jung != -1 && cho != -1) {
-        jung = -1;
-    } else {
-        cho = -1;
-        jung = -1;
-    }
+
+    // Ize Compose writing rule: a visible composing Hangul syllable is one editing unit.
+    // Backspace must remove the whole composing syllable, not peel jong/jung/cho one by one.
+    keyEngineClearComposition(engine);
     return true;
 }
 
@@ -451,7 +450,7 @@ inline void keyEngineReshapeArabicAroundCursor() {
     int start = cursorPos;
     while (start > 0 && cursorPos - start < KEY_ENGINE_MAX_RESHAPE_BYTES) {
         int p = start - 1;
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         int l = 0;
         uint32_t cp = keyEngineArabicBase(keyEngineCodepointAt(fullText, p, l));
         if (!keyEngineArabicRunChar(cp)) break;
@@ -480,7 +479,7 @@ inline bool keyEngineIndicBlock(uint32_t cp) {
 inline bool keyEngineIndicDependent(uint32_t cp) {
     uint32_t low = cp & 0x7F;
     if (!keyEngineIndicBlock(cp)) return false;
-    if (low >= 0x00 && low <= 0x03) return true;
+    if (low <= 0x03) return true;
     if (low == 0x3C) return true;
     if (low >= 0x3E && low <= 0x4D) return true;
     if (low >= 0x55 && low <= 0x57) return true;
@@ -499,7 +498,7 @@ inline bool keyEngineIndicLetter(uint32_t cp) {
 inline bool keyEngineIndicHasBaseBefore(int index) {
     int p = index - 1;
     while (p >= 0) {
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         int l = 0;
         uint32_t cp = keyEngineCodepointAt(fullText, p, l);
         if (!keyEngineIndicBlock(cp)) return false;
@@ -527,7 +526,7 @@ inline void keyEngineStabilizeIndicAt(int index) {
 inline void keyEngineStabilizeIndicAroundCursor() {
     if (cursorPos > 0 && cursorPos <= fullText.length()) {
         int p = cursorPos - 1;
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         keyEngineStabilizeIndicAt(p);
     }
     if (cursorPos < fullText.length()) keyEngineStabilizeIndicAt(cursorPos);
@@ -650,7 +649,10 @@ inline String keyEngineNormalizeJapaneseRun(const String& raw, int cursorChars, 
         if (pair != 0) {
             keyEngineAppendUtf8(out, pair);
             if (inChars < cursorChars) newCursorChars++;
-            if (inChars + 1 < cursorChars) newCursorChars = max(newCursorChars, keyEngineCharCountBetween(out, 0, out.length()));
+            if (inChars + 1 < cursorChars) {
+                int shapedChars = keyEngineCharCountBetween(out, 0, out.length());
+                if (shapedChars > newCursorChars) newCursorChars = shapedChars;
+            }
             i += l + nextLen;
             inChars += 2;
         } else {
@@ -668,7 +670,7 @@ inline void keyEngineNormalizeJapaneseAroundCursor() {
     int start = cursorPos;
     while (start > 0 && cursorPos - start < KEY_ENGINE_MAX_RESHAPE_BYTES) {
         int p = start - 1;
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         int l = 0;
         uint32_t cp = keyEngineCodepointAt(fullText, p, l);
         if (!keyEngineJapaneseRunChar(cp)) break;
@@ -717,7 +719,7 @@ inline bool keyEngineComplexDependent(uint32_t cp) {
 inline bool keyEngineComplexHasBaseBefore(int index) {
     int p = index - 1;
     while (p >= 0) {
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         int l = 0;
         uint32_t cp = keyEngineCodepointAt(fullText, p, l);
         if (!keyEngineComplexBlock(cp) && cp != 0x25CC) return false;
@@ -739,7 +741,7 @@ inline void keyEngineStabilizeComplexAt(int index) {
 inline void keyEngineStabilizeComplexAroundCursor() {
     if (cursorPos > 0 && cursorPos <= fullText.length()) {
         int p = cursorPos - 1;
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         keyEngineStabilizeComplexAt(p);
     }
     if (cursorPos < fullText.length()) keyEngineStabilizeComplexAt(cursorPos);
@@ -756,7 +758,7 @@ inline bool keyEngineHebrewBase(uint32_t cp) {
 inline bool keyEngineHebrewHasBaseBefore(int index) {
     int p = index - 1;
     while (p >= 0) {
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         int l = 0;
         uint32_t cp = keyEngineCodepointAt(fullText, p, l);
         if (cp < 0x0590 || cp > 0x05FF) return false;
@@ -778,7 +780,7 @@ inline void keyEngineStabilizeHebrewAt(int index) {
 inline void keyEngineStabilizeHebrewAroundCursor() {
     if (cursorPos > 0 && cursorPos <= fullText.length()) {
         int p = cursorPos - 1;
-        while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+        while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
         keyEngineStabilizeHebrewAt(p);
     }
     if (cursorPos < fullText.length()) keyEngineStabilizeHebrewAt(cursorPos);
@@ -801,7 +803,7 @@ inline bool keyEngineApplyEthiopicVowel(char c) {
     int order = keyEngineEthiopicOrder(c);
     if (order < 0 || cursorPos <= 0) return false;
     int p = cursorPos - 1;
-    while (p > 0 && ((fullText[p] & 0xC0) == 0x80)) p--;
+    while (p > 0 && (((unsigned char)fullText[p] & 0xC0) == 0x80)) p--;
     int l = 0;
     uint32_t cp = keyEngineCodepointAt(fullText, p, l);
     if (!keyEngineEthiopicSyllable(cp)) return false;
@@ -812,6 +814,10 @@ inline bool keyEngineApplyEthiopicVowel(char c) {
     keyEngineAppendUtf8(repl, next);
     fullText = fullText.substring(0, p) + repl + fullText.substring(p + l);
     cursorPos = p + repl.length();
+    // Ethiopic vowel conversion edits an existing syllable in-place.
+    // Force a safe redraw because text length may not change, so tail-render
+    // heuristics must not treat it as a no-op.
+    forceSafeFullTextRedraw = true;
     return true;
 }
 
