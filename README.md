@@ -257,3 +257,9 @@ platformio.ini          — PlatformIO build config
 - [SdFat](https://github.com/greiman/SdFat) — Bill Greiman
 - [Noto Fonts](https://fonts.google.com/noto) — Google (used for font building; license: SIL OFL 1.1)
 - [Zerowriter Ink](https://www.zerowriter.org/) — original hardware
+
+<div class="site-support" aria-label="Support">
+        <img class="site-support-logo" src="https://storage.ko-fi.com/cdn/logomarkLogo.png" alt="Ko-fi">
+        <p>I build strange little writing tools.<br>If you enjoyed this project, coffee support is welcome.</p>
+        <p>Ko-fi: <a href="https://ko-fi.com/dievesa">https://ko-fi.com/dievesa</a></p>
+      </div>
