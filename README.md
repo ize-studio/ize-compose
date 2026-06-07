@@ -1,6 +1,7 @@
 # Ize Compose
 
 Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a Korean-input firmware, now supports 92 keyboard layouts across dozens of scripts.
+(if you are looking for Ize-Ribbon, go to https://github.com/ize-studio/Ize-Ribbon )
 
 Current release: **v1.1.2**
 
