@@ -277,9 +277,11 @@ int previewKeyboardLayoutIndex = 2;
 bool isAltPressed = false;
 bool rtlTextMode = false;
 unsigned long lastTypingTime = 0; 
+unsigned long lastKoreanComposeChangeMs = 0;
 char lastBaseChar = 0;            
 int accentCycleIdx = 0;           
 int lastAccentByteLen = 1;        
+const unsigned long KOREAN_COMPOSE_COALESCE_MS = 35;
 void loadSystemSettings();
 void saveSystemSettings();
 void preloadInitialImage();
@@ -611,7 +613,6 @@ int lastRenderedCursorPos = -1;
 int lastRenderedTailStart = -1;
 int lastRenderedTailLineCount = -1;
 int lastRenderedTailLineWidth = 0;
-int lastRenderedComposingLen = 0;
 bool lastRenderedTailRtl = false;
 
 WrapMetrics getWrappedMetricsInRange(const String& text, int start, int end, int maxWidth) {
@@ -2516,6 +2517,11 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         } 
         else if (isKoreanMode && getSelectedKeyboardLayoutId() == KB_KOREAN) {
           processKoreanInput(k, real, isShiftPressed, engMap, shiftMap, sizeof(engMap));
+          if (currentMode == TYPING_MODE && (cho != -1 || jung != -1)) {
+              lastKoreanComposeChangeMs = millis();
+          } else {
+              lastKoreanComposeChangeMs = 0;
+          }
         } else {
             
             String insertStr = getKeyboardMappedInput(k, isShiftPressed, isAltPressed, isCapsLockOn && !isKoreanMode, engMap, shiftMap, sizeof(engMap), real);
@@ -2542,9 +2548,23 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       
       charCounter++;
       yield();
-      if (needUpdate) break;
+      bool coalesceKoreanCompose = (needUpdate &&
+                                    currentMode == TYPING_MODE &&
+                                    (cho != -1 || jung != -1) &&
+                                    Serial.available() > 0);
+      if (needUpdate && !coalesceKoreanCompose) break;
     }
   } 
+
+  if (needUpdate &&
+      currentMode == TYPING_MODE &&
+      (cho != -1 || jung != -1) &&
+      Serial.available() == 0 &&
+      lastKoreanComposeChangeMs != 0 &&
+      (millis() - lastKoreanComposeChangeMs) < KOREAN_COMPOSE_COALESCE_MS) {
+    yield();
+    return;
+  }
 
   if (needUpdate) {
     displayIoBusy = true;
@@ -2719,7 +2739,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         int contentRight = (int)((display.width() / displayScale) - RIGHT_EDGE_MARGIN);
         int maxWidth = contentRight - MARGIN_X;
         bool canReuseTailWrap = false;
-        bool composingOnlyTailUpdate = false;
         int tailStart = fullText.lastIndexOf('\n');
         tailStart = (tailStart < 0) ? 0 : tailStart + 1;
 
@@ -2746,20 +2765,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         String composing = "";
         if (currentMode == TYPING_MODE && (cho != -1 || jung != -1)) {
             composing = ((cho != -1 && jung != -1) ? makeKorStr(cho, jung, jong) : (cho != -1 ? String(choStrs[cho]) : String(jungStrs[jung])));
-        }
-        if (!canReuseTailWrap &&
-            currentMode == TYPING_MODE &&
-            composing.length() > 0 &&
-            cursorPos == fullText.length() &&
-            lastRenderedTextLen == fullText.length() &&
-            lastRenderedCursorPos == cursorPos &&
-            tailStart == lastRenderedTailStart &&
-            rtlTextMode == lastRenderedTailRtl &&
-            !forceSafeFullTextRedraw &&
-            !doFullRefresh && !modeChanged) {
-            WrapMetrics composingMetrics = getWrappedMetricsInRange(composing, 0, composing.length(), maxWidth);
-            composingOnlyTailUpdate = (composingMetrics.lineCount == 1);
-            canReuseTailWrap = composingOnlyTailUpdate;
         }
         if (!canReuseTailWrap) adjustViewBottom();    
         
@@ -2807,26 +2812,24 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         }
         int tailLineCount = canReuseTailWrap ? lastRenderedTailLineCount : countWrappedLinesInRange(d, tailStart, d.length(), maxWidth);
         bool fastTailRender = (currentMode == TYPING_MODE &&
+                               composing.length() == 0 &&
                                cursorPos == fullText.length() &&
+                               lastRenderedCursorPos == lastRenderedTextLen &&
+                               lastRenderedTextLen >= 0 &&
+                               fullText.length() > lastRenderedTextLen &&
                                canReuseTailWrap &&
                                tailStart == lastRenderedTailStart &&
+                               tailLineCount == lastRenderedTailLineCount &&
                                rtlTextMode == lastRenderedTailRtl &&
                                !forceSafeFullTextRedraw &&
-                               !doFullRefresh && !modeChanged &&
-                               ((composing.length() == 0 &&
-                                 lastRenderedCursorPos == lastRenderedTextLen &&
-                                 lastRenderedTextLen >= 0 &&
-                                 fullText.length() > lastRenderedTextLen &&
-                                 tailLineCount == lastRenderedTailLineCount) ||
-                                (composingOnlyTailUpdate &&
-                                 tailLineCount == lastRenderedTailLineCount)));
+                               !doFullRefresh && !modeChanged);
 
         int currentY = (int)((display.height() / displayScale) - 25);
         if (fastTailRender) {
             // Bottom anchored display: with no wrap, only the lowest visible line changed.
-            int clearTop = (int)((currentY - baseFontSize - lineSpacing - 2) * displayScale);
+            int clearTop = (int)((currentY - baseFontSize - lineSpacing + 2) * displayScale);
             if (clearTop < statusBarBottom) clearTop = statusBarBottom;
-            int clearBottom = (int)((currentY + 8) * displayScale);
+            int clearBottom = (int)((currentY + 6) * displayScale);
             if (clearBottom > display.height()) clearBottom = display.height();
             int clearHeight = clearBottom - clearTop;
             int minTailClearHeight = (int)(12 * displayScale);
@@ -2995,10 +2998,9 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
             lastRenderedCursorPos = cursorPos;
             lastRenderedTailStart = fullText.lastIndexOf('\n');
             lastRenderedTailStart = (lastRenderedTailStart < 0) ? 0 : lastRenderedTailStart + 1;
-            WrapMetrics tailMetrics = getWrappedMetricsInRange(d, lastRenderedTailStart, d.length(), maxWidth);
+            WrapMetrics tailMetrics = getWrappedMetricsInRange(fullText, lastRenderedTailStart, fullText.length(), maxWidth);
             lastRenderedTailLineCount = tailMetrics.lineCount;
             lastRenderedTailLineWidth = tailMetrics.lastLineWidth;
-            lastRenderedComposingLen = composing.length();
             lastRenderedTailRtl = rtlTextMode;
             forceSafeFullTextRedraw = false;
         } else {
@@ -3007,7 +3009,6 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
             lastRenderedTailStart = -1;
             lastRenderedTailLineCount = -1;
             lastRenderedTailLineWidth = 0;
-            lastRenderedComposingLen = 0;
             forceSafeFullTextRedraw = false;
         }
 
