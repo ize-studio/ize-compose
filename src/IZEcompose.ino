@@ -13,6 +13,14 @@
 #include "soc/timer_group_reg.h"
 #include <SdFat.h>
 
+#ifndef IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
+#define IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH 1
+#endif
+
+#ifndef IZE_DIRTY_TILE_REFRESH_DEBUG
+#define IZE_DIRTY_TILE_REFRESH_DEBUG 0
+#endif
+
 
 const char* APP_ROOT_DIR = "/ize_compose";
 const char* FONT_DIR = "/ize_compose/hwalja";
@@ -34,7 +42,7 @@ const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 bool isFirmwareUpdateMode = false;
-#define FIRMWARE_VERSION "v1.1.2" // Keyboard state, Dvorak caps, and persisted settings fixes
+#define FIRMWARE_VERSION "v1.1.3" // Faster tail typing refresh and immediate file-count updates
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
 enum AppMode { TYPING_MODE, FILE_MENU_MODE, INITIAL_MODE, SEARCH_MODE, WIFI_SCAN_MODE, WIFI_PASSWORD_MODE };
@@ -45,6 +53,7 @@ public:
 };
 extern InkplateProxy display;
 InkplateProxy display(INKPLATE_1BIT); 
+
 AppMode currentMode = TYPING_MODE;
 bool needUpdate = false;
 int lastCursorY = -1; // 이전 프레임에서 커서가 있던 Y 좌표 (-1 = 전체 재렌더 필요)
@@ -96,6 +105,153 @@ struct WrapMetrics {
     int lineCount;
     int lastLineWidth;
 };
+
+#if IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
+struct IzeDirtyTileCandidate {
+    bool active = false;
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+    int strideBytes = 0;
+    int snapshotXByte = 0;
+    int snapshotBytesPerRow = 0;
+    uint8_t *snapshot = nullptr;
+};
+
+struct IzeDirtyTileStats {
+    int candidatePixels = 0;
+    int dirtyTiles = 0;
+    int dirtyMinX = 0;
+    int dirtyMinY = 0;
+    int dirtyMaxX = 0;
+    int dirtyMaxY = 0;
+    bool fallbackUsed = true;
+};
+
+IzeDirtyTileCandidate dirtyTailCandidate;
+IzeDirtyTileStats lastDirtyTailStats;
+
+void izeReleaseDirtyTileCandidate(IzeDirtyTileCandidate &c) {
+    if (c.snapshot) {
+        free(c.snapshot);
+    }
+    c = IzeDirtyTileCandidate();
+}
+
+bool izeCaptureDirtyTileCandidate(IzeDirtyTileCandidate &c, int x, int y, int w, int h) {
+    izeReleaseDirtyTileCandidate(c);
+    if (!display._partial || w <= 0 || h <= 0) return false;
+
+    int displayW = display.width();
+    int displayH = display.height();
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > displayW) w = displayW - x;
+    if (y + h > displayH) h = displayH - y;
+    if (w <= 0 || h <= 0) return false;
+
+    int strideBytes = displayW / 8;
+    int xByteStart = x / 8;
+    int xByteEnd = (x + w + 7) / 8;
+    int bytesPerRow = xByteEnd - xByteStart;
+    size_t snapshotLen = (size_t)bytesPerRow * (size_t)h;
+    uint8_t *snapshot = (uint8_t *)malloc(snapshotLen);
+    if (!snapshot) return false;
+
+    for (int row = 0; row < h; row++) {
+        memcpy(snapshot + (size_t)row * bytesPerRow,
+               display._partial + (size_t)(y + row) * strideBytes + xByteStart,
+               bytesPerRow);
+    }
+
+    c.active = true;
+    c.x = x;
+    c.y = y;
+    c.w = w;
+    c.h = h;
+    c.strideBytes = strideBytes;
+    c.snapshotXByte = xByteStart;
+    c.snapshotBytesPerRow = bytesPerRow;
+    c.snapshot = snapshot;
+    return true;
+}
+
+static inline bool izeSnapshotBit(const IzeDirtyTileCandidate &c, int px, int py) {
+    int relX = px - c.snapshotXByte * 8;
+    int relY = py - c.y;
+    int byteIndex = relY * c.snapshotBytesPerRow + relX / 8;
+    uint8_t mask = 1 << (relX & 7);
+    return (c.snapshot[byteIndex] & mask) != 0;
+}
+
+static inline bool izeCurrentFramebufferBit(const IzeDirtyTileCandidate &c, int px, int py) {
+    int byteIndex = py * c.strideBytes + px / 8;
+    uint8_t mask = 1 << (px & 7);
+    return (display._partial[byteIndex] & mask) != 0;
+}
+
+bool izeComputeDirtyTiles(IzeDirtyTileCandidate &c, IzeDirtyTileStats &stats) {
+    stats = IzeDirtyTileStats();
+    if (!c.active || !c.snapshot || !display._partial) return false;
+
+    const int tileW = 16;
+    const int tileH = 8;
+    stats.candidatePixels = c.w * c.h;
+    bool anyDirty = false;
+
+    for (int ty = c.y; ty < c.y + c.h; ty += tileH) {
+        int tileBottom = min(ty + tileH, c.y + c.h);
+        for (int tx = c.x; tx < c.x + c.w; tx += tileW) {
+            int tileRight = min(tx + tileW, c.x + c.w);
+            bool tileDirty = false;
+            for (int py = ty; py < tileBottom && !tileDirty; py++) {
+                for (int px = tx; px < tileRight; px++) {
+                    if (izeSnapshotBit(c, px, py) != izeCurrentFramebufferBit(c, px, py)) {
+                        tileDirty = true;
+                        break;
+                    }
+                }
+            }
+            if (tileDirty) {
+                stats.dirtyTiles++;
+                if (!anyDirty) {
+                    stats.dirtyMinX = tx;
+                    stats.dirtyMinY = ty;
+                    stats.dirtyMaxX = tileRight;
+                    stats.dirtyMaxY = tileBottom;
+                    anyDirty = true;
+                } else {
+                    stats.dirtyMinX = min(stats.dirtyMinX, tx);
+                    stats.dirtyMinY = min(stats.dirtyMinY, ty);
+                    stats.dirtyMaxX = max(stats.dirtyMaxX, tileRight);
+                    stats.dirtyMaxY = max(stats.dirtyMaxY, tileBottom);
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool izeTryDirtyTilePanelRefresh(const IzeDirtyTileStats &) {
+    // Inkplate's public API in this project exposes display() and full-screen
+    // partialUpdate(), but no rectangle/tile partial refresh entry point. Keep
+    // this isolated so any future Inkplate-version-sensitive panel call can be
+    // added here without touching the renderer.
+    return false;
+}
+
+void izeDebugDirtyTileStats(const IzeDirtyTileStats &stats) {
+#if IZE_DIRTY_TILE_REFRESH_DEBUG
+    Serial.print("[dirty-tail] candidate=");
+    Serial.print(stats.candidatePixels);
+    Serial.print("px tiles=");
+    Serial.print(stats.dirtyTiles);
+    Serial.print(" fallback=");
+    Serial.println(stats.fallbackUsed ? "yes" : "no");
+#endif
+}
+#endif
 
 const int MAX_DOCUMENT_FILES = 256;
 FileInfo files[MAX_DOCUMENT_FILES + 1]; 
@@ -1029,6 +1185,13 @@ void loadFile() {
         f.close();
         cursorPos = fullText.length();
         forceSafeFullTextRedraw = true;
+        sharedCharCount = getTrueLength(fullText);
+        sharedWordCount = getWordCount(fullText);
+        charwordcount = (countMode == 1) ? sharedWordCount : sharedCharCount;
+        calcBuffer = fullText;
+        needCountUpdate = true;
+        lastCountRequestMs = millis();
+        statusBarNeedsUpdate = true;
     }
 }
 
@@ -2382,6 +2545,9 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
   if (needUpdate) {
     displayIoBusy = true;
+#if IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
+    bool dirtyTailRefreshCandidate = false;
+#endif
     rtlTextMode = isKoreanMode && keyboardLayoutIsRightToLeft(getSelectedKeyboardLayoutId());
     bool modeChanged = (currentMode != lastMode || currentNetSubMode != lastNetSubMode);
     unsigned long countNowMs = millis();
@@ -2640,10 +2806,28 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         int currentY = (int)((display.height() / displayScale) - 25);
         if (fastTailRender) {
             // Bottom anchored display: with no wrap, only the lowest visible line changed.
-            int clearTop = (int)((currentY - baseFontSize - lineSpacing + 2) * displayScale);
+            int clearTop = (int)((currentY - baseFontSize - lineSpacing - 2) * displayScale);
             if (clearTop < statusBarBottom) clearTop = statusBarBottom;
-            display.fillRect(0, clearTop, display.width(), display.height() - clearTop, WHITE);
+            int clearBottom = (int)((currentY + 8) * displayScale);
+            if (clearBottom > display.height()) clearBottom = display.height();
+            int clearHeight = clearBottom - clearTop;
+            int minTailClearHeight = (int)(12 * displayScale);
+            if (clearHeight < minTailClearHeight) clearHeight = minTailClearHeight;
+            if (clearTop + clearHeight > display.height()) clearHeight = display.height() - clearTop;
+#if IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
+            dirtyTailRefreshCandidate = izeCaptureDirtyTileCandidate(
+                dirtyTailCandidate,
+                0,
+                clearTop,
+                display.width(),
+                clearHeight
+            );
+#endif
+            display.fillRect(0, clearTop, display.width(), clearHeight, WHITE);
         } else {
+#if IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
+            izeReleaseDirtyTileCandidate(dirtyTailCandidate);
+#endif
             // Enter or wrapping shifts lines above the cursor, so redraw safely.
             display.fillRect(0, statusBarBottom, display.width(), display.height() - statusBarBottom, WHITE);
         }
@@ -2837,6 +3021,9 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
     
     bool drawStatusBar = (currentMode == TYPING_MODE || currentMode == SEARCH_MODE) &&
                          (statusBarNeedsUpdate || modeChanged || currentMode == SEARCH_MODE || savedMessageVisible);
+#if IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
+    if (drawStatusBar) dirtyTailRefreshCandidate = false;
+#endif
     if (drawStatusBar) {
         int hY = 30;
         
@@ -2902,7 +3089,31 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
     
     if (CalcTaskHandle) vTaskSuspend(CalcTaskHandle);
     if (doFullRefresh) display.display();
-    else display.partialUpdate(false);
+    else {
+#if IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
+        bool dirtyRefreshHandled = false;
+        if (dirtyTailRefreshCandidate) {
+#if IZE_DIRTY_TILE_REFRESH_DEBUG
+            if (izeComputeDirtyTiles(dirtyTailCandidate, lastDirtyTailStats)) {
+                lastDirtyTailStats.fallbackUsed = false;
+                izeDebugDirtyTileStats(lastDirtyTailStats);
+            }
+#endif
+            // Inkplate exposes only full-screen partial update here. Leaving the
+            // panel powered between consecutive tail updates saves some latency.
+            display.partialUpdate(false, true);
+            dirtyRefreshHandled = true;
+        } else if (izeComputeDirtyTiles(dirtyTailCandidate, lastDirtyTailStats)) {
+            dirtyRefreshHandled = izeTryDirtyTilePanelRefresh(lastDirtyTailStats);
+            lastDirtyTailStats.fallbackUsed = !dirtyRefreshHandled;
+            izeDebugDirtyTileStats(lastDirtyTailStats);
+        }
+        izeReleaseDirtyTileCandidate(dirtyTailCandidate);
+        if (!dirtyRefreshHandled) display.partialUpdate(false);
+#else
+        display.partialUpdate(false);
+#endif
+    }
     if (CalcTaskHandle) vTaskResume(CalcTaskHandle);
     display.resetInternalCounter();
     displayIoBusy = false;
