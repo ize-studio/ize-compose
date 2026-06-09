@@ -77,7 +77,8 @@ String calcBuffer = "";
 volatile int sharedWordCount = 0;               
 volatile int sharedCharCount = 0;
 unsigned long lastCountRequestMs = 0;
-const unsigned long COUNT_UPDATE_INTERVAL_MS = 500;
+const unsigned long COUNT_UPDATE_INTERVAL_MS = 100;
+const unsigned long BATTERY_REFRESH_INTERVAL_MS = 5000;
 AppMode lastMode = TYPING_MODE; 
 NetworkSubMode lastNetSubMode = NET_MAIN;
 
@@ -1205,7 +1206,7 @@ void createNewDoc() {
 void CalculationTask(void * pvParameters) {
     for(;;) {
         unsigned long nowMs = millis();
-        if (statusBarNeedsUpdate && (!cachedBatteryValid || nowMs - lastBatteryReadMs >= 30000UL) &&
+        if (statusBarNeedsUpdate && (!cachedBatteryValid || nowMs - lastBatteryReadMs >= BATTERY_REFRESH_INTERVAL_MS) &&
             !displayIoBusy && currentNetSubMode == NET_MAIN && updateState == UPD_NONE &&
             (currentMode == TYPING_MODE || currentMode == SEARCH_MODE)) {
             float batV = display.readBattery();
@@ -1237,7 +1238,7 @@ void CalculationTask(void * pvParameters) {
             needCountUpdate = false;
             calcBufferInUse = false;
         }
-        vTaskDelay(10); 
+        vTaskDelay(5); 
     }
 }
 
@@ -2205,7 +2206,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       }
       needUpdate = true;
       statusBarNeedsUpdate = true;
-      continue; 
+      break; 
     }
     if (currentNetSubMode != NET_MAIN) {
         if (currentNetSubMode == NET_BT_SELECT) {
@@ -2540,6 +2541,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       
       charCounter++;
       yield();
+      if (needUpdate) break;
     }
   } 
 
@@ -3076,7 +3078,7 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
 
         
         unsigned long nowStatusMs = millis();
-        if (!statusBatteryValid || nowStatusMs - lastStatusBatteryFetchMs >= 30000UL) {
+        if (!statusBatteryValid || nowStatusMs - lastStatusBatteryFetchMs >= BATTERY_REFRESH_INTERVAL_MS) {
             statusBatteryPct = cachedBatteryPct;
             statusBatteryValid = cachedBatteryValid;
             lastStatusBatteryFetchMs = nowStatusMs;
