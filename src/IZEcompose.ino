@@ -611,6 +611,7 @@ int lastRenderedCursorPos = -1;
 int lastRenderedTailStart = -1;
 int lastRenderedTailLineCount = -1;
 int lastRenderedTailLineWidth = 0;
+int lastRenderedComposingLen = 0;
 bool lastRenderedTailRtl = false;
 
 WrapMetrics getWrappedMetricsInRange(const String& text, int start, int end, int maxWidth) {
@@ -2718,6 +2719,7 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         int contentRight = (int)((display.width() / displayScale) - RIGHT_EDGE_MARGIN);
         int maxWidth = contentRight - MARGIN_X;
         bool canReuseTailWrap = false;
+        bool composingOnlyTailUpdate = false;
         int tailStart = fullText.lastIndexOf('\n');
         tailStart = (tailStart < 0) ? 0 : tailStart + 1;
 
@@ -2740,14 +2742,26 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
                                     lastRenderedTailLineWidth + appendedMetrics.lastLineWidth <= maxWidth);
             }
         }
-        if (!canReuseTailWrap) adjustViewBottom();    
-        
-        
         String d = fullText;
         String composing = "";
         if (currentMode == TYPING_MODE && (cho != -1 || jung != -1)) {
             composing = ((cho != -1 && jung != -1) ? makeKorStr(cho, jung, jong) : (cho != -1 ? String(choStrs[cho]) : String(jungStrs[jung])));
         }
+        if (!canReuseTailWrap &&
+            currentMode == TYPING_MODE &&
+            composing.length() > 0 &&
+            cursorPos == fullText.length() &&
+            lastRenderedTextLen == fullText.length() &&
+            lastRenderedCursorPos == cursorPos &&
+            tailStart == lastRenderedTailStart &&
+            rtlTextMode == lastRenderedTailRtl &&
+            !forceSafeFullTextRedraw &&
+            !doFullRefresh && !modeChanged) {
+            WrapMetrics composingMetrics = getWrappedMetricsInRange(composing, 0, composing.length(), maxWidth);
+            composingOnlyTailUpdate = (composingMetrics.lineCount == 1);
+            canReuseTailWrap = composingOnlyTailUpdate;
+        }
+        if (!canReuseTailWrap) adjustViewBottom();    
         
         int targetIdx = cursorPos + composing.length();
         d = d.substring(0, cursorPos) + composing + d.substring(cursorPos);
@@ -2793,17 +2807,19 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         }
         int tailLineCount = canReuseTailWrap ? lastRenderedTailLineCount : countWrappedLinesInRange(d, tailStart, d.length(), maxWidth);
         bool fastTailRender = (currentMode == TYPING_MODE &&
-                               composing.length() == 0 &&
                                cursorPos == fullText.length() &&
-                               lastRenderedCursorPos == lastRenderedTextLen &&
-                               lastRenderedTextLen >= 0 &&
-                               fullText.length() > lastRenderedTextLen &&
                                canReuseTailWrap &&
                                tailStart == lastRenderedTailStart &&
-                               tailLineCount == lastRenderedTailLineCount &&
                                rtlTextMode == lastRenderedTailRtl &&
                                !forceSafeFullTextRedraw &&
-                               !doFullRefresh && !modeChanged);
+                               !doFullRefresh && !modeChanged &&
+                               ((composing.length() == 0 &&
+                                 lastRenderedCursorPos == lastRenderedTextLen &&
+                                 lastRenderedTextLen >= 0 &&
+                                 fullText.length() > lastRenderedTextLen &&
+                                 tailLineCount == lastRenderedTailLineCount) ||
+                                (composingOnlyTailUpdate &&
+                                 tailLineCount == lastRenderedTailLineCount)));
 
         int currentY = (int)((display.height() / displayScale) - 25);
         if (fastTailRender) {
@@ -2974,14 +2990,15 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
         }
         lastSy = 0;
 
-        if (currentMode == TYPING_MODE && composing.length() == 0) {
+        if (currentMode == TYPING_MODE) {
             lastRenderedTextLen = fullText.length();
             lastRenderedCursorPos = cursorPos;
             lastRenderedTailStart = fullText.lastIndexOf('\n');
             lastRenderedTailStart = (lastRenderedTailStart < 0) ? 0 : lastRenderedTailStart + 1;
-            WrapMetrics tailMetrics = getWrappedMetricsInRange(fullText, lastRenderedTailStart, fullText.length(), maxWidth);
+            WrapMetrics tailMetrics = getWrappedMetricsInRange(d, lastRenderedTailStart, d.length(), maxWidth);
             lastRenderedTailLineCount = tailMetrics.lineCount;
             lastRenderedTailLineWidth = tailMetrics.lastLineWidth;
+            lastRenderedComposingLen = composing.length();
             lastRenderedTailRtl = rtlTextMode;
             forceSafeFullTextRedraw = false;
         } else {
@@ -2990,6 +3007,7 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
             lastRenderedTailStart = -1;
             lastRenderedTailLineCount = -1;
             lastRenderedTailLineWidth = 0;
+            lastRenderedComposingLen = 0;
             forceSafeFullTextRedraw = false;
         }
 
