@@ -277,11 +277,9 @@ int previewKeyboardLayoutIndex = 2;
 bool isAltPressed = false;
 bool rtlTextMode = false;
 unsigned long lastTypingTime = 0; 
-unsigned long lastKoreanComposeChangeMs = 0;
 char lastBaseChar = 0;            
 int accentCycleIdx = 0;           
 int lastAccentByteLen = 1;        
-const unsigned long KOREAN_COMPOSE_COALESCE_MS = 35;
 void loadSystemSettings();
 void saveSystemSettings();
 void preloadInitialImage();
@@ -2064,6 +2062,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         return;
     }
   
+  bool forceImmediateRender = false;
   while (Serial.available() > 0) {
 
     byte k = Serial.read(); 
@@ -2208,6 +2207,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       }
       needUpdate = true;
       statusBarNeedsUpdate = true;
+      forceImmediateRender = true;
       break; 
     }
     if (currentNetSubMode != NET_MAIN) {
@@ -2517,11 +2517,6 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         } 
         else if (isKoreanMode && getSelectedKeyboardLayoutId() == KB_KOREAN) {
           processKoreanInput(k, real, isShiftPressed, engMap, shiftMap, sizeof(engMap));
-          if (currentMode == TYPING_MODE && (cho != -1 || jung != -1)) {
-              lastKoreanComposeChangeMs = millis();
-          } else {
-              lastKoreanComposeChangeMs = 0;
-          }
         } else {
             
             String insertStr = getKeyboardMappedInput(k, isShiftPressed, isAltPressed, isCapsLockOn && !isKoreanMode, engMap, shiftMap, sizeof(engMap), real);
@@ -2548,23 +2543,9 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       
       charCounter++;
       yield();
-      bool coalesceKoreanCompose = (needUpdate &&
-                                    currentMode == TYPING_MODE &&
-                                    (cho != -1 || jung != -1) &&
-                                    Serial.available() > 0);
-      if (needUpdate && !coalesceKoreanCompose) break;
+      if (forceImmediateRender && needUpdate) break;
     }
   } 
-
-  if (needUpdate &&
-      currentMode == TYPING_MODE &&
-      (cho != -1 || jung != -1) &&
-      Serial.available() == 0 &&
-      lastKoreanComposeChangeMs != 0 &&
-      (millis() - lastKoreanComposeChangeMs) < KOREAN_COMPOSE_COALESCE_MS) {
-    yield();
-    return;
-  }
 
   if (needUpdate) {
     displayIoBusy = true;
