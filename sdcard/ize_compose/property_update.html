@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IZE Compose Property and Update</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f4f4f0;color:#151515;margin:0;padding:24px}
+    main{max-width:980px;margin:0 auto}
+    h1{margin:0 0 6px;font-size:28px}
+    h2{font-size:18px;margin:0 0 14px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .card{background:#fff;border:1px solid #bbb;padding:18px;border-radius:6px}
+    .wide{grid-column:1/-1}
+    label{display:block;margin:12px 0 6px;font-weight:bold}
+    input,select,button{width:100%;box-sizing:border-box;padding:10px;font-size:15px}
+    button{background:#111;color:#fff;border:0;border-radius:4px;margin-top:12px;cursor:pointer}
+    button:disabled{background:#777}
+    .status,.empty{color:#555;font-size:14px;min-height:20px}
+    .note{color:#555;font-size:13px;line-height:1.45;margin-top:8px}
+    .range-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+    .range-value{min-width:90px;text-align:right;font-size:14px;color:#333}
+    .radio-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}
+    .radio-row label{display:flex;align-items:center;gap:8px;margin:0;font-weight:normal}
+    .radio-row input{width:auto}
+    .stack{display:grid;gap:18px}
+    .subgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .subgrid .full{grid-column:1/-1}
+    select[size]{min-height:220px}
+    .muted{opacity:.55}
+    @media(max-width:760px){.grid,.subgrid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>IZE Compose Property and Update</h1>
+    <section class="grid">
+      <div class="card wide">
+        <h2>PIN</h2>
+        <label for="pin">4-digit PIN</label>
+        <input type="password" id="pin" inputmode="numeric" maxlength="4" placeholder="PIN" required>
+        <p class="note">This PIN is required before settings, firmware updates, font uploads, and image uploads are applied.</p>
+      </div>
+
+      <div class="card wide">
+        <h2>Environment Settings</h2>
+        <div class="stack">
+          <div class="subgrid">
+            <div>
+              <label for="sleepTimer">Sleep Timer</label>
+              <div class="range-row">
+                <input type="range" id="sleepTimer" min="0" max="6" step="1">
+                <span class="range-value" id="sleepTimerValue"></span>
+              </div>
+            </div>
+
+            <div>
+              <label for="fontScale">Text Size</label>
+              <div class="range-row">
+                <input type="range" id="fontScale" min="5" max="35" step="1">
+                <span class="range-value" id="fontScaleValue"></span>
+              </div>
+            </div>
+
+            <div>
+              <label for="lineSpacing">Line Space</label>
+              <div class="range-row">
+                <input type="range" id="lineSpacing" min="0" max="30" step="1">
+                <span class="range-value" id="lineSpacingValue"></span>
+              </div>
+            </div>
+
+            <div>
+              <label for="letterSpacing">Character Space</label>
+              <div class="range-row">
+                <input type="range" id="letterSpacing" min="-5" max="10" step="1">
+                <span class="range-value" id="letterSpacingValue"></span>
+              </div>
+            </div>
+
+            <div>
+              <label for="typingSpeed">Speed</label>
+              <input type="number" id="typingSpeed" min="0" max="2000" step="1">
+              <p class="note">Default: 0. Changing this value can make typing less comfortable.</p>
+            </div>
+
+            <div>
+              <label for="refreshLimit">Refresh</label>
+              <input type="number" id="refreshLimit" min="0" max="2000" step="1">
+              <p class="note">Default: 2000. Changing this value can make refresh behavior less comfortable.</p>
+            </div>
+
+            <div class="full">
+              <label>English Keyboard</label>
+              <div class="radio-row" id="englishLayoutGroup">
+                <label><input type="radio" name="englishLayout" value="1">Qwerty</label>
+                <label><input type="radio" name="englishLayout" value="0">Dvorak</label>
+              </div>
+            </div>
+
+            <div class="full">
+              <label for="language">Language</label>
+              <select id="language" size="10"></select>
+            </div>
+          </div>
+
+          <button id="settingsBtn" onclick="saveSettings()">Save</button>
+          <p class="status" id="settingsStatus">Loading...</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Firmware Update</h2>
+        <label for="fwFile">Firmware file</label>
+        <input type="file" id="fwFile" accept=".bin">
+        <button id="fwBtn" onclick="uploadFirmware()">Upload and Update</button>
+        <p class="status" id="fwStatus">Waiting...</p>
+      </div>
+
+      <div class="card">
+        <h2>Font / Image Upload</h2>
+        <label for="resFile">File</label>
+        <input type="file" id="resFile" accept=".bin,.png">
+        <p class="note">The filename decides the target automatically. Examples: initial.png, hwalja_hangul.bin, NanumGothic_hangul.bin, NanumGothic_jamo.bin.</p>
+        <button id="resBtn" onclick="uploadResource()">Upload to SD</button>
+        <p class="status" id="resStatus">Waiting...</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const sleepLabels=['30 sec','1 min','5 min','10 min','30 min','1 hr','OFF'];
+
+    function bindRange(id, render) {
+      const el = document.getElementById(id);
+      const out = document.getElementById(id + 'Value');
+      const draw = () => out.textContent = render(el.value);
+      el.addEventListener('input', draw);
+      draw();
+    }
+
+    bindRange('sleepTimer', v => sleepLabels[Number(v)] || 'OFF');
+    bindRange('fontScale', v => (Number(v) / 10).toFixed(1) + 'x');
+    bindRange('lineSpacing', v => String(v));
+    bindRange('letterSpacing', v => String(v));
+
+    function getPin() {
+      return document.getElementById('pin').value.trim();
+    }
+
+    function syncEnglishState() {
+      const isEnglish = document.getElementById('language').value === 'english';
+      const wrap = document.getElementById('englishLayoutGroup');
+      wrap.classList.toggle('muted', !isEnglish);
+      wrap.querySelectorAll('input').forEach(i => i.disabled = !isEnglish);
+    }
+
+    async function loadSettings() {
+      const status = document.getElementById('settingsStatus');
+      try {
+        const res = await fetch('/settings.json', { cache: 'no-store' });
+        const data = await res.json();
+
+        document.getElementById('sleepTimer').value = data.sleepTimer;
+        document.getElementById('fontScale').value = data.fontScale;
+        document.getElementById('lineSpacing').value = data.lineSpacing;
+        document.getElementById('letterSpacing').value = data.letterSpacing;
+        document.getElementById('typingSpeed').value = data.typingSpeed;
+        document.getElementById('refreshLimit').value = data.refreshLimit;
+        document.querySelector(`input[name="englishLayout"][value="${data.englishLayout}"]`).checked = true;
+
+        const language = document.getElementById('language');
+        language.innerHTML = '';
+        data.languages.forEach(item => {
+          const option = document.createElement('option');
+          option.value = item.value;
+          option.textContent = item.label;
+          if (item.value === data.language) option.selected = true;
+          language.appendChild(option);
+        });
+
+        ['sleepTimer', 'fontScale', 'lineSpacing', 'letterSpacing'].forEach(id => {
+          document.getElementById(id).dispatchEvent(new Event('input'));
+        });
+
+        syncEnglishState();
+        language.addEventListener('change', syncEnglishState, { once: true });
+        language.addEventListener('change', syncEnglishState);
+        status.textContent = 'Waiting...';
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    async function saveSettings() {
+      const pin = getPin();
+      const status = document.getElementById('settingsStatus');
+      const btn = document.getElementById('settingsBtn');
+      if (!/^\d{4}$/.test(pin)) {
+        status.textContent = 'Enter the 4-digit PIN.';
+        return;
+      }
+      const english = document.querySelector('input[name="englishLayout"]:checked').value;
+      const body = new URLSearchParams({
+        pin,
+        sleepTimer: document.getElementById('sleepTimer').value,
+        fontScale: document.getElementById('fontScale').value,
+        lineSpacing: document.getElementById('lineSpacing').value,
+        letterSpacing: document.getElementById('letterSpacing').value,
+        typingSpeed: document.getElementById('typingSpeed').value,
+        refreshLimit: document.getElementById('refreshLimit').value,
+        englishLayout: english,
+        language: document.getElementById('language').value
+      });
+      btn.disabled = true;
+      status.textContent = 'Saving...';
+      try {
+        const res = await fetch('/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+          body: body.toString()
+        });
+        const text = await res.text();
+        status.textContent = text || 'Done.';
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function sendUpload(inputId, statusId, buttonId, targetName) {
+      const input = document.getElementById(inputId);
+      const status = document.getElementById(statusId);
+      const btn = document.getElementById(buttonId);
+      if (!input.files.length) {
+        status.textContent = 'Select a file.';
+        return;
+      }
+      const pin = getPin();
+      if (!/^\d{4}$/.test(pin)) {
+        status.textContent = 'Enter the 4-digit PIN.';
+        return;
+      }
+      const file = input.files[0];
+      btn.disabled = true;
+      status.textContent = 'Uploading...';
+      const fd = new FormData();
+      fd.append('file', file, targetName || file.name);
+      try {
+        const res = await fetch('/update', {
+          method: 'POST',
+          headers: { 'X-OTA-PIN': pin },
+          body: fd
+        });
+        const text = await res.text();
+        status.textContent = text || 'Done.';
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function uploadFirmware() {
+      sendUpload('fwFile', 'fwStatus', 'fwBtn', 'izefirmware.bin');
+    }
+
+    function uploadResource() {
+      sendUpload('resFile', 'resStatus', 'resBtn', '');
+    }
+
+    loadSettings();
+  </script>
+</body>
+</html>

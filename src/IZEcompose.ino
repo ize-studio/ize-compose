@@ -28,6 +28,8 @@ const char* FIRMWARE_DIR = "/ize_compose/upload";
 const char* INITIAL_IMAGE_PATH = "/ize_compose/initial.png";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
+const char* WEB_PROPERTY_PAGE_PATH = "/ize_compose/property_update.html";
+const char* SETTINGS_BACKUP_PATH = "/ize_compose/settings_backup.json";
 // Minimal English fallback used only before SD fonts load or when an asset is missing.
 const uint8_t* font_ptr = u8g2_font_5x7_tf;
 const uint8_t* font_latin_ptr = u8g2_font_5x7_tf;
@@ -42,7 +44,7 @@ const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 bool isFirmwareUpdateMode = false;
-#define FIRMWARE_VERSION "v1.1.3" // Faster tail typing refresh and immediate file-count updates
+#define FIRMWARE_VERSION "v1.2.0" // Web-only environment settings and menu restructuring
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
 enum AppMode { TYPING_MODE, FILE_MENU_MODE, INITIAL_MODE, SEARCH_MODE, WIFI_SCAN_MODE, WIFI_PASSWORD_MODE };
@@ -56,12 +58,13 @@ InkplateProxy display(INKPLATE_1BIT);
 
 AppMode currentMode = TYPING_MODE;
 bool needUpdate = false;
-int lastCursorY = -1; // 이전 프레임에서 커서가 있던 Y 좌표 (-1 = 전체 재렌더 필요)
+int lastCursorY = -1; // Last cursor Y from previous frame; -1 forces full redraw.
 bool isSignatureChecked = false;
 bool isSignatureValid = false;
 bool isUpdating = false;             
 unsigned long lastActivityTime = 0;
 bool webServerUpdateOnly = false;
+String getKeyboardLayoutIdString(KeyboardLayoutId id);
 #include "insoe.h"
 void handleDownload(); 
 void handleRoot();
@@ -69,6 +72,8 @@ void handleDelete();
 void handleRead();
 void handleTextUpload();
 void handleTextUploadComplete();
+void handleSettingsJson();
+void handleSettingsSave();
 
 TaskHandle_t CalcTaskHandle;
 volatile bool needCountUpdate = false; 
@@ -282,6 +287,9 @@ int accentCycleIdx = 0;
 int lastAccentByteLen = 1;        
 void loadSystemSettings();
 void saveSystemSettings();
+bool writeSettingsBackupFile();
+bool restoreSettingsFromBackup();
+String getKeyboardLayoutIdString(KeyboardLayoutId id);
 void preloadInitialImage();
 void refreshFileList();
 void loadFile();
@@ -1390,6 +1398,7 @@ void setup() {
 
 void saveSystemSettings() {
     prefs.begin("rupert", false);
+    prefs.putBool("cfgInit", true);
     prefs.putBool("isKor", isKoreanMode);
     prefs.putBool("isCaps", isCapsLockOn);
     prefs.putInt("fIndex", rightFileIndex);
@@ -1405,10 +1414,12 @@ void saveSystemSettings() {
     prefs.putInt("refresh", refreshLimit);
     prefs.putInt("sleep", autoSleepIndex);
     prefs.end();
+    writeSettingsBackupFile();
 }
 
 void loadSystemSettings() {
     prefs.begin("rupert", true);
+    bool configInitialized = prefs.getBool("cfgInit", false);
     isKoreanMode = prefs.getBool("isKor", false);
     isCapsLockOn = prefs.getBool("isCaps", false);
     rightFileIndex = prefs.getInt("fIndex", 0);
@@ -1429,12 +1440,297 @@ void loadSystemSettings() {
     letterSpacing = prefs.getInt("letterSp", 0);
     if (letterSpacing < -5 || letterSpacing > 10) letterSpacing = 0;
     typingSpeed = prefs.getInt("typeSpd", 0);
-    if (typingSpeed < 0 || typingSpeed > 10) typingSpeed = 0;
+    if (typingSpeed < 0 || typingSpeed > 2000) typingSpeed = 0;
     refreshLimit = prefs.getInt("refresh", 2000);
-    if (refreshLimit < 0 || refreshLimit > 5000) refreshLimit = 2000;
+    if (refreshLimit < 0 || refreshLimit > 2000) refreshLimit = 2000;
     autoSleepIndex = prefs.getInt("sleep", 2);
     if (autoSleepIndex < 0 || autoSleepIndex > 6) autoSleepIndex = 2;
     prefs.end();
+    if (!configInitialized && restoreSettingsFromBackup()) {
+        saveSystemSettings();
+    }
+}
+
+String jsonEscape(const String& input) {
+    String out = "";
+    out.reserve(input.length() + 8);
+    for (int i = 0; i < input.length(); i++) {
+        char c = input[i];
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '\"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out += c; break;
+        }
+    }
+    return out;
+}
+
+bool extractJsonIntValue(const String& json, const char* key, int& outValue) {
+    String token = "\"" + String(key) + "\":";
+    int pos = json.indexOf(token);
+    if (pos < 0) return false;
+    pos += token.length();
+    while (pos < json.length() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r' || json[pos] == '\t')) pos++;
+    int end = pos;
+    if (end < json.length() && json[end] == '-') end++;
+    while (end < json.length() && isDigit(json[end])) end++;
+    if (end <= pos) return false;
+    outValue = json.substring(pos, end).toInt();
+    return true;
+}
+
+bool extractJsonBoolValue(const String& json, const char* key, bool& outValue) {
+    String token = "\"" + String(key) + "\":";
+    int pos = json.indexOf(token);
+    if (pos < 0) return false;
+    pos += token.length();
+    while (pos < json.length() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r' || json[pos] == '\t')) pos++;
+    if (json.startsWith("true", pos)) {
+        outValue = true;
+        return true;
+    }
+    if (json.startsWith("false", pos)) {
+        outValue = false;
+        return true;
+    }
+    return false;
+}
+
+bool extractJsonStringValue(const String& json, const char* key, String& outValue) {
+    String token = "\"" + String(key) + "\":\"";
+    int pos = json.indexOf(token);
+    if (pos < 0) return false;
+    pos += token.length();
+    String result = "";
+    while (pos < json.length()) {
+        char c = json[pos++];
+        if (c == '\\' && pos < json.length()) {
+            char esc = json[pos++];
+            switch (esc) {
+                case '\\': result += '\\'; break;
+                case '\"': result += '\"'; break;
+                case 'n': result += '\n'; break;
+                case 'r': result += '\r'; break;
+                case 't': result += '\t'; break;
+                default: result += esc; break;
+            }
+        } else if (c == '\"') {
+            outValue = result;
+            return true;
+        } else {
+            result += c;
+        }
+    }
+    return false;
+}
+
+bool writeSettingsBackupFile() {
+    if (!ensureIzeComposeDirs()) return false;
+    SdFile file;
+    if (!file.open(SETTINGS_BACKUP_PATH, O_WRONLY | O_CREAT | O_TRUNC)) return false;
+
+    String json = "{\n";
+    json += "  \"isKoreanMode\": " + String(isKoreanMode ? "true" : "false") + ",\n";
+    json += "  \"englishLayoutIndex\": " + String(englishLayoutIndex) + ",\n";
+    json += "  \"keyboardLayoutIndex\": " + String(keyboardLayoutIndex) + ",\n";
+    json += "  \"displayScaleTenths\": " + String((int)round(displayScale * 10.0f)) + ",\n";
+    json += "  \"lineSpacing\": " + String(lineSpacing) + ",\n";
+    json += "  \"letterSpacing\": " + String(letterSpacing) + ",\n";
+    json += "  \"typingSpeed\": " + String(typingSpeed) + ",\n";
+    json += "  \"refreshLimit\": " + String(refreshLimit) + ",\n";
+    json += "  \"autoSleepIndex\": " + String(autoSleepIndex) + ",\n";
+    json += "  \"countMode\": " + String(countMode) + ",\n";
+    json += "  \"currentFontSlot\": " + String(currentFontSlot) + ",\n";
+    json += "  \"currentFileName\": \"" + jsonEscape(currentFileName) + "\"\n";
+    json += "}\n";
+
+    bool ok = file.print(json) > 0;
+    file.close();
+    return ok;
+}
+
+bool restoreSettingsFromBackup() {
+    SdFile file;
+    if (!file.open(SETTINGS_BACKUP_PATH, O_RDONLY)) return false;
+
+    String json = "";
+    while (file.available()) {
+        char chunk[256];
+        int readLen = file.read(chunk, sizeof(chunk));
+        if (readLen <= 0) break;
+        for (int i = 0; i < readLen; i++) json += chunk[i];
+        yield();
+    }
+    file.close();
+    if (json.length() == 0) return false;
+
+    int intValue = 0;
+    bool boolValue = false;
+    String stringValue = "";
+
+    if (extractJsonBoolValue(json, "isKoreanMode", boolValue)) isKoreanMode = boolValue;
+    if (extractJsonIntValue(json, "englishLayoutIndex", intValue) && intValue >= 0 && intValue <= 1) englishLayoutIndex = intValue;
+    if (extractJsonIntValue(json, "keyboardLayoutIndex", intValue) && intValue >= 2 && intValue < KEYBOARD_LAYOUT_TOTAL) keyboardLayoutIndex = intValue;
+    if (extractJsonIntValue(json, "displayScaleTenths", intValue) && intValue >= 5 && intValue <= 35) displayScale = intValue / 10.0f;
+    if (extractJsonIntValue(json, "lineSpacing", intValue) && intValue >= 0 && intValue <= 30) lineSpacing = intValue;
+    if (extractJsonIntValue(json, "letterSpacing", intValue) && intValue >= -5 && intValue <= 10) letterSpacing = intValue;
+    if (extractJsonIntValue(json, "typingSpeed", intValue) && intValue >= 0 && intValue <= 2000) typingSpeed = intValue;
+    if (extractJsonIntValue(json, "refreshLimit", intValue) && intValue >= 0 && intValue <= 2000) refreshLimit = intValue;
+    if (extractJsonIntValue(json, "autoSleepIndex", intValue) && intValue >= 0 && intValue <= 6) autoSleepIndex = intValue;
+    if (extractJsonIntValue(json, "countMode", intValue) && intValue >= 0 && intValue <= 2) countMode = intValue;
+    if (extractJsonIntValue(json, "currentFontSlot", intValue) && intValue >= 0) currentFontSlot = intValue;
+    if (extractJsonStringValue(json, "currentFileName", stringValue) && stringValue.length() > 0) currentFileName = stringValue;
+
+    previewEnglishLayoutIndex = englishLayoutIndex;
+    previewKeyboardLayoutIndex = keyboardLayoutIndex;
+    return true;
+}
+
+String getCurrentLanguageMenuLabel() {
+    if (!isKoreanMode) return "English";
+    return getKeyboardModeName();
+}
+
+String getKeyboardLayoutIdString(KeyboardLayoutId id) {
+    for (uint8_t i = 0; i < KEYBOARD_LAYOUT_TOTAL; i++) {
+        if (KEYBOARD_LAYOUTS[i].id == id) return String(i);
+    }
+    return "0";
+}
+
+bool parseIntArgBounded(const String& value, int minValue, int maxValue, int& outValue) {
+    if (value.length() == 0) return false;
+    for (int i = 0; i < value.length(); i++) {
+        if (!isDigit(value[i]) && !(i == 0 && value[i] == '-')) return false;
+    }
+    int parsed = value.toInt();
+    if (parsed < minValue || parsed > maxValue) return false;
+    outValue = parsed;
+    return true;
+}
+
+String buildSettingsJson() {
+    String json = "{";
+    json += "\"sleepTimer\":" + String(autoSleepIndex);
+    json += ",\"fontScale\":" + String((int)round(displayScale * 10.0f));
+    json += ",\"lineSpacing\":" + String(lineSpacing);
+    json += ",\"letterSpacing\":" + String(letterSpacing);
+    json += ",\"typingSpeed\":" + String(typingSpeed);
+    json += ",\"refreshLimit\":" + String(refreshLimit);
+    json += ",\"englishLayout\":" + String(englishLayoutIndex);
+    json += ",\"language\":\"";
+    json += isKoreanMode ? getKeyboardLayoutIdString(KEYBOARD_LAYOUTS[keyboardLayoutIndex].id) : "english";
+    json += "\"";
+    json += ",\"languages\":[";
+    json += "{\"value\":\"english\",\"label\":\"English\"}";
+    for (uint8_t i = 2; i < KEYBOARD_LAYOUT_TOTAL; i++) {
+        json += ",{\"value\":\"";
+        json += getKeyboardLayoutIdString(KEYBOARD_LAYOUTS[i].id);
+        json += "\",\"label\":\"";
+        json += jsonEscape(String(KEYBOARD_LAYOUTS[i].name));
+        json += "\"}";
+    }
+    json += "]}";
+    return json;
+}
+
+void handleSettingsJson() {
+    if (!webServerUpdateOnly) {
+        server.send(403, "application/json", "{\"error\":\"Properties mode only\"}");
+        return;
+    }
+    server.send(200, "application/json; charset=utf-8", buildSettingsJson());
+}
+
+void handleSettingsSave() {
+    if (!webServerUpdateOnly) {
+        server.send(403, "text/plain", "Settings are only available from Properties mode.");
+        return;
+    }
+
+    String pin = server.arg("pin");
+    if (pin.length() != 4 || pin != otaPinCode) {
+        server.send(403, "text/plain", "Invalid PIN.");
+        return;
+    }
+
+    int newSleepIndex = autoSleepIndex;
+    int newFontScale = (int)(displayScale * 10.0f);
+    int newLineSpacing = lineSpacing;
+    int newLetterSpacing = letterSpacing;
+    int newTypingSpeed = typingSpeed;
+    int newRefreshLimit = refreshLimit;
+    int newEnglishLayoutIndex = englishLayoutIndex;
+    int newKeyboardLayoutIndex = keyboardLayoutIndex;
+    bool newIsKoreanMode = isKoreanMode;
+
+    if (!parseIntArgBounded(server.arg("sleepTimer"), 0, 6, newSleepIndex) ||
+        !parseIntArgBounded(server.arg("fontScale"), 5, 35, newFontScale) ||
+        !parseIntArgBounded(server.arg("lineSpacing"), 0, 30, newLineSpacing) ||
+        !parseIntArgBounded(server.arg("letterSpacing"), -5, 10, newLetterSpacing) ||
+        !parseIntArgBounded(server.arg("typingSpeed"), 0, 2000, newTypingSpeed) ||
+        !parseIntArgBounded(server.arg("refreshLimit"), 0, 2000, newRefreshLimit) ||
+        !parseIntArgBounded(server.arg("englishLayout"), 0, 1, newEnglishLayoutIndex)) {
+        server.send(400, "text/plain", "Invalid settings value.");
+        return;
+    }
+
+    String language = server.arg("language");
+    if (language == "english") {
+        newIsKoreanMode = false;
+    } else {
+        newIsKoreanMode = true;
+        bool foundLanguage = false;
+        for (int i = 2; i < KEYBOARD_LAYOUT_TOTAL; i++) {
+            if (getKeyboardLayoutIdString(KEYBOARD_LAYOUTS[i].id) == language) {
+                newKeyboardLayoutIndex = i;
+                foundLanguage = true;
+                break;
+            }
+        }
+        if (!foundLanguage) {
+            server.send(400, "text/plain", "Invalid language selection.");
+            return;
+        }
+    }
+
+    bool changed =
+        newSleepIndex != autoSleepIndex ||
+        newFontScale != (int)(displayScale * 10.0f) ||
+        newLineSpacing != lineSpacing ||
+        newLetterSpacing != letterSpacing ||
+        newTypingSpeed != typingSpeed ||
+        newRefreshLimit != refreshLimit ||
+        newEnglishLayoutIndex != englishLayoutIndex ||
+        newKeyboardLayoutIndex != keyboardLayoutIndex ||
+        newIsKoreanMode != isKoreanMode;
+
+    if (!changed) {
+        server.send(200, "text/plain", "No changes detected.");
+        return;
+    }
+
+    autoSleepIndex = newSleepIndex;
+    displayScale = newFontScale / 10.0f;
+    lineSpacing = newLineSpacing;
+    letterSpacing = newLetterSpacing;
+    typingSpeed = newTypingSpeed;
+    refreshLimit = newRefreshLimit;
+    englishLayoutIndex = newEnglishLayoutIndex;
+    previewEnglishLayoutIndex = englishLayoutIndex;
+    keyboardLayoutIndex = newKeyboardLayoutIndex;
+    previewKeyboardLayoutIndex = keyboardLayoutIndex;
+    isKoreanMode = newIsKoreanMode;
+    isCapsLockOn = false;
+    saveSystemSettings();
+    forceSafeFullTextRedraw = true;
+    needUpdate = true;
+    statusBarNeedsUpdate = true;
+
+    server.send(200, "text/plain", "Settings saved.");
 }
 
 void handleUpdateForm() {
@@ -1566,16 +1862,30 @@ void handleWebServerUpdate() {
     }
 }
 
-bool isAllowedFontBinName(const String& filename) {
-    return filename == "hwalja_latin.bin" ||
-           filename == "hwalja_hangul.bin" ||
-           filename == "hwalja_jamo.bin" ||
-           filename == "hwalja_jp.bin" ||
-           filename == "hwalja_greek_cyrillic.bin" ||
-           filename == "hwalja_arabic.bin" ||
-           filename == "hwalja_indic.bin" ||
-           filename == "hwalja_sea.bin" ||
-           filename == "hwalja_misc.bin";
+bool normalizeFontUploadTarget(String filename, String& normalizedName) {
+    filename.toLowerCase();
+    struct FontAlias { const char* suffix; const char* target; };
+    const FontAlias aliases[] = {
+        {"latin.bin", "hwalja_latin.bin"},
+        {"hangul.bin", "hwalja_hangul.bin"},
+        {"jamo.bin", "hwalja_jamo.bin"},
+        {"jp.bin", "hwalja_jp.bin"},
+        {"greek_cyrillic.bin", "hwalja_greek_cyrillic.bin"},
+        {"arabic.bin", "hwalja_arabic.bin"},
+        {"indic.bin", "hwalja_indic.bin"},
+        {"sea.bin", "hwalja_sea.bin"},
+        {"misc.bin", "hwalja_misc.bin"},
+    };
+
+    for (const auto& alias : aliases) {
+        String target = String(alias.target);
+        String underscoredSuffix = String("_") + alias.suffix;
+        if (filename == target || filename.endsWith(underscoredSuffix)) {
+            normalizedName = target;
+            return true;
+        }
+    }
+    return false;
 }
 
 bool isUploadedPng() {
@@ -1607,6 +1917,9 @@ void handleWebServerUpload() {
         }
 
         String filename = upload.filename;
+        String lowerFilename = filename;
+        lowerFilename.toLowerCase();
+        String normalizedFontName = "";
         uploadTargetPath = "";
         uploadAccepted = false;
         uploadIsFirmware = false;
@@ -1618,7 +1931,7 @@ void handleWebServerUpload() {
         isUpdating = true;
         if (CalcTaskHandle != NULL) vTaskSuspend(CalcTaskHandle);
 
-        if (filename == "izefirmware.bin") {
+        if (lowerFilename == "izefirmware.bin") {
             if (!ensureIzeComposeDirs()) {
                 uploadHttpStatus = 500;
                 uploadHttpMessage = "Could not create ize_compose folders";
@@ -1629,14 +1942,16 @@ void handleWebServerUpload() {
                 uploadHttpStatus = 200;
                 uploadHttpMessage = "Firmware saved. Updating...";
             }
-        } else if (filename == "initial.png" || isAllowedFontBinName(filename)) {
+        } else if (lowerFilename.endsWith(".png") || normalizeFontUploadTarget(lowerFilename, normalizedFontName)) {
             if (!ensureIzeComposeDirs()) {
                 uploadHttpStatus = 500;
                 uploadHttpMessage = "Could not create ize_compose folders";
             } else {
-                uploadTargetPath = (filename == "initial.png") ? String(INITIAL_IMAGE_PATH) : (String(FONT_DIR) + "/" + filename);
+                uploadTargetPath = lowerFilename.endsWith(".png")
+                    ? String(INITIAL_IMAGE_PATH)
+                    : (String(FONT_DIR) + "/" + normalizedFontName);
                 uploadAccepted = true;
-                uploadIsInitialImage = (filename == "initial.png");
+                uploadIsInitialImage = lowerFilename.endsWith(".png");
                 uploadHttpStatus = 200;
                 uploadHttpMessage = "File saved to SD";
             }
@@ -1728,6 +2043,8 @@ void setupWiFi() {
     server.on("/delete", handleDelete);
     server.on("/uploadText", HTTP_POST, handleTextUploadComplete, handleTextUpload);
 
+    server.on("/settings.json", HTTP_GET, handleSettingsJson);
+    server.on("/settings", HTTP_POST, handleSettingsSave);
     server.on("/update", HTTP_POST, handleWebServerUpdate, handleWebServerUpload);
 
     server.begin();
@@ -2043,11 +2360,12 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
                 display.fillRect(0, 0, display.width(), display.height(), WHITE);
                 int updateCenterY = (int)((display.height() / displayScale) / 2);
-                printCleanText(u8g2_for_adafruit_gfx, "Web Server Opened for Update", MARGIN_X, updateCenterY - 70);
+                printCleanText(u8g2_for_adafruit_gfx, "Web Server Opened for Property and Update", MARGIN_X, updateCenterY - 70);
                 printCleanText(u8g2_for_adafruit_gfx, "Wi-Fi: IZEcompose_FileServer", MARGIN_X, updateCenterY - 35);
                 printCleanText(u8g2_for_adafruit_gfx, "Password: 00009888", MARGIN_X, updateCenterY);
                 printCleanText(u8g2_for_adafruit_gfx, "Open: 192.168.4.1/", MARGIN_X, updateCenterY + 35);
                 printCleanText(u8g2_for_adafruit_gfx, "Upload PIN: " + otaPinCode, MARGIN_X, updateCenterY + 70);
+                printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, updateCenterY + 105);
                 display.display();
                 needUpdate = false;
                 break;
@@ -2174,10 +2492,6 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       }
     }
     if (k == 246) { 
-      if (currentMode == FILE_MENU_MODE && isEditingValue && inSystemSubMenu && (leftMenuIndex == 6 || leftMenuIndex == 7)) {
-        needUpdate = true;
-        continue;
-      }
       if (currentNetSubMode != NET_MAIN) {
         needUpdate = false;
         statusBarNeedsUpdate = false;
@@ -2232,59 +2546,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         continue; 
       }
       if (isEditingValue) {
-        
-        if (inSystemSubMenu) { 
-            switch (leftMenuIndex) {
-                case 1: 
-                    if (k == 57 && displayScale > 0.5) displayScale -= 0.1;
-                    if (k == 60 && displayScale < 3.5) displayScale += 0.1;
-                    break;
-                case 2: 
-                    if (k == 57 && lineSpacing > 0) lineSpacing--;
-                    if (k == 60 && lineSpacing < 30) lineSpacing++;
-                    break;
-                case 3: 
-                    if (k == 57 && letterSpacing > -5) letterSpacing--;
-                    if (k == 60 && letterSpacing < 10) letterSpacing++;
-                    break;
-                case 4: 
-                    if (k == 57 && typingSpeed > 0) typingSpeed--;
-                    if (k == 60 && typingSpeed < 10) typingSpeed++;
-                    break;
-                case 5: 
-                    if (k == 57 && refreshLimit > 10) refreshLimit -= 10;
-                    if (k == 60 && refreshLimit < 5000) refreshLimit += 10;
-                    break;
-                case 6: 
-                    if (k == 57 || k == 60) previewEnglishLayoutIndex = previewEnglishLayoutIndex == 0 ? 1 : 0;
-                    break;
-                case 7: 
-                    if (k == 57 && previewKeyboardLayoutIndex > 0) { 
-                        previewKeyboardLayoutIndex--;
-                        if (previewKeyboardLayoutIndex < 2) previewKeyboardLayoutIndex = KEYBOARD_LAYOUT_TOTAL - 1;
-                    }
-                    if (k == 60) { 
-                        previewKeyboardLayoutIndex++;
-                        if (previewKeyboardLayoutIndex >= KEYBOARD_LAYOUT_TOTAL) previewKeyboardLayoutIndex = 2;
-                    }
-                    break;
-            }
-            if (real == '\n') {
-                if ((leftMenuIndex == 6 || leftMenuIndex == 7) && isEditingValue) {
-                    if (leftMenuIndex == 6) englishLayoutIndex = previewEnglishLayoutIndex <= 0 ? 0 : 1;
-                    if (leftMenuIndex == 7) keyboardLayoutIndex = previewKeyboardLayoutIndex;
-                    isEditingValue = false;
-                    isCapsLockOn = false;
-                    saveSystemSettings();
-                    needUpdate = true;
-                } else {
-                    isEditingValue = !isEditingValue;
-                    if (!isEditingValue) saveSystemSettings();
-                }
-            }
-        } 
-        
-        else {
+        {
             switch (leftMenuIndex) {
                 case 3: 
                     if (k == 57) { 
@@ -2307,18 +2569,6 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                     }
                     break;
 
-                case 6: 
-                    if (k == 57) { 
-                        autoSleepIndex = (autoSleepIndex <= 0) ? 6 : autoSleepIndex - 1;
-                    }
-                    if (k == 60) { 
-                        autoSleepIndex = (autoSleepIndex + 1) % 7;
-                    }
-                    if (real == '\n'|| real == '\r') { 
-                        isEditingValue = false;
-                        saveSystemSettings();
-                    }
-                    break;
             }
         }
         
@@ -2330,10 +2580,10 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
     if (menuFocusSide == 0) {
             int menuStep = baseFontSize + lineSpacing + 8;
-            int menuTopY = inSystemSubMenu ? 60 + menuStep : 100;
+            int menuTopY = 100;
             int maxVisibleMenu = ((display.height() / displayScale) - menuTopY - 10) / menuStep;
             if (maxVisibleMenu < 1) maxVisibleMenu = 1;
-            int menuCount = inSystemSubMenu ? 9 : 7;
+            int menuCount = 6;
             if (leftMenuIndex >= menuCount) leftMenuIndex = menuCount - 1;
             int maxOffset = menuCount - maxVisibleMenu;
             if (maxOffset < 0) maxOffset = 0;
@@ -2351,61 +2601,25 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             }
             needUpdate = true;
           if (real == '\n') { 
-            if (!inSystemSubMenu) { 
-                
-                if (leftMenuIndex == 0) createNewDoc(); 
-                else if (leftMenuIndex == 1) { saveFile(); currentMode = TYPING_MODE; } 
-                else if (leftMenuIndex == 2) { countMode = (countMode + 1) % 3; saveSystemSettings(); needUpdate = true; }
-                else if (leftMenuIndex == 3) { 
-                    isEditingValue = true;
-                }
-                else if (leftMenuIndex == 4) { inSystemSubMenu = true; leftMenuIndex = 0; leftMenuOffset = 0; isEditingValue = false; } 
-                else if (leftMenuIndex == 5) { currentMode = TYPING_MODE; showInitialImage(); ESP.restart(); } 
-                else if (leftMenuIndex == 6) { 
-                    isEditingValue = true;
-                }
-            } 
-            else { 
-                
-                if (leftMenuIndex == 0) { 
-                    
-                    inSystemSubMenu = false;
-                    leftMenuIndex = 3; 
-                    leftMenuOffset = 0;
-                    isEditingValue = false;
-                } 
-                else if (leftMenuIndex >= 1 && leftMenuIndex <= 8) {
-                    // Update is an action, not an editable setting: enter it immediately.
-                    if (leftMenuIndex == 8) {
-                        pinInputBuffer = "";
-                        otaPinCode = "";
-                        isEditingValue = false;
-                        updateState = UPD_PIN_INPUT;
-                        currentMode = TYPING_MODE;
-                        isCtrlPressed = false;
-                        isShiftPressed = false;
-                        isAltPressed = false;
-                        needUpdate = true;
-                        statusBarNeedsUpdate = false;
-                        return;  // Preserve needUpdate for the PIN screen on the next loop.
-                    } else if (isEditingValue) {
-                        if (leftMenuIndex == 6 || leftMenuIndex == 7) {
-                            if (leftMenuIndex == 6) englishLayoutIndex = previewEnglishLayoutIndex <= 0 ? 0 : 1;
-                            if (leftMenuIndex == 7) keyboardLayoutIndex = previewKeyboardLayoutIndex;
-                            isEditingValue = false;
-                            needUpdate = true;
-                            isCapsLockOn = false;
-                            saveSystemSettings();
-                        } else {
-                            isEditingValue = false;
-                        }
-                    } else {
-                        if (leftMenuIndex == 6) previewEnglishLayoutIndex = englishLayoutIndex;
-                        if (leftMenuIndex == 7) previewKeyboardLayoutIndex = keyboardLayoutIndex;
-                        isEditingValue = true;
-                    }
-                }
-                
+            if (leftMenuIndex == 0) createNewDoc();
+            else if (leftMenuIndex == 1) { saveFile(); currentMode = TYPING_MODE; }
+            else if (leftMenuIndex == 2) { countMode = (countMode + 1) % 3; saveSystemSettings(); needUpdate = true; }
+            else if (leftMenuIndex == 3) {
+                isEditingValue = true;
+            }
+            else if (leftMenuIndex == 4) { currentMode = TYPING_MODE; showInitialImage(); ESP.restart(); }
+            else if (leftMenuIndex == 5) {
+                pinInputBuffer = "";
+                otaPinCode = "";
+                isEditingValue = false;
+                updateState = UPD_PIN_INPUT;
+                currentMode = TYPING_MODE;
+                isCtrlPressed = false;
+                isShiftPressed = false;
+                isAltPressed = false;
+                needUpdate = true;
+                statusBarNeedsUpdate = false;
+                return;
             }
             needUpdate = true;
             statusBarNeedsUpdate = true;
@@ -2568,7 +2782,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     
    
     int menuVisibleStep = baseFontSize + lineSpacing + 8;
-    int renderMenuTopY = inSystemSubMenu ? 60 + menuVisibleStep : 100;
+    int renderMenuTopY = 100;
     int maxVisibleMenu = ((display.height() / displayScale) - renderMenuTopY - 10) / menuVisibleStep; 
     if (maxVisibleMenu < 1) maxVisibleMenu = 1;
     bool doFullRefresh = false;
@@ -2580,11 +2794,9 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     }
 
     if (currentNetSubMode != NET_MAIN) {
-        
         int statusBarBottom = (int)(45 * displayScale);
         display.fillRect(0, statusBarBottom, display.width(), display.height() - statusBarBottom, WHITE);
 
-        
         u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
         int infoY = statusBarBottom + 40;
         if (currentNetSubMode == NET_BT_SELECT) {
@@ -2592,7 +2804,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             printCleanText(u8g2_for_adafruit_gfx, bleKeyboard.isConnected() ? "Connected: Type to computer" : "Pair IZE Compose on your computer", MARGIN_X, infoY + 25);
             printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 50);
         } else if (isFirmwareUpdateMode) {
-            printCleanText(u8g2_for_adafruit_gfx, "Update Mode (192.168.4.1/)", MARGIN_X, infoY);
+            printCleanText(u8g2_for_adafruit_gfx, "Property and Update (192.168.4.1/)", MARGIN_X, infoY);
             printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 25);
         } else {
             printCleanText(u8g2_for_adafruit_gfx, "Network Mode", MARGIN_X, infoY);
@@ -2604,117 +2816,63 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         display.clearDisplay(); lastSy = -1; 
         u8g2_for_adafruit_gfx.setForegroundColor(BLACK); 
         u8g2_for_adafruit_gfx.setBackgroundColor(WHITE); 
-        printDualFont(u8"Iźe", 50, 28, true);
-        int composeX = (int)(50 * displayScale);
-        int composeY = (int)(38 * displayScale);
-        int composeW = (int)(112 * displayScale);
-        int composeH = (int)((baseFontSize + lineSpacing + 8) * displayScale);
-        display.drawRect(composeX - (int)(4 * displayScale), composeY, composeW, composeH, BLACK);
-        printDualFont("compose", 50, 58, true);
+        printDualFont("Ize Compose", 50, 28, true);
+        printDualFont(getCurrentLanguageMenuLabel(), 50, 58, true);
        
-        String m_main = "New,Save,Count,Network,System Set >,Sleep,Auto Sleep";
-        
-        String m_sys = "< Back,Size,Line Sp,Char Sp,Speed,Refresh,English,Language,Update";
-
-        int menuCount = inSystemSubMenu ? 9 : 7; 
+        String m_main = "New,Save,Count,Network,Sleep,Properties";
+        int menuCount = 6;
         if (leftMenuIndex >= menuCount) leftMenuIndex = menuCount - 1;
         int maxOffset = menuCount - maxVisibleMenu;
         if (maxOffset < 0) maxOffset = 0;
         if (leftMenuOffset > maxOffset) leftMenuOffset = maxOffset;
-        String targetM = inSystemSubMenu ? m_sys : m_main;
+        String targetM = m_main;
 
-int menuStep = baseFontSize + lineSpacing + 8;
-int menuY = inSystemSubMenu ? 60 + menuStep : 100;
-for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + maxVisibleMenu) break;
+        int menuStep = baseFontSize + lineSpacing + 8;
+        int menuY = 100;
+        for (int i = leftMenuOffset; i < menuCount; i++) {
+            if (i >= leftMenuOffset + maxVisibleMenu) break;
 
-    
-    String lbl = getValue(targetM, ',', i);
-    if (lbl == "") continue; 
+            String lbl = getValue(targetM, ',', i);
+            if (lbl == "") continue;
 
-    
-    if (inSystemSubMenu) {
-        String valStr = "";
-        if(i == 1)      valStr = String(displayScale, 1);
-        else if(i == 2) valStr = String(lineSpacing);
-        else if(i == 3) valStr = String(letterSpacing);
-        else if(i == 4) valStr = String(typingSpeed);
-        else if(i == 5) valStr = String(refreshLimit);
-        
-        else if(i == 6) {
-            lbl = "Eng";
-            String nameLine = (isEditingValue && leftMenuIndex == i) ? getPreviewEnglishKeyboardModeName() : getEnglishKeyboardModeName();
-            lbl += (isEditingValue && leftMenuIndex == i) ? " <" + nameLine + ">" : " " + nameLine;
-        }
-        else if(i == 7) {
-            lbl = "Lang";
-            String nameLine = (isEditingValue && leftMenuIndex == i) ? getPreviewKeyboardModeName() : getKeyboardModeName();
-            lbl += (isEditingValue && leftMenuIndex == i) ? " <" + nameLine + ">" : " " + nameLine;
-        }
-        
-        if (valStr != "") {
-            if (isEditingValue && leftMenuIndex == i) {
-                lbl += " < " + valStr + " >";
-            } else {
-                lbl += "   " + valStr + "   ";
+            if (i == 2) {
+                if (countMode == 0) lbl += " [Chars]";
+                else if (countMode == 1) lbl += " [Words]";
+                else lbl += " [OFF]";
             }
-        }
-        
-        if (i == 8) {
-            lbl += " " + String(FIRMWARE_VERSION); 
+            if (i == 3) {
+                String netStr = "";
+                if (tempNetCursor == NET_MAIN) netStr = "OFF";
+                else if (tempNetCursor == NET_BT_SELECT) netStr = (bleKeyboard.isConnected() ? "BLE:OK" : "BLE");
+                else if (tempNetCursor == NET_WIFI) netStr = "WIFI";
+                if (isEditingValue && leftMenuIndex == i) lbl += " < " + netStr + " >";
+                else lbl += "   " + netStr + "   ";
+            }
+            if (i == 5) {
+                lbl += " " + String(FIRMWARE_VERSION);
+            }
+
+            printMenuEntry(lbl, 25, menuY, (menuFocusSide == 0 && leftMenuIndex == i), false);
+            menuY += menuStep;
         }
 
-    } 
-    
-    else {
-        if (i == 2) { 
-            
-            if (countMode == 0) lbl += " [Chars]";
-            else if (countMode == 1) lbl += " [Words]";
-            else lbl += " [OFF]";
-        }
-        if (i == 6) { 
-            lbl = "Auto Sleep " + getAutoSleepDisplayLabel();
-            if (isEditingValue && leftMenuIndex == i) lbl += " *";
-        }
-        if(i == 3) { 
-            String netStr = "";
-            if(tempNetCursor == NET_MAIN) netStr = "OFF";
-            else if(tempNetCursor == NET_BT_SELECT) netStr = (bleKeyboard.isConnected() ? "BLE:OK" : "BLE");
-            else if(tempNetCursor == NET_WIFI) netStr = "WIFI";
-            
-            if (isEditingValue && leftMenuIndex == i) lbl += " < " + netStr + " >";
-            else lbl += "   " + netStr + "   ";
+        u8g2_for_adafruit_gfx.setForegroundColor(BLACK);
+        u8g2_for_adafruit_gfx.setBackgroundColor(WHITE);
+        printDualFont("=== DOCUMENTS ===", 245, 30, true);
+
+        const int maxVisibleItems = FILE_MENU_ITEMS_PER_PAGE;
+        for (int f=1; f<=fileCount; f++) {
+            if (f > fileScrollOffset && f <= fileScrollOffset + maxVisibleItems) {
+                String docLabel = "";
+                if (isDeletingFile && menuFocusSide == 1 && rightFileIndex == f) {
+                    docLabel = "Delete? (Enter: Yes / Other: Cancel)";
+                } else {
+                    docLabel = String(f) + ". " + files[f].name + " [" + String(files[f].sizeKB, 1) + "KB] | " + utf8Truncate(files[f].preview, 12);
+                }
+                printMenuEntry(docLabel, 225, 60 + ((f-fileScrollOffset-1)*(baseFontSize + lineSpacing + 6)), (menuFocusSide == 1 && rightFileIndex == f), true);
+            }
         }
     }
-
-    
-    printMenuEntry(lbl, 25, menuY, (menuFocusSide == 0 && leftMenuIndex == i), false);
-    menuY += menuStep;
-
-        }
-        if (!(inSystemSubMenu && isEditingValue && (leftMenuIndex == 6 || leftMenuIndex == 7))) {
-            u8g2_for_adafruit_gfx.setForegroundColor(BLACK); 
-            u8g2_for_adafruit_gfx.setBackgroundColor(WHITE); 
-            printDualFont("=== DOCUMENTS ===", 245, 30, true); 
-            
-            const int maxVisibleItems = FILE_MENU_ITEMS_PER_PAGE;
-            for (int f=1; f<=fileCount; f++) { 
-                if (f > fileScrollOffset && f <= fileScrollOffset + maxVisibleItems) { 
-                    String docLabel = "";
-                    
-                    
-                    if (isDeletingFile && menuFocusSide == 1 && rightFileIndex == f) {
-                        docLabel = "Delete? (Enter: Yes / Other: Cancel)";
-                    } else {
-                        
-                        docLabel = String(f) + ". " + files[f].name + " [" + String(files[f].sizeKB, 1) + "KB] | " + utf8Truncate(files[f].preview, 12);
-                    }
-                    
-                    printMenuEntry(docLabel, 225, 60 + ((f-fileScrollOffset-1)*(baseFontSize + lineSpacing + 6)), (menuFocusSide == 1 && rightFileIndex == f), true);
-                } 
-            }
-        }
-    } 
     else {
         int statusBarBottom = (int)(45 * displayScale);
         int contentRight = (int)((display.width() / displayScale) - RIGHT_EDGE_MARGIN);
@@ -2920,7 +3078,7 @@ for(int i = leftMenuOffset; i < menuCount; i++) {    if (i >= leftMenuOffset + m
                                     if (cursorDrawX < MARGIN_X) cursorDrawX = MARGIN_X;
                                     if (cursorDrawX > contentRight - 12) cursorDrawX = contentRight - 12;
                                     bigDisplay.fillRect(cursorDrawX, currentY + 2, 12, 4, BLACK);
-                                    lastCursorY = currentY; // 다음 프레임 빠른 렌더용
+                                    lastCursorY = currentY; // Used by the next fast render frame.
                                 }
                                 else if (currentMode == SEARCH_MODE && searchQuery.length() > 0 && searchMatchEnd >= 0) {
                                     int searchStart = searchMatchEnd - searchQuery.length();
