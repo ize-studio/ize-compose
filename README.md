@@ -8,9 +8,11 @@
 Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a Korean-input firmware, now supports 92 keyboard layouts across dozens of scripts.
 (if you are looking for Ize-Ribbon, go to https://github.com/ize-studio/Ize-Ribbon )
 
-Current release: **v1.1.2**
+Current release: **v1.2.0**
 
-v1.1.2 fixes English/Dvorak Caps Lock behavior and persists system menu settings. v1.1.1 improved Arabic-script connected glyph rendering and added a clean install package layout under `Ize-compose/`.
+v1.2.0 moves environment settings into the browser-based Properties page, adds an SD-loadable Properties web page, writes a settings backup file to SD, and shows document previews in the network document list.
+
+For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 > **Hardware scope warning**
 >
@@ -49,7 +51,9 @@ v1.1.2 fixes English/Dvorak Caps Lock behavior and persists system menu settings
 **Files**
 - Saves and loads `.txt` files on SD card (`/ize_compose/`)
 - File browser (up to 65 files)
-- WiFi (AP mode) for uploading/downloading text and firmware OTA via browser
+- WiFi (AP mode) document page for uploading/downloading/reading/deleting text
+- Browser document list shows 12 documents per page with a short preview beside each title
+- Properties and firmware/font/image updates are handled from the browser-based Properties page
 
 **Display**
 - Partial screen update for fast typing feedback
@@ -57,12 +61,54 @@ v1.1.2 fixes English/Dvorak Caps Lock behavior and persists system menu settings
 - Boot/sleep image loaded from `/ize_compose/initial.png` on SD card
 - Sleep mode: Ctrl+L or sleep button; wake with wake button
 
-**Settings (system menu)**
-- Line spacing
-- Typing speed (key repeat delay)
-- Screen refresh limit
-- Keyboard layout selection
-- Font slot
+**Settings and updates**
+- Device menu keeps writing/file commands compact: New, Save, Count, Network, Sleep, Properties
+- Properties mode opens the browser page for sleep timer, text size, line spacing, character spacing, typing speed, refresh limit, English keyboard, and language selection
+- Settings are saved to device preferences and backed up to `/ize_compose/settings_backup.json`
+- Firmware uploads use `izefirmware.bin`
+- Font and image uploads are routed by filename
+
+---
+
+## SD Card Required Files
+
+The firmware expects support files on the SD card under `/ize_compose/`.
+
+| SD card path | Required | Purpose |
+|---|---:|---|
+| `/ize_compose/initial.png` | Recommended | Boot/sleep image, 800x600 PNG |
+| `/ize_compose/property_update.html` | Recommended | External Properties and Update web page. If missing, firmware uses the built-in fallback page. |
+| `/ize_compose/hwalja/hwalja_hangul.bin` | Recommended for Korean | Hangul syllable font |
+| `/ize_compose/hwalja/hwalja_jamo.bin` | Recommended for Korean | Korean jamo/composition font |
+| `/ize_compose/hwalja/hwalja_latin.bin` | Recommended | Full Latin and Latin-extended font |
+| `/ize_compose/hwalja/hwalja_jp.bin` | Optional | Japanese Hiragana/Katakana |
+| `/ize_compose/hwalja/hwalja_greek_cyrillic.bin` | Optional | Greek and Cyrillic |
+| `/ize_compose/hwalja/hwalja_arabic.bin` | Optional | Arabic-script layouts |
+| `/ize_compose/hwalja/hwalja_indic.bin` | Optional | Indic-script layouts |
+| `/ize_compose/hwalja/hwalja_sea.bin` | Optional | Thai, Khmer, Lao, Myanmar, Tibetan |
+| `/ize_compose/hwalja/hwalja_misc.bin` | Optional | Ethiopic, Georgian, Armenian, and other scripts |
+| `/ize_compose/settings_backup.json` | Generated | Settings backup written by the firmware. Keep it when preserving settings across reset/reinstall. |
+| `/ize_compose/upload/izefirmware.bin` | Temporary | Staged firmware file used internally during SD OTA update |
+
+When using files directly from this repository, make sure the final SD card paths match the table above. Font files must end up inside `/ize_compose/hwalja/`.
+
+---
+
+## Device Menu and Web Pages
+
+The main device menu is intentionally small:
+
+`New`, `Save`, `Count`, `Network`, `Sleep`, `Properties`
+
+Use `Network` for the document web page. Use `Properties` for environment settings, firmware update, font upload, and image upload.
+
+Both web modes create the device access point and are opened from a browser at:
+
+`http://192.168.4.1/`
+
+The device screen shows the access point, password, and exit hint. Use `Ctrl + Menu` to exit the web mode.
+
+Detailed browser workflow is documented in [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 ---
 
@@ -76,7 +122,7 @@ Dvorak, QWERTY, 한국어, Shqip, العربية, Հայերեն, Deutsch (AT/DE
 
 The firmware has a built-in Latin fallback font. The full Latin font and all non-Latin script fonts are loaded from SD card at boot when the font files are present.
 
-In the release install package, these files are already arranged under:
+In a release install package, these files should be arranged under:
 
 `Ize-compose/sdcard/ize_compose/hwalja/`
 
@@ -163,7 +209,7 @@ Download or open the `Ize-compose/` package.
 
 1. Upload `Ize-compose/firmware/izefirmware.bin` as the firmware image.
 2. Copy the contents of `Ize-compose/sdcard/` to the SD card root.
-3. Confirm that the SD card contains `/ize_compose/initial.png` and `/ize_compose/hwalja/*.bin`.
+3. Confirm that the SD card contains `/ize_compose/initial.png`, `/ize_compose/property_update.html`, and `/ize_compose/hwalja/*.bin`.
 
 ### Build and flash from source
 ```bash
@@ -174,15 +220,21 @@ pio run --target upload
 
 ### SD card setup
 1. Format SD card as FAT32.
-2. Copy the contents of `Ize-compose/sdcard/` to the SD card root, or manually create `/ize_compose/hwalja/`.
-3. Copy the `hwalja_*.bin` font files into `/ize_compose/hwalja/`.
-4. Place `initial.png` (800×600 PNG) in `/ize_compose/` for the sleep/boot image.
+2. Create `/ize_compose/` and `/ize_compose/hwalja/` on the SD card if they are not already present.
+3. Copy `initial.png` to `/ize_compose/`.
+4. Copy `property_update.html` to `/ize_compose/`.
+5. Copy `hwalja_*.bin` font files into `/ize_compose/hwalja/`.
+6. Keep `settings_backup.json` if it exists and you want to preserve settings across reset/reinstall.
 
 ### Firmware OTA update (WiFi)
-1. Open the system menu → Network → WiFi.
-2. Connect to the `IZE_COMPOSE` access point from a PC or phone.
-3. Navigate to `192.168.4.1` in a browser.
-4. Upload a new `.bin` firmware file.
+1. Open `Menu -> Properties`.
+2. Enter the 4-digit PIN on the device.
+3. Connect to the device access point from a PC or phone.
+4. Open `http://192.168.4.1/` in a browser.
+5. Select the firmware file. The upload page sends it as `izefirmware.bin`.
+6. Wait for the device update/reboot flow to finish.
+
+For document transfer and Properties page usage, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 ---
 
@@ -204,18 +256,21 @@ pio run --target upload
 ```
 Ize-compose/
   firmware/
-    izefirmware.bin      — release firmware image
+    izefirmware.bin       - release firmware image
   sdcard/
     ize_compose/
-      initial.png        — boot/sleep image
+      initial.png         - boot/sleep image
+      property_update.html - external Properties web page
       hwalja/
-        hwalja_*.bin     — font files to copy to SD card
-  src/                   — clean PlatformIO firmware source
-  lib/InkplateLibrary/   — local Inkplate driver required for build
-  others/                — font sources and helper tools, not compiled
-  INSTALL.md             — install/build notes
-  RELEASE_1.1.2.md       — v1.1.2 release notes
-  RELEASE_1.1.1.md       — v1.1.1 release notes
+        hwalja_*.bin      - font files to copy to SD card
+      settings_backup.json - generated settings backup, if present
+  src/                    - clean PlatformIO firmware source
+  lib/InkplateLibrary/    - local Inkplate driver required for build
+  others/                 - font sources and helper tools, not compiled
+  WEB_INTERFACE.md        - browser page usage guide
+  INSTALL.md              - install/build notes
+  RELEASE_1.1.2.md        - v1.1.2 release notes
+  RELEASE_1.1.1.md        - v1.1.1 release notes
 
 src/
   IZEcompose.ino        — main firmware
