@@ -355,6 +355,49 @@ String urlEncode(const String& src) {
     return out;
 }
 
+String webUtf8Truncate(const String& text, int maxChars) {
+    String out = "";
+    int p = 0;
+    int count = 0;
+    while (p < text.length() && count < maxChars) {
+        unsigned char c = (unsigned char)text[p];
+        int len = 1;
+        if ((c & 0x80) == 0) len = 1;
+        else if ((c & 0xE0) == 0xC0) len = 2;
+        else if ((c & 0xF0) == 0xE0) len = 3;
+        else if ((c & 0xF8) == 0xF0) len = 4;
+        else break;
+        if (p + len > text.length()) break;
+        bool complete = true;
+        for (int i = 1; i < len; i++) {
+            if (((unsigned char)text[p + i] & 0xC0) != 0x80) {
+                complete = false;
+                break;
+            }
+        }
+        if (!complete) break;
+        out += text.substring(p, p + len);
+        p += len;
+        count++;
+    }
+    return out;
+}
+
+String readDocPreview(const String& filename) {
+    SdFile doc;
+    if (!doc.open(filename.c_str(), O_RDONLY)) return "";
+    char buffer[129];
+    int bytesRead = doc.read(buffer, 128);
+    doc.close();
+    if (bytesRead <= 0) return "";
+    buffer[bytesRead] = '\0';
+    String preview = String(buffer);
+    preview.replace("\r", " ");
+    preview.replace("\n", " ");
+    preview.trim();
+    return webUtf8Truncate(preview, 32);
+}
+
 void appendDocList(String& html) {
     static const int WEB_DOCS_PER_PAGE = 12;
     static const int WEB_MAX_DOCUMENT_FILES = 256;
@@ -412,8 +455,12 @@ void appendDocList(String& html) {
     for (int i = start; i < end; i++) {
         String fn = docNames[i];
         String safeName = htmlEscape(fn);
+        String preview = readDocPreview(fn);
+        String safePreview = htmlEscape(preview);
         String urlName = urlEncode(fn);
-        html += "<tr><td>" + safeName + "</td><td>" + String(docSizes[i]) + "</td><td>";
+        html += "<tr><td><span class=\"doc-name\">" + safeName + "</span>";
+        if (safePreview.length() > 0) html += " <span class=\"doc-preview\">" + safePreview + "</span>";
+        html += "</td><td>" + String(docSizes[i]) + "</td><td>";
         html += "<a href=\"/read?file=" + urlName + "\">Read</a> ";
         html += "<a href=\"/download?file=" + urlName + "\">Download</a> ";
         html += "<a href=\"/delete?file=" + urlName + "\" onclick=\"return confirm('Delete " + safeName + "?')\">Delete</a>";
@@ -427,7 +474,7 @@ void appendDocList(String& html) {
 }
 
 String pageStart(const String& title) {
-    String html = F("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>IZE Compose</title><style>body{font-family:Arial,sans-serif;background:#f4f4f0;color:#151515;margin:0;padding:24px}main{max-width:980px;margin:0 auto}h1{margin:0 0 6px;font-size:28px}h2{font-size:18px;margin:0 0 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:#fff;border:1px solid #bbb;padding:18px;border-radius:6px}.wide{grid-column:1/-1}label{display:block;margin:12px 0 6px;font-weight:bold}input,select,button{width:100%;box-sizing:border-box;padding:10px;font-size:15px}button{background:#111;color:#fff;border:0;border-radius:4px;margin-top:12px;cursor:pointer}button:disabled{background:#777}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #ddd;padding:8px}a{color:#0645ad;margin-right:10px}.status,.empty{color:#555;font-size:14px;min-height:20px}.saved{color:#b00000;font-weight:bold}.note{color:#555;font-size:13px;line-height:1.45;margin-top:8px}.inline{display:flex;gap:12px;align-items:center}.inline>*{flex:1}.range-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.range-value{min-width:90px;text-align:right;font-size:14px;color:#333}.radio-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}.radio-row label{display:flex;align-items:center;gap:8px;margin:0;font-weight:normal}.radio-row input{width:auto}.stack{display:grid;gap:18px}.subgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.subgrid .full{grid-column:1/-1}select[size]{min-height:220px}.muted{opacity:.55}@media(max-width:760px){.grid,.subgrid{grid-template-columns:1fr}}</style></head><body><main><h1>");
+    String html = F("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>IZE Compose</title><style>body{font-family:Arial,sans-serif;background:#f4f4f0;color:#151515;margin:0;padding:24px}main{max-width:980px;margin:0 auto}h1{margin:0 0 6px;font-size:28px}h2{font-size:18px;margin:0 0 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:#fff;border:1px solid #bbb;padding:18px;border-radius:6px}.wide{grid-column:1/-1}label{display:block;margin:12px 0 6px;font-weight:bold}input,select,button{width:100%;box-sizing:border-box;padding:10px;font-size:15px}button{background:#111;color:#fff;border:0;border-radius:4px;margin-top:12px;cursor:pointer}button:disabled{background:#777}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #ddd;padding:8px}a{color:#0645ad;margin-right:10px}.doc-name{font-weight:bold}.doc-preview{color:#666;margin-left:8px}.status,.empty{color:#555;font-size:14px;min-height:20px}.saved{color:#b00000;font-weight:bold}.note{color:#555;font-size:13px;line-height:1.45;margin-top:8px}.inline{display:flex;gap:12px;align-items:center}.inline>*{flex:1}.range-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.range-value{min-width:90px;text-align:right;font-size:14px;color:#333}.radio-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}.radio-row label{display:flex;align-items:center;gap:8px;margin:0;font-weight:normal}.radio-row input{width:auto}.stack{display:grid;gap:18px}.subgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.subgrid .full{grid-column:1/-1}select[size]{min-height:220px}.muted{opacity:.55}@media(max-width:760px){.grid,.subgrid{grid-template-columns:1fr}}</style></head><body><main><h1>");
     html += title;
     html += F("</h1>");
     return html;
