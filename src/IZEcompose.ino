@@ -2076,6 +2076,7 @@ void stopNetworkServices() {
     WiFi.mode(WIFI_OFF);
     resetStatusScreenCache();
     currentNetSubMode = NET_MAIN;
+    tempNetCursor = NET_MAIN;
     isFirmwareUpdateMode = false;
     updateState = UPD_NONE;
     webServerUpdateOnly = false;
@@ -2933,12 +2934,7 @@ if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA || update
 
 if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) { 
     __atomic_store_n(&networkExitRequested, false, __ATOMIC_SEQ_CST);  
-    WiFi.softAPdisconnect(true);
-        WiFi.mode(WIFI_OFF);
-        currentNetSubMode = NET_MAIN;
-        isFirmwareUpdateMode = false;
-        updateState = UPD_NONE;
-        webServerUpdateOnly = false;
+        stopNetworkServices();
         isCtrlPressed = false;
         isShiftPressed = false;
         isAltPressed = false;
