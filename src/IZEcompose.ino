@@ -23,6 +23,8 @@
 
 #if IZE_ENABLE_DIRECT_GITHUB_SYNC
 #include <WiFiClientSecure.h>
+#include <mbedtls/base64.h>
+#include <mbedtls/sha1.h>
 #endif
 
 #ifndef IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
@@ -33,11 +35,14 @@
 #define IZE_DIRTY_TILE_REFRESH_DEBUG 0
 #endif
 
+struct GitSyncStateEntry;
+struct GitRemoteDocEntry;
 
 const char* APP_ROOT_DIR = "/ize_compose";
 const char* FONT_DIR = "/ize_compose/hwalja";
 const char* FIRMWARE_DIR = "/ize_compose/upload";
 const char* INITIAL_IMAGE_PATH = "/ize_compose/initial.png";
+const char* GITHUB_SYNC_STATE_PATH = "/ize_compose/github_sync_state.txt";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
 const char* WEB_PROPERTY_PAGE_PATH = "/ize_compose/property_update.html";
@@ -372,6 +377,18 @@ String lastStatusScreenTitle = "";
 String lastStatusScreenLine1 = "";
 String lastStatusScreenLine2 = "";
 bool statusScreenPrimed = false;
+
+struct GitSyncStateEntry {
+    String name;
+    String localBlobSha;
+    String remoteBlobSha;
+};
+
+struct GitRemoteDocEntry {
+    String name;
+    String remotePath;
+    String blobSha;
+};
 
 const char* choStrs[] = {"ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"};
 const char* jungStrs[] = {"ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"};
@@ -2286,6 +2303,170 @@ String githubApiBase() {
 }
 
 #if IZE_ENABLE_DIRECT_GITHUB_SYNC
+String hexFromBytes(const uint8_t* data, size_t len) {
+    const char* hex = "0123456789abcdef";
+    String out = "";
+    out.reserve(len * 2);
+    for (size_t i = 0; i < len; i++) {
+        out += hex[(data[i] >> 4) & 0x0F];
+        out += hex[data[i] & 0x0F];
+    }
+    return out;
+}
+
+String githubBlobShaForContent(const String& content) {
+    mbedtls_sha1_context ctx;
+    mbedtls_sha1_init(&ctx);
+    mbedtls_sha1_starts_ret(&ctx);
+    String header = "blob " + String(content.length()) + "\0";
+    mbedtls_sha1_update_ret(&ctx, (const unsigned char*)header.c_str(), header.length());
+    mbedtls_sha1_update_ret(&ctx, (const unsigned char*)content.c_str(), content.length());
+    uint8_t digest[20];
+    mbedtls_sha1_finish_ret(&ctx, digest);
+    mbedtls_sha1_free(&ctx);
+    return hexFromBytes(digest, sizeof(digest));
+}
+
+uint64_t fatDateTimeToStamp(uint16_t date, uint16_t time) {
+    if (date == 0) return 0;
+    uint16_t year = 1980 + ((date >> 9) & 0x7F);
+    uint8_t month = (date >> 5) & 0x0F;
+    uint8_t day = date & 0x1F;
+    uint8_t hour = (time >> 11) & 0x1F;
+    uint8_t minute = (time >> 5) & 0x3F;
+    uint8_t second = (time & 0x1F) * 2;
+    if (month == 0 || day == 0) return 0;
+    return ((uint64_t)year * 10000000000ULL) +
+           ((uint64_t)month * 100000000ULL) +
+           ((uint64_t)day * 1000000ULL) +
+           ((uint64_t)hour * 10000ULL) +
+           ((uint64_t)minute * 100ULL) +
+           (uint64_t)second;
+}
+
+bool parseIsoDateStamp(const String& iso, uint64_t& outStamp) {
+    if (iso.length() < 19) return false;
+    for (int idx : {0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18}) {
+        if (!isDigit(iso[idx])) return false;
+    }
+    int year = iso.substring(0, 4).toInt();
+    int month = iso.substring(5, 7).toInt();
+    int day = iso.substring(8, 10).toInt();
+    int hour = iso.substring(11, 13).toInt();
+    int minute = iso.substring(14, 16).toInt();
+    int second = iso.substring(17, 19).toInt();
+    outStamp = ((uint64_t)year * 10000000000ULL) +
+               ((uint64_t)month * 100000000ULL) +
+               ((uint64_t)day * 1000000ULL) +
+               ((uint64_t)hour * 10000ULL) +
+               ((uint64_t)minute * 100ULL) +
+               (uint64_t)second;
+    return true;
+}
+
+bool getLocalDocModifyStamp(const String& filename, uint64_t& outStamp) {
+    SdFile file;
+    uint16_t date = 0;
+    uint16_t time = 0;
+    if (!file.open(filename.c_str(), O_RDONLY)) return false;
+    bool ok = file.getModifyDateTime(&date, &time);
+    file.close();
+    outStamp = ok ? fatDateTimeToStamp(date, time) : 0;
+    return ok && outStamp > 0;
+}
+
+bool writeDocTextToSd(const String& filename, const String& content, String& errorMessage) {
+    SdFile file;
+    if (!file.open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) {
+        errorMessage = "Could not write " + filename;
+        return false;
+    }
+    bool ok = file.write(content.c_str(), content.length()) == (int)content.length();
+    file.sync();
+    file.close();
+    if (!ok) {
+        errorMessage = "Write failed for " + filename;
+        return false;
+    }
+    if (filename == currentFileName) {
+        fullText = content;
+        cursorPos = min(cursorPos, (int)fullText.length());
+        forceSafeFullTextRedraw = true;
+    }
+    return true;
+}
+
+int findGitSyncStateEntry(GitSyncStateEntry* entries, int count, const String& name) {
+    for (int i = 0; i < count; i++) {
+        if (entries[i].name == name) return i;
+    }
+    return -1;
+}
+
+int loadGitSyncState(GitSyncStateEntry* entries, int maxEntries) {
+    SdFile file;
+    if (!file.open(GITHUB_SYNC_STATE_PATH, O_RDONLY)) return 0;
+    String line = "";
+    int count = 0;
+    while (file.available() && count < maxEntries) {
+        char c = (char)file.read();
+        if (c == '\r') continue;
+        if (c != '\n') {
+            line += c;
+            continue;
+        }
+        if (line.length() > 0) {
+            int tab1 = line.indexOf('\t');
+            int tab2 = tab1 >= 0 ? line.indexOf('\t', tab1 + 1) : -1;
+            if (tab1 > 0 && tab2 > tab1) {
+                entries[count].name = line.substring(0, tab1);
+                entries[count].localBlobSha = line.substring(tab1 + 1, tab2);
+                entries[count].remoteBlobSha = line.substring(tab2 + 1);
+                count++;
+            }
+        }
+        line = "";
+    }
+    if (line.length() > 0 && count < maxEntries) {
+        int tab1 = line.indexOf('\t');
+        int tab2 = tab1 >= 0 ? line.indexOf('\t', tab1 + 1) : -1;
+        if (tab1 > 0 && tab2 > tab1) {
+            entries[count].name = line.substring(0, tab1);
+            entries[count].localBlobSha = line.substring(tab1 + 1, tab2);
+            entries[count].remoteBlobSha = line.substring(tab2 + 1);
+            count++;
+        }
+    }
+    file.close();
+    return count;
+}
+
+bool saveGitSyncState(GitSyncStateEntry* entries, int count) {
+    if (!ensureIzeComposeDirs()) return false;
+    SdFile file;
+    if (!file.open(GITHUB_SYNC_STATE_PATH, O_WRONLY | O_CREAT | O_TRUNC)) return false;
+    for (int i = 0; i < count; i++) {
+        String line = entries[i].name + "\t" + entries[i].localBlobSha + "\t" + entries[i].remoteBlobSha + "\n";
+        if (file.print(line) <= 0) {
+            file.close();
+            return false;
+        }
+    }
+    file.close();
+    return true;
+}
+
+void upsertGitSyncState(GitSyncStateEntry* entries, int& count, int maxEntries, const String& name, const String& localBlobSha, const String& remoteBlobSha) {
+    int idx = findGitSyncStateEntry(entries, count, name);
+    if (idx < 0) {
+        if (count >= maxEntries) return;
+        idx = count++;
+        entries[idx].name = name;
+    }
+    entries[idx].localBlobSha = localBlobSha;
+    entries[idx].remoteBlobSha = remoteBlobSha;
+}
+
 bool githubHttpRequest(const String& method, const String& url, const String& body, int& httpCode, String& response) {
     const char* host = "api.github.com";
     String prefix = "https://api.github.com";
@@ -2431,6 +2612,122 @@ bool githubCreateBlobForContent(const String& content, String& blobSha, String& 
     return true;
 }
 
+bool githubDocNameFromRemotePath(const String& remotePath, String& docName) {
+    String base = githubCleanPath(githubPath);
+    if (base.length() > 0) {
+        String prefix = base + "/";
+        if (!remotePath.startsWith(prefix)) return false;
+        docName = remotePath.substring(prefix.length());
+    } else {
+        docName = remotePath;
+    }
+    if (docName.indexOf('/') >= 0) return false;
+    return isDocFilename(docName) || docName == "index.html";
+}
+
+int parseGithubTreeDocEntries(const String& json, GitRemoteDocEntry* entries, int maxEntries) {
+    int count = 0;
+    int pos = 0;
+    while (count < maxEntries) {
+        int pathPos = json.indexOf("\"path\":\"", pos);
+        if (pathPos < 0) break;
+        pathPos += 8;
+        int pathEnd = json.indexOf('\"', pathPos);
+        if (pathEnd < 0) break;
+        String remotePath = json.substring(pathPos, pathEnd);
+
+        int typePos = json.indexOf("\"type\":\"", pathEnd);
+        if (typePos < 0) break;
+        typePos += 8;
+        int typeEnd = json.indexOf('\"', typePos);
+        if (typeEnd < 0) break;
+        String type = json.substring(typePos, typeEnd);
+
+        int shaPos = json.indexOf("\"sha\":\"", typeEnd);
+        if (shaPos < 0) break;
+        shaPos += 7;
+        int shaEnd = json.indexOf('\"', shaPos);
+        if (shaEnd < 0) break;
+        String sha = json.substring(shaPos, shaEnd);
+
+        String name = "";
+        if (type == "blob" && githubDocNameFromRemotePath(remotePath, name)) {
+            entries[count].name = name;
+            entries[count].remotePath = remotePath;
+            entries[count].blobSha = sha;
+            count++;
+        }
+        pos = shaEnd + 1;
+    }
+    return count;
+}
+
+int findRemoteDocEntry(GitRemoteDocEntry* entries, int count, const String& name) {
+    for (int i = 0; i < count; i++) {
+        if (entries[i].name == name) return i;
+    }
+    return -1;
+}
+
+bool githubFetchRemoteCommitStamp(const String& remotePath, uint64_t& stamp, String& errorMessage) {
+    int code = 0;
+    String response;
+    String url = githubApiBase() + "/commits?sha=" + githubPathEncode(githubBranchName(), false) +
+                 "&path=" + githubPathEncode(remotePath, true) + "&per_page=1";
+    if (!githubHttpRequest("GET", url, "", code, response)) {
+        errorMessage = "GitHub commit read failed " + String(code);
+        String detail = githubErrorDetail(response);
+        if (detail.length() > 0) errorMessage += ": " + detail;
+        return false;
+    }
+    String dateValue;
+    if (!extractJsonStringValue(response, "date", dateValue) || !parseIsoDateStamp(dateValue, stamp)) {
+        errorMessage = "GitHub commit date missing for " + remotePath;
+        return false;
+    }
+    return true;
+}
+
+bool githubFetchRemoteFileContent(const String& remotePath, String& content, String& remoteBlobSha, String& errorMessage) {
+    int code = 0;
+    String response;
+    String url = githubApiBase() + "/contents/" + githubPathEncode(remotePath, true) + "?ref=" + githubPathEncode(githubBranchName(), false);
+    if (!githubHttpRequest("GET", url, "", code, response)) {
+        errorMessage = "GitHub file read failed " + String(code) + " for " + remotePath;
+        String detail = githubErrorDetail(response);
+        if (detail.length() > 0) errorMessage += ": " + detail;
+        return false;
+    }
+    String encoded;
+    if (!extractJsonStringValue(response, "sha", remoteBlobSha) || !extractJsonStringValue(response, "content", encoded)) {
+        errorMessage = "GitHub file payload missing for " + remotePath;
+        return false;
+    }
+    encoded.replace("\n", "");
+    encoded.replace("\r", "");
+    size_t outLen = 0;
+    int rc = mbedtls_base64_decode(nullptr, 0, &outLen, (const unsigned char*)encoded.c_str(), encoded.length());
+    if (rc != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL && rc != 0) {
+        errorMessage = "Base64 size decode failed for " + remotePath;
+        return false;
+    }
+    unsigned char* buffer = (unsigned char*)malloc(outLen + 1);
+    if (!buffer) {
+        errorMessage = "Not enough memory for " + remotePath;
+        return false;
+    }
+    rc = mbedtls_base64_decode(buffer, outLen, &outLen, (const unsigned char*)encoded.c_str(), encoded.length());
+    if (rc != 0) {
+        free(buffer);
+        errorMessage = "Base64 decode failed for " + remotePath;
+        return false;
+    }
+    buffer[outLen] = '\0';
+    content = String((const char*)buffer);
+    free(buffer);
+    return true;
+}
+
 int collectSyncDocs(String* docNames, int maxDocs) {
     SdFile root;
     SdFile file;
@@ -2534,14 +2831,14 @@ bool runGithubDocumentSync(String& resultMessage) {
 
     static const int MAX_SYNC_DOCS = 65;
     static String docNames[MAX_SYNC_DOCS];
-    static String blobShas[MAX_SYNC_DOCS];
+    static String finalDocNames[MAX_SYNC_DOCS];
     static String docPreviews[MAX_SYNC_DOCS];
     static int docChars[MAX_SYNC_DOCS];
+    static String uploadDocNames[MAX_SYNC_DOCS];
+    static String uploadBlobShas[MAX_SYNC_DOCS];
+    static GitRemoteDocEntry remoteDocs[MAX_SYNC_DOCS + 1];
+    static GitSyncStateEntry syncState[MAX_SYNC_DOCS + 4];
     int docCount = collectSyncDocs(docNames, MAX_SYNC_DOCS);
-    if (docCount <= 0) {
-        resultMessage = "No documents to sync";
-        return true;
-    }
 
     String branch = githubBranchName();
     int code = 0;
@@ -2550,7 +2847,7 @@ bool runGithubDocumentSync(String& resultMessage) {
     String baseTreeSha;
     String newTreeSha;
     String newCommitSha;
-    String indexBlobSha;
+    String indexBlobSha = "";
 
     String getRefUrl = githubApiBase() + "/git/ref/heads/" + githubPathEncode(branch, true);
     String updateRefUrl = githubApiBase() + "/git/refs/heads/" + githubPathEncode(branch, true);
@@ -2568,27 +2865,172 @@ bool runGithubDocumentSync(String& resultMessage) {
         return false;
     }
 
-    for (int i = 0; i < docCount; i++) {
-        drawOnlineSyncScreen("GitHub Sync", "Uploading " + docNames[i], String(i + 1) + "/" + String(docCount));
-        if (!githubCreateBlobForDoc(docNames[i], blobShas[i], resultMessage)) return false;
-        String content;
-        if (!githubReadDocText(docNames[i], content, resultMessage)) return false;
-        docPreviews[i] = utf8Truncate(content, 240);
-        docChars[i] = getTrueLength(content);
+    String treeResponse;
+    if (!githubHttpRequest("GET", githubApiBase() + "/git/trees/" + baseTreeSha + "?recursive=1", "", code, treeResponse)) {
+        resultMessage = "GitHub recursive tree failed " + String(code);
+        String detail = githubErrorDetail(treeResponse);
+        if (detail.length() > 0) resultMessage += ": " + detail;
+        return false;
+    }
+    int remoteDocCount = parseGithubTreeDocEntries(treeResponse, remoteDocs, MAX_SYNC_DOCS + 1);
+    int syncStateCount = loadGitSyncState(syncState, MAX_SYNC_DOCS + 4);
+
+    int unionCount = 0;
+    for (int i = 0; i < docCount && unionCount < MAX_SYNC_DOCS; i++) finalDocNames[unionCount++] = docNames[i];
+    for (int i = 0; i < remoteDocCount && unionCount < MAX_SYNC_DOCS; i++) {
+        if (remoteDocs[i].name == "index.html") continue;
+        bool exists = false;
+        for (int j = 0; j < unionCount; j++) {
+            if (finalDocNames[j] == remoteDocs[i].name) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) finalDocNames[unionCount++] = remoteDocs[i].name;
+    }
+
+    if (unionCount <= 0) {
+        resultMessage = "No documents to sync";
+        return true;
+    }
+
+    int uploadCount = 0;
+    int finalCount = 0;
+    int downloadCount = 0;
+    for (int i = 0; i < unionCount; i++) {
+        String docName = finalDocNames[i];
+        int remoteIdx = findRemoteDocEntry(remoteDocs, remoteDocCount, docName);
+        bool remoteExists = remoteIdx >= 0;
+        String remotePath = remoteExists ? remoteDocs[remoteIdx].remotePath : githubRemoteDocPath(docName);
+        String remoteSha = remoteExists ? remoteDocs[remoteIdx].blobSha : "";
+
+        bool localExists = false;
+        String localContent = "";
+        String localSha = "";
+        String fileError = "";
+        for (int localIdx = 0; localIdx < docCount; localIdx++) {
+            if (docNames[localIdx] == docName) {
+                localExists = true;
+                break;
+            }
+        }
+        if (localExists) {
+            if (!githubReadDocText(docName, localContent, resultMessage)) return false;
+            localSha = githubBlobShaForContent(localContent);
+        }
+
+        int stateIdx = findGitSyncStateEntry(syncState, syncStateCount, docName);
+        String lastLocalSha = stateIdx >= 0 ? syncState[stateIdx].localBlobSha : "";
+        String lastRemoteSha = stateIdx >= 0 ? syncState[stateIdx].remoteBlobSha : "";
+
+        String finalContent = localContent;
+        String finalSha = localSha;
+
+        if (!localExists && remoteExists) {
+            drawOnlineSyncScreen("GitHub Sync", "Downloading " + docName, String(i + 1) + "/" + String(unionCount));
+            if (!githubFetchRemoteFileContent(remotePath, finalContent, finalSha, resultMessage)) return false;
+            if (!writeDocTextToSd(docName, finalContent, resultMessage)) return false;
+            localExists = true;
+            downloadCount++;
+        } else if (localExists && !remoteExists) {
+            drawOnlineSyncScreen("GitHub Sync", "Uploading " + docName, String(i + 1) + "/" + String(unionCount));
+            if (!githubCreateBlobForContent(localContent, uploadBlobShas[uploadCount], resultMessage)) return false;
+            remoteSha = uploadBlobShas[uploadCount];
+            finalSha = remoteSha;
+            finalContent = localContent;
+            uploadDocNames[uploadCount] = docName;
+            uploadCount++;
+        } else if (localExists && remoteExists) {
+            if (localSha == remoteSha) {
+                finalContent = localContent;
+                finalSha = localSha;
+            } else {
+                bool localChanged = (stateIdx < 0) ? true : (localSha != lastLocalSha);
+                bool remoteChanged = (stateIdx < 0) ? true : (remoteSha != lastRemoteSha);
+                if (!localChanged && remoteChanged) {
+                    drawOnlineSyncScreen("GitHub Sync", "Downloading " + docName, String(i + 1) + "/" + String(unionCount));
+                    if (!githubFetchRemoteFileContent(remotePath, finalContent, finalSha, resultMessage)) return false;
+                    if (!writeDocTextToSd(docName, finalContent, resultMessage)) return false;
+                    downloadCount++;
+                } else if (localChanged && !remoteChanged) {
+                    drawOnlineSyncScreen("GitHub Sync", "Uploading " + docName, String(i + 1) + "/" + String(unionCount));
+                    if (!githubCreateBlobForContent(localContent, uploadBlobShas[uploadCount], resultMessage)) return false;
+                    remoteSha = uploadBlobShas[uploadCount];
+                    finalSha = remoteSha;
+                    finalContent = localContent;
+                    uploadDocNames[uploadCount] = docName;
+                    uploadCount++;
+                } else {
+                    uint64_t localStamp = 0;
+                    uint64_t remoteStamp = 0;
+                    bool haveLocalStamp = getLocalDocModifyStamp(docName, localStamp);
+                    bool haveRemoteStamp = githubFetchRemoteCommitStamp(remotePath, remoteStamp, resultMessage);
+                    if (!haveRemoteStamp) return false;
+                    if (!haveLocalStamp) {
+                        resultMessage = "Conflict for " + docName + ": local modified time unavailable";
+                        return false;
+                    }
+                    if (remoteStamp > localStamp) {
+                        drawOnlineSyncScreen("GitHub Sync", "Downloading " + docName, String(i + 1) + "/" + String(unionCount));
+                        if (!githubFetchRemoteFileContent(remotePath, finalContent, finalSha, resultMessage)) return false;
+                        if (!writeDocTextToSd(docName, finalContent, resultMessage)) return false;
+                        downloadCount++;
+                    } else {
+                        drawOnlineSyncScreen("GitHub Sync", "Uploading " + docName, String(i + 1) + "/" + String(unionCount));
+                        if (!githubCreateBlobForContent(localContent, uploadBlobShas[uploadCount], resultMessage)) return false;
+                        remoteSha = uploadBlobShas[uploadCount];
+                        finalSha = remoteSha;
+                        finalContent = localContent;
+                        uploadDocNames[uploadCount] = docName;
+                        uploadCount++;
+                    }
+                }
+            }
+        }
+
+        if (localExists || remoteExists) {
+            docPreviews[finalCount] = utf8Truncate(finalContent, 240);
+            docChars[finalCount] = getTrueLength(finalContent);
+            finalDocNames[finalCount] = docName;
+            finalCount++;
+            upsertGitSyncState(syncState, syncStateCount, MAX_SYNC_DOCS + 4, docName, finalSha, finalSha);
+        }
         yield();
     }
 
+    if (downloadCount > 0) refreshFileList();
+
     drawOnlineSyncScreen("GitHub Sync", "Building index.html", "");
-    String indexHtml = buildGithubIndexHtml(docNames, docPreviews, docChars, docCount);
-    if (!githubCreateBlobForContent(indexHtml, indexBlobSha, resultMessage)) return false;
+    String indexHtml = buildGithubIndexHtml(finalDocNames, docPreviews, docChars, finalCount);
+    String desiredIndexSha = githubBlobShaForContent(indexHtml);
+    int remoteIndexIdx = findRemoteDocEntry(remoteDocs, remoteDocCount, "index.html");
+    String remoteIndexSha = remoteIndexIdx >= 0 ? remoteDocs[remoteIndexIdx].blobSha : "";
+    bool indexNeedsUpload = desiredIndexSha != remoteIndexSha;
+    if (indexNeedsUpload) {
+        if (!githubCreateBlobForContent(indexHtml, indexBlobSha, resultMessage)) return false;
+    }
+
+    if (uploadCount == 0 && !indexNeedsUpload) {
+        if (!saveGitSyncState(syncState, syncStateCount)) {
+            resultMessage = "Sync state save failed";
+            return false;
+        }
+        tempNetCursor = NET_MAIN;
+        resultMessage = (downloadCount > 0)
+            ? ("Downloaded " + String(downloadCount) + " newer documents")
+            : "Already up to date";
+        return true;
+    }
 
     String treeBody = "{\"base_tree\":\"" + baseTreeSha + "\",\"tree\":[";
-    for (int i = 0; i < docCount; i++) {
+    for (int i = 0; i < uploadCount; i++) {
         if (i > 0) treeBody += ",";
-        treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath(docNames[i])) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + blobShas[i] + "\"}";
+        treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath(uploadDocNames[i])) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + uploadBlobShas[i] + "\"}";
     }
-    if (docCount > 0) treeBody += ",";
-    treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath("index.html")) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + indexBlobSha + "\"}";
+    if (indexNeedsUpload) {
+        if (uploadCount > 0) treeBody += ",";
+        treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath("index.html")) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + indexBlobSha + "\"}";
+    }
     treeBody += "]}";
     if (!githubHttpRequest("POST", githubApiBase() + "/git/trees", treeBody, code, response) || !extractJsonStringValue(response, "sha", newTreeSha)) {
         resultMessage = "GitHub tree create failed " + String(code);
@@ -2613,7 +3055,15 @@ bool runGithubDocumentSync(String& resultMessage) {
         return false;
     }
 
-    resultMessage = "Synced " + String(docCount) + " documents";
+    for (int i = 0; i < uploadCount; i++) {
+        upsertGitSyncState(syncState, syncStateCount, MAX_SYNC_DOCS + 4, uploadDocNames[i], uploadBlobShas[i], uploadBlobShas[i]);
+    }
+    if (!saveGitSyncState(syncState, syncStateCount)) {
+        resultMessage = "Sync state save failed";
+        return false;
+    }
+    tempNetCursor = NET_MAIN;
+    resultMessage = "Uploaded " + String(uploadCount) + ", downloaded " + String(downloadCount);
     return true;
 }
 #else
