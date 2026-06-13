@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ize Compose Documents</title>
+  <style>
+    :root { color-scheme: light; --ink:#171717; --muted:#666; --line:#d7d7d7; --panel:#f6f6f2; --paper:#fff; --danger:#a32020; --accent:#111; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: var(--ink); background: #f3f1ea; }
+    main { max-width: 1040px; margin: 0 auto; padding: 22px 16px 48px; }
+    h1 { margin: 0 0 4px; font-size: 25px; }
+    h2 { margin: 0 0 10px; font-size: 17px; }
+    .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin: 16px 0; }
+    .card, .doc, .editor { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+    .card { margin: 0 0 14px; }
+    .grid { display:grid; grid-template-columns: minmax(260px, 360px) 1fr; gap:14px; align-items:start; }
+    .list { display:grid; gap:10px; }
+    .doc { cursor:pointer; }
+    .doc.active { outline: 2px solid #111; }
+    .doc.temp { border-style: dashed; }
+    .name { font-weight: 700; overflow-wrap:anywhere; }
+    .meta, .hint, .status { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .preview { margin-top: 8px; color:#333; white-space: pre-wrap; max-height: 86px; overflow:hidden; }
+    label { display:block; margin: 10px 0 6px; font-size: 13px; color: var(--muted); }
+    input, textarea, button { font: inherit; border-radius: 6px; }
+    input, textarea { width: 100%; border: 1px solid var(--line); background:#fff; padding: 9px 10px; }
+    textarea { min-height: 430px; resize: vertical; line-height: 1.55; }
+    button, a.button { border: 0; background: var(--accent); color:#fff; padding: 9px 11px; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; min-height: 38px; cursor:pointer; }
+    button.secondary, a.button.secondary { background:#fff; color:var(--ink); border:1px solid var(--line); }
+    button.danger { background: var(--danger); }
+    button:disabled { opacity:.45; cursor:default; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px; }
+    .hidden { display:none; }
+    .notice { border-left:4px solid #111; padding-left:10px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } textarea { min-height: 320px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Ize Compose Documents</h1>
+  <p class="meta">Private GitHub repository document manager for Ize Compose.</p>
+
+  <section class="card notice">
+    <h2>Repository Settings</h2>
+    <p class="hint">Edit the constants near the top of this file before committing it to your private repository.</p>
+    <p class="hint">The token is stored in this private repository file. Keep the repository private and rotate the token before sharing repository access.</p>
+  </section>
+
+  <div class="bar">
+    <button id="refreshBtn" type="button">Refresh</button>
+    <button id="newBtn" class="secondary" type="button">New temp document</button>
+    <span id="status" class="status">Ready.</span>
+  </div>
+
+  <section class="grid">
+    <div>
+      <div class="card">
+        <h2>Documents</h2>
+        <p class="hint">Temp files can be edited online. Use "Finalize temp" to rename one to the next docNNNN.txt name before syncing to the device.</p>
+      </div>
+      <div id="list" class="list"></div>
+    </div>
+
+    <div class="editor">
+      <h2 id="editorTitle">No document selected</h2>
+      <p id="editorMeta" class="meta"></p>
+      <textarea id="editor" spellcheck="false" disabled></textarea>
+      <div class="actions">
+        <button id="saveBtn" type="button" disabled>Save</button>
+        <button id="finalizeBtn" class="secondary" type="button" disabled>Finalize temp</button>
+        <a id="openLink" class="button secondary hidden" target="_blank" rel="noopener">Open on GitHub</a>
+        <button id="deleteBtn" class="danger" type="button" disabled>Delete</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const GITHUB_OWNER = "your-github-owner";
+const GITHUB_REPO = "ize-compose-documents";
+const GITHUB_BRANCH = "main";
+const DOCUMENT_PATH = "documents";
+const GITHUB_TOKEN = "이 따옴표 안에 복사한 토큰을 붙여넣기하세요";
+const TOKEN_PLACEHOLDER = String.fromCharCode(0xC774,0x20,0xB530,0xC634,0xD45C,0x20,0xC548,0xC5D0,0x20,0xBCF5,0xC0AC,0xD55C,0x20,0xD1A0,0xD070,0xC744,0x20,0xBD99,0xC5EC,0xB123,0xAE30,0xD558,0xC138,0xC694);
+
+const state = {
+  files: [],
+  selected: null,
+  selectedContent: "",
+  selectedSha: "",
+  loading: false
+};
+
+const $ = (id) => document.getElementById(id);
+const docRe = /^doc(\d+)\.txt$/i;
+const tempRe = /^temp[-_].*\.txt$/i;
+
+function cleanPath(path) {
+  return String(path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+}
+
+function docPath(name) {
+  const base = cleanPath(DOCUMENT_PATH);
+  return base ? base + "/" + name : name;
+}
+
+function githubPageUrl(name) {
+  return `https://github.com/${encodeURIComponent(GITHUB_OWNER)}/${encodeURIComponent(GITHUB_REPO)}/blob/${encodeURIComponent(GITHUB_BRANCH)}/${docPath(name).split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function apiUrl(path) {
+  return `https://api.github.com/repos/${encodeURIComponent(GITHUB_OWNER)}/${encodeURIComponent(GITHUB_REPO)}${path}`;
+}
+
+function setStatus(text) {
+  $("status").textContent = text;
+}
+
+function ensureConfigured() {
+  if (!GITHUB_OWNER || GITHUB_OWNER === "your-github-owner") throw new Error("Set GITHUB_OWNER in documents/index.html.");
+  if (!GITHUB_TOKEN || GITHUB_TOKEN === TOKEN_PLACEHOLDER) throw new Error("Paste your GitHub token into GITHUB_TOKEN.");
+}
+
+async function githubFetch(path, options = {}) {
+  ensureConfigured();
+  const res = await fetch(apiUrl(path), {
+    ...options,
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Authorization": "Bearer " + GITHUB_TOKEN,
+      ...(options.headers || {})
+    }
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
+  if (!res.ok) {
+    const message = data && data.message ? data.message : text || res.statusText;
+    throw new Error(`${res.status} ${message}`);
+  }
+  return data;
+}
+
+function decodeBase64Utf8(value) {
+  const binary = atob(String(value || "").replace(/\s/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function encodeBase64Utf8(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function isManagedFile(name) {
+  return docRe.test(name) || tempRe.test(name);
+}
+
+function sortFiles(files) {
+  return files.sort((a, b) => {
+    const at = tempRe.test(a.name), bt = tempRe.test(b.name);
+    if (at !== bt) return at ? -1 : 1;
+    const an = Number((a.name.match(docRe) || [0, 0])[1]);
+    const bn = Number((b.name.match(docRe) || [0, 0])[1]);
+    if (an !== bn) return bn - an;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+async function loadFileContent(file) {
+  const data = await githubFetch(`/contents/${docPath(file.name).split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(GITHUB_BRANCH)}`);
+  return {
+    ...file,
+    sha: data.sha,
+    content: decodeBase64Utf8(data.content || "")
+  };
+}
+
+async function refresh() {
+  state.loading = true;
+  setStatus("Loading documents...");
+  $("list").innerHTML = "";
+  try {
+    const data = await githubFetch(`/contents/${cleanPath(DOCUMENT_PATH).split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(GITHUB_BRANCH)}`);
+    const files = Array.isArray(data) ? data.filter((item) => item.type === "file" && isManagedFile(item.name)) : [];
+    state.files = sortFiles(files.map((item) => ({ name: item.name, sha: item.sha, size: item.size || 0 })));
+    await renderList();
+    setStatus(`${state.files.length} document(s).`);
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  } finally {
+    state.loading = false;
+  }
+}
+
+async function renderList() {
+  const list = $("list");
+  list.innerHTML = "";
+  if (state.files.length === 0) {
+    list.innerHTML = '<div class="card"><p class="status">No documents found.</p></div>';
+    return;
+  }
+  for (const file of state.files) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "doc" + (tempRe.test(file.name) ? " temp" : "") + (state.selected && state.selected.name === file.name ? " active" : "");
+    row.innerHTML = `<div class="name"></div><div class="meta"></div><div class="preview">Loading preview...</div>`;
+    row.querySelector(".name").textContent = file.name;
+    row.querySelector(".meta").textContent = `${file.size} bytes`;
+    row.addEventListener("click", () => selectFile(file.name));
+    list.appendChild(row);
+    loadFileContent(file).then((loaded) => {
+      const preview = loaded.content.slice(0, 240) || "(empty)";
+      row.querySelector(".preview").textContent = preview;
+    }).catch(() => {
+      row.querySelector(".preview").textContent = "Preview failed.";
+    });
+  }
+}
+
+function resetEditor() {
+  state.selected = null;
+  state.selectedContent = "";
+  state.selectedSha = "";
+  $("editorTitle").textContent = "No document selected";
+  $("editorMeta").textContent = "";
+  $("editor").value = "";
+  $("editor").disabled = true;
+  $("saveBtn").disabled = true;
+  $("finalizeBtn").disabled = true;
+  $("deleteBtn").disabled = true;
+  $("openLink").classList.add("hidden");
+}
+
+async function selectFile(name) {
+  setStatus("Opening " + name + "...");
+  try {
+    const base = state.files.find((file) => file.name === name);
+    if (!base) throw new Error("File not found in list.");
+    const file = await loadFileContent(base);
+    state.selected = file;
+    state.selectedContent = file.content;
+    state.selectedSha = file.sha;
+    $("editorTitle").textContent = file.name;
+    $("editorMeta").textContent = `${file.content.length} characters, ${file.size} bytes`;
+    $("editor").value = file.content;
+    $("editor").disabled = false;
+    $("saveBtn").disabled = false;
+    $("finalizeBtn").disabled = !tempRe.test(file.name);
+    $("deleteBtn").disabled = false;
+    $("openLink").href = githubPageUrl(file.name);
+    $("openLink").classList.remove("hidden");
+    await renderList();
+    setStatus("Opened " + file.name + ".");
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  }
+}
+
+async function putFile(name, content, sha, message) {
+  const body = {
+    message,
+    content: encodeBase64Utf8(content),
+    branch: GITHUB_BRANCH
+  };
+  if (sha) body.sha = sha;
+  return githubFetch(`/contents/${docPath(name).split("/").map(encodeURIComponent).join("/")}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+}
+
+async function deleteFile(name, sha, message) {
+  return githubFetch(`/contents/${docPath(name).split("/").map(encodeURIComponent).join("/")}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, sha, branch: GITHUB_BRANCH })
+  });
+}
+
+function nextDocName() {
+  let max = 0;
+  for (const file of state.files) {
+    const m = file.name.match(docRe);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `doc${String(max + 1).padStart(4, "0")}.txt`;
+}
+
+function tempName() {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  return `temp-${stamp}.txt`;
+}
+
+async function newTempDocument() {
+  const name = tempName();
+  setStatus("Creating " + name + "...");
+  try {
+    await putFile(name, "", "", "Create Ize Compose temp document " + name);
+    await refresh();
+    await selectFile(name);
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  }
+}
+
+async function saveSelected() {
+  if (!state.selected) return;
+  const content = $("editor").value;
+  setStatus("Saving " + state.selected.name + "...");
+  try {
+    const result = await putFile(state.selected.name, content, state.selectedSha, "Update Ize Compose document " + state.selected.name);
+    state.selectedSha = result.content.sha;
+    state.selectedContent = content;
+    await refresh();
+    await selectFile(state.selected.name);
+    setStatus("Saved " + state.selected.name + ".");
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  }
+}
+
+async function finalizeTemp() {
+  if (!state.selected || !tempRe.test(state.selected.name)) return;
+  const target = nextDocName();
+  const content = $("editor").value;
+  setStatus(`Finalizing ${state.selected.name} as ${target}...`);
+  try {
+    await putFile(target, content, "", `Finalize Ize Compose temp document as ${target}`);
+    await deleteFile(state.selected.name, state.selectedSha, "Remove finalized temp document " + state.selected.name);
+    await refresh();
+    await selectFile(target);
+    setStatus("Finalized as " + target + ".");
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  }
+}
+
+function randomCode() {
+  return String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+}
+
+async function deleteSelected() {
+  if (!state.selected) return;
+  const code = randomCode();
+  const typed = prompt(`Delete ${state.selected.name}?\nType this 6-digit code to delete:\n\n${code}`);
+  if (typed !== code) {
+    setStatus("Delete cancelled.");
+    return;
+  }
+  setStatus("Deleting " + state.selected.name + "...");
+  try {
+    await deleteFile(state.selected.name, state.selectedSha, "Delete Ize Compose document " + state.selected.name);
+    resetEditor();
+    await refresh();
+    setStatus("Deleted.");
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  }
+}
+
+$("refreshBtn").addEventListener("click", refresh);
+$("newBtn").addEventListener("click", newTempDocument);
+$("saveBtn").addEventListener("click", saveSelected);
+$("finalizeBtn").addEventListener("click", finalizeTemp);
+$("deleteBtn").addEventListener("click", deleteSelected);
+
+refresh();
+</script>
+</body>
+</html>
