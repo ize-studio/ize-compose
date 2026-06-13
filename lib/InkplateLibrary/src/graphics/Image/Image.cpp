@@ -20,6 +20,10 @@
 #include "../Tjpeg/TJpg_Decoder.h"
 #include "pgmspace.h"
 
+#ifndef IZE_INKPLATE_MINIMAL_IMAGE
+#define IZE_INKPLATE_MINIMAL_IMAGE 0
+#endif
+
 
 Image *_imagePtrJpeg = nullptr;
 Image *_imagePtrPng = nullptr;
@@ -96,7 +100,16 @@ void Image::setDitherKernel(const DitherKernel kernel)
  */
 bool Image::draw(const String path, int x, int y, bool dither, bool invert)
 {
+#if IZE_INKPLATE_MINIMAL_IMAGE
+    (void)path;
+    (void)x;
+    (void)y;
+    (void)dither;
+    (void)invert;
+    return false;
+#else
     return draw(path.c_str(), x, y, dither, invert);
+#endif
 };
 
 /**
@@ -117,6 +130,14 @@ bool Image::draw(const String path, int x, int y, bool dither, bool invert)
  */
 bool Image::draw(const char *path, int x, int y, bool dither, bool invert)
 {
+#if IZE_INKPLATE_MINIMAL_IMAGE
+    (void)path;
+    (void)x;
+    (void)y;
+    (void)dither;
+    (void)invert;
+    return false;
+#else
     // Try to get the file extension.
     char _fileExtension[5];
     if (!getFileExtension((char *)path, _fileExtension))
@@ -144,6 +165,7 @@ bool Image::draw(const char *path, int x, int y, bool dither, bool invert)
         }
     }
     return 0;
+#endif
 };
 
 /**
@@ -198,7 +220,17 @@ bool Image::draw(const uint8_t *buf, int x, int y, int16_t w, int16_t h, uint8_t
 bool Image::draw(const String path, const Format &format, const int x, const int y, const bool dither,
                  const bool invert)
 {
+#if IZE_INKPLATE_MINIMAL_IMAGE
+    (void)path;
+    (void)format;
+    (void)x;
+    (void)y;
+    (void)dither;
+    (void)invert;
+    return false;
+#else
     return draw(path.c_str(), format, x, y, dither, invert);
+#endif
 };
 
 /**
@@ -221,6 +253,15 @@ bool Image::draw(const String path, const Format &format, const int x, const int
  */
 bool Image::draw(const char *path, const Format &format, const int x, const int y, const bool dither, const bool invert)
 {
+#if IZE_INKPLATE_MINIMAL_IMAGE
+    (void)path;
+    (void)format;
+    (void)x;
+    (void)y;
+    (void)dither;
+    (void)invert;
+    return false;
+#else
     if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0)
     {
         if (format == BMP)
@@ -240,6 +281,7 @@ bool Image::draw(const char *path, const Format &format, const int x, const int 
             return drawPngFromSd(path, x, y, dither, invert);
     }
     return 0;
+#endif
 }
 
 /**
@@ -261,6 +303,14 @@ bool Image::draw(const char *path, const Format &format, const int x, const int 
  */
 bool Image::draw(const char *path, const Format &format, const Position &position, const bool dither, const bool invert)
 {
+#if IZE_INKPLATE_MINIMAL_IMAGE
+    (void)path;
+    (void)format;
+    (void)position;
+    (void)dither;
+    (void)invert;
+    return false;
+#else
     if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0)
     {
         if (format == JPG)
@@ -282,6 +332,7 @@ bool Image::draw(const char *path, const Format &format, const Position &positio
         return false;
     }
     return false;
+#endif
 }
 
 /**

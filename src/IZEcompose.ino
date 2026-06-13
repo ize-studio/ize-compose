@@ -13,6 +13,18 @@
 #include "soc/timer_group_reg.h"
 #include <SdFat.h>
 
+#ifndef IZE_ENABLE_DIRECT_GITHUB_SYNC
+#define IZE_ENABLE_DIRECT_GITHUB_SYNC 0
+#endif
+
+#ifndef IZE_ENABLE_BLE_KEYBOARD
+#define IZE_ENABLE_BLE_KEYBOARD 0
+#endif
+
+#if IZE_ENABLE_DIRECT_GITHUB_SYNC
+#include <WiFiClientSecure.h>
+#endif
+
 #ifndef IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH
 #define IZE_EXPERIMENTAL_DIRTY_TILE_REFRESH 1
 #endif
@@ -29,6 +41,7 @@ const char* INITIAL_IMAGE_PATH = "/ize_compose/initial.png";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
 const char* WEB_PROPERTY_PAGE_PATH = "/ize_compose/property_update.html";
+const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/document_server.html";
 const char* SETTINGS_BACKUP_PATH = "/ize_compose/settings_backup.json";
 // Minimal English fallback used only before SD fonts load or when an asset is missing.
 const uint8_t* font_ptr = u8g2_font_5x7_tf;
@@ -44,7 +57,7 @@ const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 bool isFirmwareUpdateMode = false;
-#define FIRMWARE_VERSION "v1.2.0" // Web-only environment settings and menu restructuring
+#define FIRMWARE_VERSION "v1.4.0-test" // Experimental direct GitHub sync and BLE removal
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
 enum AppMode { TYPING_MODE, FILE_MENU_MODE, INITIAL_MODE, SEARCH_MODE, WIFI_SCAN_MODE, WIFI_PASSWORD_MODE };
@@ -74,6 +87,10 @@ void handleTextUpload();
 void handleTextUploadComplete();
 void handleSettingsJson();
 void handleSettingsSave();
+void handleWebAuth();
+void handleDocumentsList();
+void handleGithubSettingsJson();
+void handleGithubSettingsSave();
 
 TaskHandle_t CalcTaskHandle;
 volatile bool needCountUpdate = false; 
@@ -331,6 +348,24 @@ int fileScrollOffset = 0;
 bool isEditingValue = false; 
 bool inSystemSubMenu = false; 
 bool networkExitRequested = false; 
+bool webDocumentUnlocked = false;
+String savedWifiSsid = "";
+String savedWifiPassword = "";
+bool wifiConnectForOnlineSync = false;
+static const int WIFI_SCAN_MAX = 12;
+String wifiScanSsids[WIFI_SCAN_MAX];
+int wifiScanRssi[WIFI_SCAN_MAX];
+int wifiScanCount = 0;
+int wifiScanSelected = 0;
+String wifiPasswordBuffer = "";
+String wifiStatusMessage = "";
+IPAddress wifiStaIp;
+String githubOwner = "";
+String githubRepo = "";
+String githubBranch = "main";
+String githubPath = "documents";
+String githubToken = "";
+String githubSyncStatusMessage = "GitHub not connected";
 
 const char* choStrs[] = {"ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"};
 const char* jungStrs[] = {"ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"};
@@ -499,69 +534,6 @@ void setupUSB() {
 void handleUSB() {
   // Intentionally no-op. The keyboard UART must be owned by loop() only;
   // reading Serial here can steal keystrokes and cause writing/menu interference.
-}
-
-#include <BleKeyboard.h>
-
-BleKeyboard bleKeyboard("IZE Compose", "Ize", 100);
-bool bleStarted = false;
-
-void setupBLE() {
-  if (bleStarted) return;
-  bleKeyboard.setName("IZE Compose");
-  bleKeyboard.begin();
-  bleStarted = true;
-}
-
-void sendToBluetooth(String text) {
-  if (bleKeyboard.isConnected()) {
-    bleKeyboard.print(text); 
-  }
-}
-
-void sendFullTextViaBLE() {
-    if (!bleKeyboard.isConnected()) return;
-    
-    delay(2000); 
-    
-    for(int i = 0; i < fullText.length(); i++) {
-        char c = fullText[i];
-        
-        if (c == '\n') {
-            bleKeyboard.write(KEY_RETURN); 
-        } 
-        else if (c == '/' || c == '\\' || c == '-' || c == '=') {
-            
-            bleKeyboard.print(c);
-            delay(30); 
-        }
-        else {
-            bleKeyboard.print(c);
-        }
-        delay(20); 
-    }
-    
-}
-
-void sendBleInput(byte k, char real) {
-    if (!bleKeyboard.isConnected()) return;
-    if (real >= 32 && real <= 126) {
-        bleKeyboard.write((uint8_t)real);
-    } else if (real == '\n') {
-        bleKeyboard.write(KEY_RETURN);
-    } else if (real == '\b' || k == 13) {
-        bleKeyboard.write(KEY_BACKSPACE);
-    } else if (real == '\t') {
-        bleKeyboard.write(KEY_TAB);
-    } else if (k == 57) {
-        bleKeyboard.write(KEY_HOME);
-    } else if (k == 60) {
-        bleKeyboard.write(KEY_END);
-    } else if (k == 58) {
-        bleKeyboard.write(KEY_UP_ARROW);
-    } else if (k == 59) {
-        bleKeyboard.write(KEY_DOWN_ARROW);
-    }
 }
 
 void insertText(String str) { 
@@ -1413,6 +1385,13 @@ void saveSystemSettings() {
     prefs.putInt("typeSpd", typingSpeed);
     prefs.putInt("refresh", refreshLimit);
     prefs.putInt("sleep", autoSleepIndex);
+    prefs.putString("wifiSsid", savedWifiSsid);
+    prefs.putString("wifiPass", savedWifiPassword);
+    prefs.putString("ghOwner", githubOwner);
+    prefs.putString("ghRepo", githubRepo);
+    prefs.putString("ghBranch", githubBranch);
+    prefs.putString("ghPath", githubPath);
+    prefs.putString("ghToken", githubToken);
     prefs.end();
     writeSettingsBackupFile();
 }
@@ -1445,6 +1424,13 @@ void loadSystemSettings() {
     if (refreshLimit < 0 || refreshLimit > 2000) refreshLimit = 2000;
     autoSleepIndex = prefs.getInt("sleep", 2);
     if (autoSleepIndex < 0 || autoSleepIndex > 6) autoSleepIndex = 2;
+    savedWifiSsid = prefs.getString("wifiSsid", "");
+    savedWifiPassword = prefs.getString("wifiPass", "");
+    githubOwner = prefs.getString("ghOwner", "");
+    githubRepo = prefs.getString("ghRepo", "");
+    githubBranch = prefs.getString("ghBranch", "main");
+    githubPath = prefs.getString("ghPath", "documents");
+    githubToken = prefs.getString("ghToken", "");
     prefs.end();
     if (!configInitialized && restoreSettingsFromBackup()) {
         saveSystemSettings();
@@ -1544,6 +1530,10 @@ bool writeSettingsBackupFile() {
     json += "  \"autoSleepIndex\": " + String(autoSleepIndex) + ",\n";
     json += "  \"countMode\": " + String(countMode) + ",\n";
     json += "  \"currentFontSlot\": " + String(currentFontSlot) + ",\n";
+    json += "  \"githubOwner\": \"" + jsonEscape(githubOwner) + "\",\n";
+    json += "  \"githubRepo\": \"" + jsonEscape(githubRepo) + "\",\n";
+    json += "  \"githubBranch\": \"" + jsonEscape(githubBranch) + "\",\n";
+    json += "  \"githubPath\": \"" + jsonEscape(githubPath) + "\",\n";
     json += "  \"currentFileName\": \"" + jsonEscape(currentFileName) + "\"\n";
     json += "}\n";
 
@@ -1582,6 +1572,10 @@ bool restoreSettingsFromBackup() {
     if (extractJsonIntValue(json, "autoSleepIndex", intValue) && intValue >= 0 && intValue <= 6) autoSleepIndex = intValue;
     if (extractJsonIntValue(json, "countMode", intValue) && intValue >= 0 && intValue <= 2) countMode = intValue;
     if (extractJsonIntValue(json, "currentFontSlot", intValue) && intValue >= 0) currentFontSlot = intValue;
+    if (extractJsonStringValue(json, "githubOwner", stringValue)) githubOwner = stringValue;
+    if (extractJsonStringValue(json, "githubRepo", stringValue)) githubRepo = stringValue;
+    if (extractJsonStringValue(json, "githubBranch", stringValue) && stringValue.length() > 0) githubBranch = stringValue;
+    if (extractJsonStringValue(json, "githubPath", stringValue)) githubPath = stringValue;
     if (extractJsonStringValue(json, "currentFileName", stringValue) && stringValue.length() > 0) currentFileName = stringValue;
 
     previewEnglishLayoutIndex = englishLayoutIndex;
@@ -1733,20 +1727,67 @@ void handleSettingsSave() {
     server.send(200, "text/plain", "Settings saved.");
 }
 
-void handleUpdateForm() {
-String html = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'><title>IZE Compose Update</title></head>"                  "<body style='font-family:sans-serif; text-align:center; margin-top:50px;'>";
-    
-    html += "<h2>Firmware OTA Update</h2>"
-            "<p style='color:#555;'>Select the compiled .bin file and click the button below.</p>"
-            "<form method='POST' action='/update' enctype='multipart/form-data'>"
-            "<input type='file' name='update' accept='.bin' required><br><br>"
-            "<input type='submit' value='Start Update' style='padding:10px 20px; font-size:16px; cursor:pointer;'>"
-            "</form>";
-    html += "</body></html>";
-    server.send(200, "text/html", html);
+String buildGithubSettingsJson() {
+    String json = "{";
+    json += "\"available\":" + String(currentNetSubMode == NET_WIFI_STA ? "true" : "false");
+    json += ",\"configured\":" + String(githubConfigComplete() ? "true" : "false");
+    json += ",\"tokenSaved\":" + String(githubToken.length() > 0 ? "true" : "false");
+    json += ",\"owner\":\"" + jsonEscape(githubOwner) + "\"";
+    json += ",\"repo\":\"" + jsonEscape(githubRepo) + "\"";
+    json += ",\"branch\":\"" + jsonEscape(githubBranchName()) + "\"";
+    json += ",\"path\":\"" + jsonEscape(githubCleanPath(githubPath)) + "\"";
+    json += ",\"syncStatus\":\"" + jsonEscape(githubSyncStatusMessage) + "\"";
+    json += "}";
+    return json;
 }
 
+void handleGithubSettingsJson() {
+    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
+        if (!server.client().connected()) return;
+        if (currentNetSubMode != NET_WIFI_STA) server.send(403, "application/json", "{\"available\":false}");
+        return;
+    }
+    server.send(200, "application/json; charset=utf-8", buildGithubSettingsJson());
+}
 
+void handleGithubSettingsSave() {
+    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
+        if (!server.client().connected()) return;
+        if (currentNetSubMode != NET_WIFI_STA) server.send(403, "text/plain", "GitHub settings are available only in Wi-Fi mode.");
+        return;
+    }
+
+    String newOwner = server.arg("owner"); newOwner.trim();
+    String newRepo = server.arg("repo"); newRepo.trim();
+    String newBranch = server.arg("branch"); newBranch.trim();
+    String newPath = server.arg("path"); newPath = githubCleanPath(newPath);
+    String newToken = server.arg("token"); newToken.trim();
+
+    if (newOwner.length() == 0 || newRepo.length() == 0) {
+        server.send(400, "text/plain", "Owner and repository are required.");
+        return;
+    }
+    if (newBranch.length() == 0) newBranch = "main";
+    if (githubToken.length() == 0 && newToken.length() == 0) {
+        server.send(400, "text/plain", "Token is required.");
+        return;
+    }
+
+    bool changed = newOwner != githubOwner || newRepo != githubRepo || newBranch != githubBranch || newPath != githubCleanPath(githubPath) || newToken.length() > 0;
+    if (!changed) {
+        server.send(200, "text/plain", "No changes detected.");
+        return;
+    }
+
+    githubOwner = newOwner;
+    githubRepo = newRepo;
+    githubBranch = newBranch;
+    githubPath = newPath;
+    if (newToken.length() > 0) githubToken = newToken;
+    githubSyncStatusMessage = "GitHub settings saved";
+    saveSystemSettings();
+    server.send(200, "text/plain", "GitHub settings saved.");
+}
 bool isFirmware = false;
 
 SdFile sdBackupFile;
@@ -2015,6 +2056,44 @@ void handleWebServerUpload() {
     }
 }
 
+void generateWebPin() {
+    uint32_t n = esp_random() % 10000;
+    otaPinCode = String(n);
+    while (otaPinCode.length() < 4) otaPinCode = "0" + otaPinCode;
+    webDocumentUnlocked = false;
+}
+
+void stopNetworkServices() {
+    server.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.disconnect(true, true);
+    WiFi.mode(WIFI_OFF);
+    currentNetSubMode = NET_MAIN;
+    isFirmwareUpdateMode = false;
+    updateState = UPD_NONE;
+    webServerUpdateOnly = false;
+    webDocumentUnlocked = false;
+}
+
+void registerWebRoutes() {
+    const char* otaHeaderKeys[] = {"X-OTA-PIN"};
+    server.collectHeaders(otaHeaderKeys, 1);
+
+    server.on("/", handleRoot);
+    server.on("/auth", HTTP_POST, handleWebAuth);
+    server.on("/documents", HTTP_GET, handleDocumentsList);
+    server.on("/read", handleRead);
+    server.on("/download", handleDownload);
+    server.on("/delete", handleDelete);
+    server.on("/uploadText", HTTP_POST, handleTextUploadComplete, handleTextUpload);
+    server.on("/github/settings.json", HTTP_GET, handleGithubSettingsJson);
+    server.on("/github/settings", HTTP_POST, handleGithubSettingsSave);
+
+    server.on("/settings.json", HTTP_GET, handleSettingsJson);
+    server.on("/settings", HTTP_POST, handleSettingsSave);
+    server.on("/update", HTTP_POST, handleWebServerUpdate, handleWebServerUpload);
+}
+
 void setupWiFi() {
     WiFi.softAPdisconnect(true);
     WiFi.disconnect(true, true);
@@ -2033,24 +2112,460 @@ void setupWiFi() {
     }
     WiFi.setTxPower(WIFI_POWER_15dBm);
     webServerUpdateOnly = (updateState == UPD_WIFI_WAITING);
-
-    const char* otaHeaderKeys[] = {"X-OTA-PIN"};
-    server.collectHeaders(otaHeaderKeys, 1);
-
-    server.on("/", handleRoot);
-    server.on("/read", handleRead);
-    server.on("/download", handleDownload);
-    server.on("/delete", handleDelete);
-    server.on("/uploadText", HTTP_POST, handleTextUploadComplete, handleTextUpload);
-
-    server.on("/settings.json", HTTP_GET, handleSettingsJson);
-    server.on("/settings", HTTP_POST, handleSettingsSave);
-    server.on("/update", HTTP_POST, handleWebServerUpdate, handleWebServerUpload);
-
+    if (!webServerUpdateOnly && otaPinCode == "") generateWebPin();
+    registerWebRoutes();
     server.begin();
     
 } 
 
+void drawOnlineSyncScreen(const String& title, const String& line1, const String& line2 = "");
+void finishOnlineSyncToMenu(const String& title, const String& detail);
+bool runGithubDocumentSync(String& resultMessage);
+bool connectSelectedWifi(const String& password);
+
+void startWifiScanMode(bool forOnlineSync = false) {
+    stopNetworkServices();
+    wifiConnectForOnlineSync = forOnlineSync;
+    currentMode = WIFI_SCAN_MODE;
+    wifiStatusMessage = "Scanning Wi-Fi...";
+    wifiScanCount = 0;
+    wifiScanSelected = 0;
+    needUpdate = true;
+
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(true, true);
+    delay(200);
+    int found = WiFi.scanNetworks(false, true);
+    wifiScanCount = 0;
+    for (int i = 0; i < found && wifiScanCount < WIFI_SCAN_MAX; i++) {
+        String ssidName = WiFi.SSID(i);
+        if (ssidName.length() == 0) continue;
+        bool duplicate = false;
+        for (int j = 0; j < wifiScanCount; j++) {
+            if (wifiScanSsids[j] == ssidName) { duplicate = true; break; }
+        }
+        if (duplicate) continue;
+        wifiScanSsids[wifiScanCount] = ssidName;
+        wifiScanRssi[wifiScanCount] = WiFi.RSSI(i);
+        wifiScanCount++;
+    }
+    WiFi.scanDelete();
+    wifiStatusMessage = (wifiScanCount > 0) ? "Select Wi-Fi. Enter: connect. Tab/Menu: cancel." : "No Wi-Fi networks found. Menu: cancel.";
+
+    if (wifiConnectForOnlineSync) {
+        if (savedWifiSsid.length() == 0 || savedWifiPassword.length() == 0) {
+            wifiConnectForOnlineSync = false;
+            wifiStatusMessage = "No saved Wi-Fi. Select Wi-Fi.";
+        } else {
+            int savedIndex = -1;
+            for (int i = 0; i < wifiScanCount; i++) {
+                if (wifiScanSsids[i] == savedWifiSsid) {
+                    savedIndex = i;
+                    break;
+                }
+            }
+            if (savedIndex >= 0) {
+                wifiScanSelected = savedIndex;
+                connectSelectedWifi(savedWifiPassword);
+                return;
+            }
+            wifiConnectForOnlineSync = false;
+            wifiStatusMessage = "Saved Wi-Fi not found. Select Wi-Fi.";
+        }
+    }
+    needUpdate = true;
+}
+
+bool connectSelectedWifi(const String& password) {
+    if (wifiScanSelected < 0 || wifiScanSelected >= wifiScanCount) return false;
+    String targetSsid = wifiScanSsids[wifiScanSelected];
+    wifiStatusMessage = "Connecting to " + targetSsid + "...";
+    needUpdate = true;
+    display.fillRect(0, 0, display.width(), display.height(), WHITE);
+    printCleanText(u8g2_for_adafruit_gfx, wifiStatusMessage, MARGIN_X, MARGIN_Y + 40);
+    display.display();
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(targetSsid.c_str(), password.c_str());
+    unsigned long startMs = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startMs < 15000) {
+        delay(250);
+        yield();
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+        savedWifiSsid = targetSsid;
+        savedWifiPassword = password;
+        saveSystemSettings();
+        wifiStaIp = WiFi.localIP();
+        if (wifiConnectForOnlineSync) {
+            String message;
+            wifiConnectForOnlineSync = false;
+            currentNetSubMode = NET_WIFI_STA;
+            githubSyncStatusMessage = "GitHub syncing";
+            drawOnlineSyncScreen("GitHub Sync", "Syncing documents...", wifiStaIp.toString());
+            bool ok = runGithubDocumentSync(message);
+            githubSyncStatusMessage = ok ? "GitHub sync complete" : "GitHub sync failed";
+            finishOnlineSyncToMenu(ok ? "Online Sync Complete" : "Online Sync Failed", message);
+            return ok;
+        }
+        generateWebPin();
+        webServerUpdateOnly = false;
+        currentNetSubMode = NET_WIFI_STA;
+        currentMode = TYPING_MODE;
+        registerWebRoutes();
+        server.begin();
+        wifiStatusMessage = "Connected.";
+        needUpdate = true;
+        statusBarNeedsUpdate = false;
+        return true;
+    }
+    WiFi.disconnect(false, false);
+    if (wifiConnectForOnlineSync) {
+        wifiConnectForOnlineSync = false;
+        wifiPasswordBuffer = "";
+        currentMode = WIFI_SCAN_MODE;
+        wifiStatusMessage = "Saved Wi-Fi failed. Select Wi-Fi.";
+        needUpdate = true;
+        return false;
+    }
+    wifiPasswordBuffer = "";
+    currentMode = WIFI_PASSWORD_MODE;
+    wifiStatusMessage = "Connection failed. Enter password.";
+    needUpdate = true;
+    return false;
+}
+
+bool githubConfigComplete() {
+    String owner = githubOwner; owner.trim();
+    String repo = githubRepo; repo.trim();
+    String branch = githubBranch; branch.trim();
+    String token = githubToken; token.trim();
+    return owner.length() > 0 && repo.length() > 0 && branch.length() > 0 && token.length() > 0;
+}
+
+String githubCleanPath(String path) {
+    path.trim();
+    path.replace("\\", "/");
+    while (path.startsWith("/")) path.remove(0, 1);
+    while (path.endsWith("/")) path.remove(path.length() - 1);
+    return path;
+}
+
+String githubBranchName() {
+    String branch = githubBranch;
+    branch.trim();
+    if (branch.startsWith("refs/heads/")) branch.remove(0, 11);
+    if (branch.length() == 0) branch = "main";
+    return branch;
+}
+
+String githubPathEncode(const String& value, bool keepSlash) {
+    const char* hex = "0123456789ABCDEF";
+    String out = "";
+    for (int i = 0; i < value.length(); i++) {
+        uint8_t c = (uint8_t)value[i];
+        bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' || (keepSlash && c == '/');
+        if (safe) out += (char)c;
+        else {
+            out += '%';
+            out += hex[(c >> 4) & 0x0F];
+            out += hex[c & 0x0F];
+        }
+    }
+    return out;
+}
+
+String githubApiBase() {
+    return "https://api.github.com/repos/" + githubPathEncode(githubOwner, false) + "/" + githubPathEncode(githubRepo, false);
+}
+
+#if IZE_ENABLE_DIRECT_GITHUB_SYNC
+bool githubHttpRequest(const String& method, const String& url, const String& body, int& httpCode, String& response) {
+    const char* host = "api.github.com";
+    String prefix = "https://api.github.com";
+    if (!url.startsWith(prefix)) {
+        httpCode = -1;
+        response = "Invalid GitHub URL";
+        return false;
+    }
+    String path = url.substring(prefix.length());
+    if (path.length() == 0) path = "/";
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(25000);
+    if (!client.connect(host, 443)) {
+        httpCode = -1;
+        response = "GitHub connect failed";
+        return false;
+    }
+
+    client.print(method);
+    client.print(" ");
+    client.print(path);
+    client.print(" HTTP/1.1\r\nHost: api.github.com\r\nUser-Agent: Ize-Compose\r\nAccept: application/vnd.github+json\r\nX-GitHub-Api-Version: 2022-11-28\r\nAuthorization: Bearer ");
+    client.print(githubToken);
+    client.print("\r\nConnection: close\r\n");
+    if (method == "POST" || method == "PATCH") {
+        client.print("Content-Type: application/json\r\nContent-Length: ");
+        client.print(body.length());
+        client.print("\r\n");
+    }
+    client.print("\r\n");
+    if (method == "POST" || method == "PATCH") client.print(body);
+
+    unsigned long startMs = millis();
+    while (!client.available() && client.connected() && millis() - startMs < 25000) {
+        delay(10);
+        yield();
+    }
+    String statusLine = client.readStringUntil('\n');
+    statusLine.trim();
+    int firstSpace = statusLine.indexOf(' ');
+    httpCode = (firstSpace >= 0) ? statusLine.substring(firstSpace + 1, firstSpace + 4).toInt() : -1;
+
+    bool chunked = false;
+    while (client.connected() || client.available()) {
+        String header = client.readStringUntil('\n');
+        header.trim();
+        if (header.length() == 0) break;
+        String lower = header;
+        lower.toLowerCase();
+        if (lower.indexOf("transfer-encoding:") == 0 && lower.indexOf("chunked") >= 0) chunked = true;
+        yield();
+    }
+
+    response = "";
+    if (chunked) {
+        while (client.connected() || client.available()) {
+            String lenLine = client.readStringUntil('\n');
+            lenLine.trim();
+            if (lenLine.length() == 0) continue;
+            int chunkLen = (int)strtol(lenLine.c_str(), nullptr, 16);
+            if (chunkLen <= 0) break;
+            while (chunkLen-- > 0 && (client.connected() || client.available())) {
+                while (!client.available() && client.connected()) { delay(1); yield(); }
+                if (client.available()) response += (char)client.read();
+            }
+            if (client.available()) client.read();
+            if (client.available()) client.read();
+            yield();
+        }
+    } else {
+        while (client.connected() || client.available()) {
+            while (client.available()) response += (char)client.read();
+            yield();
+        }
+    }
+    client.stop();
+    return httpCode >= 200 && httpCode < 300;
+}
+bool extractJsonStringValueAfter(const String& json, const String& marker, const char* key, String& outValue) {
+    int start = json.indexOf(marker);
+    if (start < 0) return false;
+    String tail = json.substring(start);
+    return extractJsonStringValue(tail, key, outValue);
+}
+
+bool githubReadDocText(const String& filename, String& content, String& errorMessage) {
+    SdFile file;
+    if (!file.open(filename.c_str(), O_RDONLY)) {
+        errorMessage = "Could not open " + filename;
+        return false;
+    }
+    uint32_t size = file.fileSize();
+    if (!content.reserve(size + 16)) {
+        file.close();
+        errorMessage = "Not enough memory for " + filename;
+        return false;
+    }
+    content = "";
+    char buffer[256];
+    while (file.available()) {
+        int n = file.read(buffer, sizeof(buffer));
+        if (n <= 0) break;
+        for (int i = 0; i < n; i++) content += buffer[i];
+        yield();
+    }
+    file.close();
+    return true;
+}
+
+bool githubCreateBlobForDoc(const String& filename, String& blobSha, String& errorMessage) {
+    String content;
+    if (!githubReadDocText(filename, content, errorMessage)) return false;
+    String escaped = jsonEscape(content);
+    String body = "{\"content\":\"" + escaped + "\",\"encoding\":\"utf-8\"}";
+    int code = 0;
+    String response;
+    if (!githubHttpRequest("POST", githubApiBase() + "/git/blobs", body, code, response)) {
+        errorMessage = "GitHub blob failed " + String(code) + " for " + filename;
+        return false;
+    }
+    if (!extractJsonStringValue(response, "sha", blobSha) || blobSha.length() == 0) {
+        errorMessage = "GitHub blob SHA missing";
+        return false;
+    }
+    return true;
+}
+
+int collectSyncDocs(String* docNames, int maxDocs) {
+    SdFile root;
+    SdFile file;
+    char name[64];
+    static int docNums[80];
+    int total = 0;
+    if (!root.open("/", O_RDONLY)) return 0;
+    while (file.openNext(&root, O_RDONLY)) {
+        file.getName(name, sizeof(name));
+        String fn = String(name);
+        if (!file.isDir() && isDocFilename(fn) && total < maxDocs) {
+            docNames[total] = fn;
+            docNums[total] = docNumberFromName(fn);
+            total++;
+        }
+        file.close();
+        yield();
+    }
+    root.close();
+    for (int i = 0; i < total - 1; i++) {
+        for (int j = i + 1; j < total; j++) {
+            if (docNums[i] > docNums[j]) {
+                int tn = docNums[i]; docNums[i] = docNums[j]; docNums[j] = tn;
+                String tf = docNames[i]; docNames[i] = docNames[j]; docNames[j] = tf;
+            }
+        }
+    }
+    return total;
+}
+
+String githubRemoteDocPath(const String& filename) {
+    String base = githubCleanPath(githubPath);
+    if (base.length() == 0) return filename;
+    return base + "/" + filename;
+}
+
+bool runGithubDocumentSync(String& resultMessage) {
+    if (!githubConfigComplete()) {
+        resultMessage = "GitHub settings missing";
+        return false;
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+        resultMessage = "Wi-Fi not connected";
+        return false;
+    }
+
+    static const int MAX_SYNC_DOCS = 65;
+    static String docNames[MAX_SYNC_DOCS];
+    static String blobShas[MAX_SYNC_DOCS];
+    int docCount = collectSyncDocs(docNames, MAX_SYNC_DOCS);
+    if (docCount <= 0) {
+        resultMessage = "No documents to sync";
+        return true;
+    }
+
+    String branch = githubBranchName();
+    int code = 0;
+    String response;
+    String headCommitSha;
+    String baseTreeSha;
+    String newTreeSha;
+    String newCommitSha;
+
+    String refUrl = githubApiBase() + "/git/ref/heads/" + githubPathEncode(branch, true);
+    if (!githubHttpRequest("GET", refUrl, "", code, response) || !extractJsonStringValue(response, "sha", headCommitSha)) {
+        resultMessage = "GitHub branch read failed " + String(code);
+        return false;
+    }
+
+    if (!githubHttpRequest("GET", githubApiBase() + "/git/commits/" + headCommitSha, "", code, response) || !extractJsonStringValueAfter(response, "\"tree\"", "sha", baseTreeSha)) {
+        resultMessage = "GitHub tree read failed " + String(code);
+        return false;
+    }
+
+    for (int i = 0; i < docCount; i++) {
+        drawOnlineSyncScreen("GitHub Sync", "Uploading " + docNames[i], String(i + 1) + "/" + String(docCount));
+        if (!githubCreateBlobForDoc(docNames[i], blobShas[i], resultMessage)) return false;
+        yield();
+    }
+
+    String treeBody = "{\"base_tree\":\"" + baseTreeSha + "\",\"tree\":[";
+    for (int i = 0; i < docCount; i++) {
+        if (i > 0) treeBody += ",";
+        treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath(docNames[i])) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + blobShas[i] + "\"}";
+    }
+    treeBody += "]}";
+    if (!githubHttpRequest("POST", githubApiBase() + "/git/trees", treeBody, code, response) || !extractJsonStringValue(response, "sha", newTreeSha)) {
+        resultMessage = "GitHub tree create failed " + String(code);
+        return false;
+    }
+
+    String commitBody = "{\"message\":\"Sync Ize Compose documents\",\"tree\":\"" + newTreeSha + "\",\"parents\":[\"" + headCommitSha + "\"]}";
+    if (!githubHttpRequest("POST", githubApiBase() + "/git/commits", commitBody, code, response) || !extractJsonStringValue(response, "sha", newCommitSha)) {
+        resultMessage = "GitHub commit failed " + String(code);
+        return false;
+    }
+
+    String refBody = "{\"sha\":\"" + newCommitSha + "\",\"force\":false}";
+    if (!githubHttpRequest("PATCH", refUrl, refBody, code, response)) {
+        resultMessage = "GitHub ref update failed " + String(code);
+        return false;
+    }
+
+    resultMessage = "Synced " + String(docCount) + " documents";
+    return true;
+}
+#else
+bool runGithubDocumentSync(String& resultMessage) {
+    resultMessage = "Direct GitHub HTTPS is not built.";
+    return false;
+}
+#endif
+
+void drawOnlineSyncScreen(const String& title, const String& line1, const String& line2) {
+    display.fillRect(0, 0, display.width(), display.height(), WHITE);
+    u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
+    printDualFont(title, MARGIN_X, MARGIN_Y + 10, true);
+    printDualFont(line1, MARGIN_X, MARGIN_Y + 55, true);
+    if (line2.length() > 0) printDualFont(line2, MARGIN_X, MARGIN_Y + 95, true);
+    display.display();
+}
+
+void finishOnlineSyncToMenu(const String& title, const String& detail) {
+    drawOnlineSyncScreen(title, detail, "");
+    delay(2200);
+    stopNetworkServices();
+    currentMode = FILE_MENU_MODE;
+    menuFocusSide = 0;
+    leftMenuIndex = 3;
+    isEditingValue = false;
+    needUpdate = true;
+    statusBarNeedsUpdate = true;
+}
+void openWifiModeAfterOnlineSyncError(const String& title, const String& detail) {
+    drawOnlineSyncScreen(title, detail, "Opening Wi-Fi mode...");
+    delay(2400);
+    startWifiScanMode();
+}
+
+void runOnlineSyncFlow() {
+    flushKorean();
+    saveFile();
+    if (!githubConfigComplete()) {
+        githubSyncStatusMessage = "GitHub info missing";
+        openWifiModeAfterOnlineSyncError("Online Sync", "GitHub repository info missing");
+        return;
+    }
+    githubSyncStatusMessage = "GitHub syncing";
+    drawOnlineSyncScreen("Online Sync", "Connecting saved Wi-Fi...");
+    startWifiScanMode(true);
+}
+String getNetworkModeLabel(NetworkSubMode mode) {
+    if (mode == NET_SYNC) return "Sync";
+    if (mode == NET_WIFI_STA) return "WiFi";
+    if (mode == NET_WIFI) return "Server";
+    return "Off";
+}
 String getAccentChar(char base, int mode, int cycle) {
     int idx = cycle - 1;
     if (mode == 1) { 
@@ -2251,7 +2766,7 @@ if (savedMessageVisible && millis() - showSavedMessageTime >= 2000) {
     statusBarNeedsUpdate = true;
 }
 
-if (currentNetSubMode == NET_WIFI || updateState == UPD_WIFI_WAITING) {
+if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA || updateState == UPD_WIFI_WAITING) {
     server.handleClient(); 
     }
     
@@ -2282,8 +2797,7 @@ if (currentNetSubMode == NET_WIFI || updateState == UPD_WIFI_WAITING) {
 if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) { 
     __atomic_store_n(&networkExitRequested, false, __ATOMIC_SEQ_CST);  
     WiFi.softAPdisconnect(true);
-        WiFi.mode(WIFI_OFF); btStop();
-        bleStarted = false;
+        WiFi.mode(WIFI_OFF);
         currentNetSubMode = NET_MAIN;
         isFirmwareUpdateMode = false;
         updateState = UPD_NONE;
@@ -2305,7 +2819,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             display.display();
             updateScreenDrawn = true;
         }
-        if (currentNetSubMode == NET_WIFI) server.handleClient();
+        if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA) server.handleClient();
         yield(); 
         return;
     }
@@ -2452,16 +2966,56 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         continue;
     }
     
+    if (currentMode == WIFI_SCAN_MODE) {
+        if (k == 58 && wifiScanSelected > 0) wifiScanSelected--;
+        else if (k == 59 && wifiScanSelected < wifiScanCount - 1) wifiScanSelected++;
+        else if (real == '\t' || k == 246) {
+            stopNetworkServices();
+            currentMode = TYPING_MODE;
+        } else if ((real == '\n' || k == 40) && wifiScanCount > 0) {
+            if (savedWifiPassword.length() > 0 && connectSelectedWifi(savedWifiPassword)) {
+                // Connected with the recently successful password. GitHub sync runs without web PIN in a later phase.
+            } else {
+                currentMode = WIFI_PASSWORD_MODE;
+                wifiPasswordBuffer = "";
+                wifiStatusMessage = "Enter password. Enter: connect. Tab/Menu: cancel.";
+            }
+        }
+        needUpdate = true;
+        statusBarNeedsUpdate = false;
+        continue;
+    }
+
+    if (currentMode == WIFI_PASSWORD_MODE) {
+        if (real == '\t' || k == 246) {
+            stopNetworkServices();
+            currentMode = TYPING_MODE;
+            needUpdate = true;
+            statusBarNeedsUpdate = true;
+            continue;
+        }
+        if (real == '\b' || k == 13) {
+            if (wifiPasswordBuffer.length() > 0) wifiPasswordBuffer.remove(wifiPasswordBuffer.length() - 1);
+            needUpdate = true;
+            continue;
+        }
+        if (real == '\n' || k == 40) {
+            connectSelectedWifi(wifiPasswordBuffer);
+            needUpdate = true;
+            continue;
+        }
+        if (real >= 32 && real <= 126 && wifiPasswordBuffer.length() < 63) {
+            wifiPasswordBuffer += real;
+            needUpdate = true;
+            continue;
+        }
+        needUpdate = false;
+        statusBarNeedsUpdate = false;
+        continue;
+    }
     if (isCtrlPressed) {
       if (currentNetSubMode != NET_MAIN && k == 246) {
-          WiFi.softAPdisconnect(true);
-          WiFi.mode(WIFI_OFF);
-          btStop();
-          bleStarted = false;
-          currentNetSubMode = NET_MAIN;
-          isFirmwareUpdateMode = false;
-          updateState = UPD_NONE;
-          webServerUpdateOnly = false;
+          stopNetworkServices();
           needUpdate = true;
           statusBarNeedsUpdate = true;
           continue;
@@ -2525,9 +3079,6 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
       break; 
     }
     if (currentNetSubMode != NET_MAIN) {
-        if (currentNetSubMode == NET_BT_SELECT) {
-            sendBleInput(k, real);
-        }
         needUpdate = false;
         statusBarNeedsUpdate = false;
         continue;
@@ -2550,22 +3101,29 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             switch (leftMenuIndex) {
                 case 3: 
                     if (k == 57) { 
-                        if (tempNetCursor == NET_MAIN) tempNetCursor = NET_BT_SELECT;
-                        else if (tempNetCursor == NET_BT_SELECT) tempNetCursor = NET_WIFI;
+                        if (tempNetCursor == NET_MAIN) tempNetCursor = NET_SYNC;
+                        else if (tempNetCursor == NET_SYNC) tempNetCursor = NET_WIFI_STA;
+                        else if (tempNetCursor == NET_WIFI_STA) tempNetCursor = NET_WIFI;
                         else tempNetCursor = NET_MAIN;
                     } 
                     if (k == 60) { 
                         if (tempNetCursor == NET_MAIN) tempNetCursor = NET_WIFI;
-                        else if (tempNetCursor == NET_WIFI) tempNetCursor = NET_BT_SELECT;
+                        else if (tempNetCursor == NET_WIFI) tempNetCursor = NET_WIFI_STA;
+                        else if (tempNetCursor == NET_WIFI_STA) tempNetCursor = NET_SYNC;
                         else tempNetCursor = NET_MAIN;
                     }
                     if (real == '\n') { 
                         isEditingValue = false;
-                        currentNetSubMode = tempNetCursor;
-                        
-                        if (currentNetSubMode == NET_WIFI) { setupWiFi(); currentMode = TYPING_MODE; }
-                        else if (currentNetSubMode == NET_BT_SELECT) { setupBLE(); currentMode = TYPING_MODE; }
-                        else { WiFi.softAPdisconnect(true); WiFi.mode(WIFI_OFF); btStop(); bleStarted = false; currentMode = TYPING_MODE; }
+                        if (tempNetCursor == NET_SYNC) {
+                            currentNetSubMode = NET_MAIN;
+                            currentMode = TYPING_MODE;
+                            runOnlineSyncFlow();
+                        } else {
+                            currentNetSubMode = tempNetCursor;
+                            if (currentNetSubMode == NET_WIFI) { generateWebPin(); setupWiFi(); currentMode = TYPING_MODE; }
+                            else if (currentNetSubMode == NET_WIFI_STA) { startWifiScanMode(); }
+                            else { stopNetworkServices(); currentMode = TYPING_MODE; }
+                        }
                     }
                     break;
 
@@ -2793,23 +3351,50 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         lastCursorY = -1;
     }
 
-    if (currentNetSubMode != NET_MAIN) {
+    if (currentMode == WIFI_SCAN_MODE) {
+        display.clearDisplay();
+        u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
+        printCleanText(u8g2_for_adafruit_gfx, "=== WIFI SCAN ===", MARGIN_X, MARGIN_Y, true);
+        printCleanText(u8g2_for_adafruit_gfx, wifiStatusMessage, MARGIN_X, MARGIN_Y + 30);
+        int y = MARGIN_Y + 70;
+        for (int i = 0; i < wifiScanCount; i++) {
+            String row = String(i + 1) + ". " + wifiScanSsids[i] + " (" + String(wifiScanRssi[i]) + "dBm)";
+            printMenuEntry(row, MARGIN_X, y + i * 26, wifiScanSelected == i, false);
+        }
+        printCleanText(u8g2_for_adafruit_gfx, "Enter: connect / Tab or Menu: cancel", MARGIN_X, (display.height() / displayScale) - 35);
+    }
+    else if (currentMode == WIFI_PASSWORD_MODE) {
+        display.clearDisplay();
+        u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
+        printCleanText(u8g2_for_adafruit_gfx, "=== WIFI PASSWORD ===", MARGIN_X, MARGIN_Y, true);
+        String selected = (wifiScanSelected >= 0 && wifiScanSelected < wifiScanCount) ? wifiScanSsids[wifiScanSelected] : "";
+        printCleanText(u8g2_for_adafruit_gfx, "SSID: " + selected, MARGIN_X, MARGIN_Y + 35);
+        printCleanText(u8g2_for_adafruit_gfx, wifiStatusMessage, MARGIN_X, MARGIN_Y + 65);
+        String masked = "";
+        for (int i = 0; i < wifiPasswordBuffer.length(); i++) masked += "*";
+        printCleanText(u8g2_for_adafruit_gfx, "Password: " + masked + "_", MARGIN_X, MARGIN_Y + 105);
+        printCleanText(u8g2_for_adafruit_gfx, "Enter: connect / Tab or Menu: cancel", MARGIN_X, (display.height() / displayScale) - 35);
+    }
+    else if (currentNetSubMode != NET_MAIN) {
         int statusBarBottom = (int)(45 * displayScale);
         display.fillRect(0, statusBarBottom, display.width(), display.height() - statusBarBottom, WHITE);
 
         u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
         int infoY = statusBarBottom + 40;
-        if (currentNetSubMode == NET_BT_SELECT) {
-            printCleanText(u8g2_for_adafruit_gfx, "Bluetooth Keyboard Mode", MARGIN_X, infoY);
-            printCleanText(u8g2_for_adafruit_gfx, bleKeyboard.isConnected() ? "Connected: Type to computer" : "Pair IZE Compose on your computer", MARGIN_X, infoY + 25);
-            printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 50);
-        } else if (isFirmwareUpdateMode) {
+        if (isFirmwareUpdateMode) {
             printCleanText(u8g2_for_adafruit_gfx, "Property and Update (192.168.4.1/)", MARGIN_X, infoY);
             printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 25);
+        } else if (currentNetSubMode == NET_WIFI_STA) {
+            printCleanText(u8g2_for_adafruit_gfx, "Wi-Fi Web Server", MARGIN_X, infoY);
+            printCleanText(u8g2_for_adafruit_gfx, "Open: http://" + WiFi.localIP().toString() + "/", MARGIN_X, infoY + 25);
+            printCleanText(u8g2_for_adafruit_gfx, "PIN: " + otaPinCode, MARGIN_X, infoY + 50);
+            printCleanText(u8g2_for_adafruit_gfx, "GitHub not connected", MARGIN_X, infoY + 75);
+            printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 100);
         } else {
-            printCleanText(u8g2_for_adafruit_gfx, "Network Mode", MARGIN_X, infoY);
+            printCleanText(u8g2_for_adafruit_gfx, "Web Server", MARGIN_X, infoY);
             printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 25);
             printCleanText(u8g2_for_adafruit_gfx, "IZEcompose 00009888, 192.168.4.1", MARGIN_X, infoY + 50);
+            printCleanText(u8g2_for_adafruit_gfx, "PIN: " + otaPinCode, MARGIN_X, infoY + 75);
         }
     }
     else if (currentMode == FILE_MENU_MODE) {
@@ -2841,10 +3426,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                 else lbl += " [OFF]";
             }
             if (i == 3) {
-                String netStr = "";
-                if (tempNetCursor == NET_MAIN) netStr = "OFF";
-                else if (tempNetCursor == NET_BT_SELECT) netStr = (bleKeyboard.isConnected() ? "BLE:OK" : "BLE");
-                else if (tempNetCursor == NET_WIFI) netStr = "WIFI";
+                String netStr = getNetworkModeLabel(tempNetCursor);
                 if (isEditingValue && leftMenuIndex == i) lbl += " < " + netStr + " >";
                 else lbl += "   " + netStr + "   ";
             }

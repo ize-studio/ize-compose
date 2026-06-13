@@ -129,6 +129,7 @@ bool Image::drawPngFromBuffer(uint8_t *buf, int32_t len, int x, int y, bool dith
     return ret;
 }
 
+#if !IZE_INKPLATE_MINIMAL_IMAGE
 /**
  * @brief       drawPngFromSd function draws png image from sd file
  *
@@ -434,4 +435,64 @@ bool Image::drawPngFromSdAtPosition(const char *fileName, const Position &positi
 
     return ret;
 }
+#else
+bool Image::drawPngFromSd(const char *fileName, int x, int y, bool dither, bool invert)
+{
+    (void)fileName;
+    (void)x;
+    (void)y;
+    (void)dither;
+    (void)invert;
+    return false;
+}
+
+bool Image::drawPngFromSd(SdFile *p, int x, int y, bool dither, bool invert)
+{
+    (void)p;
+    (void)x;
+    (void)y;
+    (void)dither;
+    (void)invert;
+    return false;
+}
+
+bool Image::drawPngFromWeb(const char *url, int x, int y, bool dither, bool invert)
+{
+    (void)url;
+    (void)x;
+    (void)y;
+    (void)dither;
+    (void)invert;
+    return false;
+}
+
+bool Image::drawPngFromWeb(WiFiClient *s, int x, int y, int32_t len, bool dither, bool invert)
+{
+    (void)s;
+    (void)x;
+    (void)y;
+    (void)len;
+    (void)dither;
+    (void)invert;
+    return false;
+}
+
+bool Image::drawPngFromWebAtPosition(const char *url, const Position &position, const bool dither, const bool invert)
+{
+    (void)url;
+    (void)position;
+    (void)dither;
+    (void)invert;
+    return false;
+}
+
+bool Image::drawPngFromSdAtPosition(const char *fileName, const Position &position, const bool dither, const bool invert)
+{
+    (void)fileName;
+    (void)position;
+    (void)dither;
+    (void)invert;
+    return false;
+}
+#endif
 #endif

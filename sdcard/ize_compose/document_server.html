@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ize Compose Documents</title>
+  <style>
+    :root { color-scheme: light; --ink:#161616; --muted:#666; --line:#d8d8d8; --panel:#f7f7f4; --accent:#111; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: var(--ink); background: #fff; }
+    main { max-width: 760px; margin: 0 auto; padding: 22px 18px 36px; }
+    h1 { margin: 0 0 18px; font-size: 24px; font-weight: 650; }
+    h2 { margin: 0 0 12px; font-size: 17px; }
+    .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 0 0 14px; background: var(--panel); }
+    label { display: block; margin: 0 0 7px; font-size: 14px; color: var(--muted); }
+    input, button { width: 100%; min-height: 42px; font: inherit; border-radius: 6px; }
+    input { border: 1px solid var(--line); padding: 9px 10px; background: #fff; }
+    button { border: 0; padding: 10px 12px; color: #fff; background: var(--accent); cursor: pointer; }
+    button.secondary { color: var(--ink); border: 1px solid var(--line); background: #fff; }
+    .row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
+    .row:first-child { border-top: 0; }
+    .name { font-weight: 620; overflow-wrap: anywhere; }
+    .meta, .status, .hint { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .actions { display: flex; gap: 8px; }
+    .actions a, .actions button { width: auto; min-height: 34px; padding: 7px 10px; font-size: 13px; text-decoration: none; border-radius: 6px; }
+    .actions a { color: var(--ink); border: 1px solid var(--line); background: #fff; }
+    .actions button { color: #fff; background: #a22; }
+    .hidden { display: none; }
+    .pager { display: flex; gap: 8px; margin-top: 12px; }
+    .pager button { width: auto; min-width: 86px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Ize Compose Documents</h1>
+
+  <section id="auth" class="card">
+    <h2>PIN</h2>
+    <form id="authForm">
+      <label for="pin">Enter the device PIN shown on Ize Compose.</label>
+      <input id="pin" name="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+      <p class="hint">The document server opens only after PIN verification.</p>
+      <button type="submit">Open Documents</button>
+    </form>
+    <p id="authStatus" class="status"></p>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="card">
+      <h2>Upload Text File</h2>
+      <form id="uploadForm" method="POST" action="/uploadText" enctype="multipart/form-data">
+        <label for="textFile">Text file</label>
+        <input type="file" id="textFile" name="file" accept=".txt,text/plain" required>
+        <p class="hint">Uploaded text is saved as the next doc_N.txt file.</p>
+        <button type="submit">Upload Text</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Documents</h2>
+      <div id="documents"><p class="status">Loading...</p></div>
+      <div class="pager">
+        <button id="prev" class="secondary" type="button">Previous</button>
+        <button id="next" class="secondary" type="button">Next</button>
+      </div>
+    </div>
+
+    <div id="githubCard" class="card hidden">
+      <h2>GitHub Sync</h2>
+      <form id="githubForm">
+        <label for="ghOwner">Owner</label>
+        <input id="ghOwner" name="owner" autocomplete="username" placeholder="ize-studio" required>
+        <label for="ghRepo">Repository</label>
+        <input id="ghRepo" name="repo" placeholder="private-repository" required>
+        <label for="ghBranch">Branch</label>
+        <input id="ghBranch" name="branch" placeholder="main">
+        <label for="ghPath">Document path</label>
+        <input id="ghPath" name="path" placeholder="documents">
+        <label for="ghToken">Token</label>
+        <input id="ghToken" name="token" type="password" autocomplete="off" placeholder="Leave blank to keep saved token">
+        <p class="hint">Use a GitHub token with Contents write permission for this repository.</p>
+        <button type="submit">Save GitHub Settings</button>
+      </form>
+      <p id="githubStatus" class="status"></p>
+    </div>
+  </section>
+</main>
+<script>
+let page = 1;
+async function auth(pin) {
+  const body = new URLSearchParams({ pin });
+  const res = await fetch('/auth', { method: 'POST', body });
+  if (!res.ok) throw new Error(await res.text());
+}
+async function loadDocuments() {
+  const target = document.getElementById('documents');
+  target.innerHTML = '<p class="status">Loading...</p>';
+  const res = await fetch('/documents?page=' + page);
+  if (!res.ok) {
+    target.innerHTML = '<p class="status">PIN verification is required.</p>';
+    return;
+  }
+  target.innerHTML = await res.text();
+}
+document.getElementById('authForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const status = document.getElementById('authStatus');
+  status.textContent = 'Checking PIN...';
+  try {
+    await auth(document.getElementById('pin').value.trim());
+    document.getElementById('auth').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    await loadDocuments();
+    await loadGithubSettings();
+  } catch (err) {
+    status.textContent = err.message || 'PIN failed.';
+  }
+});
+async function loadGithubSettings() {
+  const card = document.getElementById('githubCard');
+  const status = document.getElementById('githubStatus');
+  try {
+    const res = await fetch('/github/settings.json', { cache: 'no-store' });
+    if (!res.ok) {
+      card.classList.add('hidden');
+      return;
+    }
+    const data = await res.json();
+    if (!data.available) {
+      card.classList.add('hidden');
+      return;
+    }
+    card.classList.remove('hidden');
+    document.getElementById('ghOwner').value = data.owner || '';
+    document.getElementById('ghRepo').value = data.repo || '';
+    document.getElementById('ghBranch').value = data.branch || 'main';
+    document.getElementById('ghPath').value = data.path || 'documents';
+    document.getElementById('ghToken').placeholder = data.tokenSaved ? 'Saved token exists. Leave blank to keep it.' : 'Token required';
+    status.textContent = data.syncStatus || (data.configured ? 'GitHub settings saved.' : 'No GitHub repository is connected.');
+  } catch (err) {
+    card.classList.add('hidden');
+  }
+}
+document.getElementById('githubForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const status = document.getElementById('githubStatus');
+  const body = new URLSearchParams({
+    owner: document.getElementById('ghOwner').value.trim(),
+    repo: document.getElementById('ghRepo').value.trim(),
+    branch: document.getElementById('ghBranch').value.trim(),
+    path: document.getElementById('ghPath').value.trim(),
+    token: document.getElementById('ghToken').value.trim()
+  });
+  status.textContent = 'Saving GitHub settings...';
+  try {
+    const res = await fetch('/github/settings', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: body.toString() });
+    const text = await res.text();
+    status.textContent = text || 'Saved.';
+    if (res.ok) {
+      document.getElementById('ghToken').value = '';
+      await loadGithubSettings();
+    }
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+  }
+});
+document.getElementById('prev').addEventListener('click', () => { if (page > 1) { page--; loadDocuments(); } });
+document.getElementById('next').addEventListener('click', () => { page++; loadDocuments(); });
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-delete]');
+  if (!button) return;
+  const file = button.getAttribute('data-delete');
+  if (!confirm('Delete ' + file + '?')) return;
+  const res = await fetch('/delete?file=' + encodeURIComponent(file), { method: 'POST' });
+  if (!res.ok) alert(await res.text());
+  loadDocuments();
+});
+</script>
+</body>
+</html>

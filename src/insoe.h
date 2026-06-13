@@ -1,4 +1,4 @@
-﻿#ifndef ZEROWRITER_HELPER_H
+#ifndef ZEROWRITER_HELPER_H
 #define ZEROWRITER_HELPER_H
 #include <Arduino.h>
 #include "U8g2_for_Adafruit_GFX.h"
@@ -40,7 +40,7 @@ uint8_t* fontBuffer = nullptr;
 size_t fontBufferSize = 0;
 
 
-enum NetworkSubMode { NET_MAIN, NET_USB, NET_BT_SELECT, NET_WIFI };
+enum NetworkSubMode { NET_MAIN, NET_SYNC, NET_WIFI_STA, NET_WIFI };
 extern NetworkSubMode currentNetSubMode;
 
 
@@ -262,8 +262,8 @@ void drawNetworkUI(Inkplate &display, U8G2_FOR_ADAFRUIT_GFX &u8g2, float scale, 
     
     printCleanText(u8g2, "=== NETWORK MODE ===", MARGIN_X, MARGIN_Y, true);
     
-    String options[] = {"1. USB (SD Reader Mode)", "2. Bluetooth (HID/Send)", "3. Wi-Fi (Email Send)"};
-    for(int i=0; i<3; i++) {
+    String options[] = {"1. Off", "2. Sync", "3. WiFi", "4. Server"};
+    for(int i=0; i<4; i++) {
         int ty = MARGIN_Y + 40 + (i * 30);
         if (i == selectedIdx) {
             
@@ -290,6 +290,10 @@ const char* password = "00009888";
 
 
 extern bool webServerUpdateOnly;
+extern bool webDocumentUnlocked;
+extern String otaPinCode;
+extern const char* WEB_DOCUMENT_PAGE_PATH;
+extern String githubSyncStatusMessage;
 
 bool isDocFilename(const String& fn) {
     if (!fn.startsWith("doc_") || !fn.endsWith(".txt")) return false;
@@ -473,38 +477,6 @@ void appendDocList(String& html) {
     if (end < totalDocs) html += "<a href=\"/?page=" + String(page + 1) + "\">Next</a>";
 }
 
-String pageStart(const String& title) {
-    String html = F("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>IZE Compose</title><style>body{font-family:Arial,sans-serif;background:#f4f4f0;color:#151515;margin:0;padding:24px}main{max-width:980px;margin:0 auto}h1{margin:0 0 6px;font-size:28px}h2{font-size:18px;margin:0 0 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:#fff;border:1px solid #bbb;padding:18px;border-radius:6px}.wide{grid-column:1/-1}label{display:block;margin:12px 0 6px;font-weight:bold}input,select,button{width:100%;box-sizing:border-box;padding:10px;font-size:15px}button{background:#111;color:#fff;border:0;border-radius:4px;margin-top:12px;cursor:pointer}button:disabled{background:#777}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #ddd;padding:8px}a{color:#0645ad;margin-right:10px}.doc-name{font-weight:bold}.doc-preview{color:#666;margin-left:8px}.status,.empty{color:#555;font-size:14px;min-height:20px}.saved{color:#b00000;font-weight:bold}.note{color:#555;font-size:13px;line-height:1.45;margin-top:8px}.inline{display:flex;gap:12px;align-items:center}.inline>*{flex:1}.range-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.range-value{min-width:90px;text-align:right;font-size:14px;color:#333}.radio-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}.radio-row label{display:flex;align-items:center;gap:8px;margin:0;font-weight:normal}.radio-row input{width:auto}.stack{display:grid;gap:18px}.subgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.subgrid .full{grid-column:1/-1}select[size]{min-height:220px}.muted{opacity:.55}@media(max-width:760px){.grid,.subgrid{grid-template-columns:1fr}}</style></head><body><main><h1>");
-    html += title;
-    html += F("</h1>");
-    return html;
-}
-
-String webSleepLabelForIndex(int idx) {
-    switch (idx) {
-        case 0: return "30 sec";
-        case 1: return "1 min";
-        case 2: return "5 min";
-        case 3: return "10 min";
-        case 4: return "30 min";
-        case 5: return "1 hr";
-        default: return "OFF";
-    }
-}
-
-void appendLanguageOptions(String& html) {
-    html += "<option value=\"english\"";
-    if (!isKoreanMode) html += " selected";
-    html += ">English</option>";
-    for (uint8_t i = 2; i < KEYBOARD_LAYOUT_TOTAL; i++) {
-        html += "<option value=\"" + String(getKeyboardLayoutIdString(KEYBOARD_LAYOUTS[i].id)) + "\"";
-        if (isKoreanMode && keyboardLayoutIndex == i) html += " selected";
-        html += ">";
-        html += htmlEscape(String(KEYBOARD_LAYOUTS[i].name));
-        html += "</option>";
-    }
-}
-
 bool sendSdFileResponse(const char* path, const char* contentType) {
     SdFile file;
     if (!file.open(path, O_RDONLY)) return false;
@@ -521,88 +493,42 @@ bool sendSdFileResponse(const char* path, const char* contentType) {
     return true;
 }
 
-void handleDocumentRoot(const String& message = "") {
-    String html = pageStart("IZE Compose Documents");
-    if (message.length() > 0) html += "<p class=\"saved\">" + htmlEscape(message) + "</p>";
-    html += F("<section class=\"grid\"><div class=\"card wide\"><h2>Documents</h2>");
+
+bool documentAccessAllowed() {
+    if (webServerUpdateOnly) return true;
+    if (webDocumentUnlocked) return true;
+    server.send(403, "text/plain", "PIN required.");
+    return false;
+}
+
+void handleWebAuth() {
+    if (webServerUpdateOnly) {
+        server.send(403, "text/plain", "Document auth is not available in Properties mode.");
+        return;
+    }
+    String pin = server.arg("pin");
+    if (pin.length() == 4 && pin == otaPinCode) {
+        webDocumentUnlocked = true;
+        server.send(200, "text/plain", "OK");
+        return;
+    }
+    server.send(403, "text/plain", "Invalid PIN.");
+}
+
+void handleDocumentsList() {
+    if (!documentAccessAllowed()) return;
+    String html = "";
     appendDocList(html);
-    html += F("</div><div class=\"card wide\"><h2>Upload Text File</h2><form method=\"POST\" action=\"/uploadText\" enctype=\"multipart/form-data\"><label for=\"textFile\">Text file</label><input type=\"file\" id=\"textFile\" name=\"file\" accept=\".txt,text/plain\" required><button type=\"submit\">Upload Text</button></form><p class=\"empty\">Uploaded text is saved as the next doc_N.txt file.</p></div></section></main></body></html>");
-    server.send(200, "text/html", html);
+    server.send(200, "text/html; charset=utf-8", html);
+}
+void handleDocumentRoot(const String& message = "") {
+    if (sendSdFileResponse(WEB_DOCUMENT_PAGE_PATH, "text/html; charset=utf-8")) return;
+    server.send(500, "text/plain", "Missing /ize_compose/document_server.html on SD card.");
 }
 
 void handleUpdateRoot() {
     if (sendSdFileResponse(WEB_PROPERTY_PAGE_PATH, "text/html; charset=utf-8")) return;
-
-    String html = pageStart("IZE Compose Update");
-    html += F("<section class=\"grid\">");
-    html += F("<div class=\"card wide\"><h2>PIN</h2><label for=\"pin\">4-digit PIN</label><input type=\"password\" id=\"pin\" inputmode=\"numeric\" maxlength=\"4\" placeholder=\"PIN\" required><p class=\"note\">This PIN is required before settings, firmware updates, font uploads, and image uploads are applied.</p></div>");
-    html += F("<div class=\"card wide\"><h2>Environment Settings</h2><div class=\"stack\">");
-
-    html += F("<div class=\"subgrid\">");
-    html += F("<div><label for=\"sleepTimer\">Sleep Timer</label><div class=\"range-row\"><input type=\"range\" id=\"sleepTimer\" min=\"0\" max=\"6\" step=\"1\" value=\"");
-    html += String(autoSleepIndex);
-    html += F("\"><span class=\"range-value\" id=\"sleepTimerValue\">");
-    html += webSleepLabelForIndex(autoSleepIndex);
-    html += F("</span></div></div>");
-
-    html += F("<div><label for=\"fontScale\">Text Size</label><div class=\"range-row\"><input type=\"range\" id=\"fontScale\" min=\"5\" max=\"35\" step=\"1\" value=\"");
-    html += String((int)round(displayScale * 10.0f));
-    html += F("\"><span class=\"range-value\" id=\"fontScaleValue\">");
-    html += String(displayScale, 1);
-    html += F("x</span></div></div>");
-
-    html += F("<div><label for=\"lineSpacing\">Line Space</label><div class=\"range-row\"><input type=\"range\" id=\"lineSpacing\" min=\"0\" max=\"30\" step=\"1\" value=\"");
-    html += String(lineSpacing);
-    html += F("\"><span class=\"range-value\" id=\"lineSpacingValue\">");
-    html += String(lineSpacing);
-    html += F("</span></div></div>");
-
-    html += F("<div><label for=\"letterSpacing\">Character Space</label><div class=\"range-row\"><input type=\"range\" id=\"letterSpacing\" min=\"-5\" max=\"10\" step=\"1\" value=\"");
-    html += String(letterSpacing);
-    html += F("\"><span class=\"range-value\" id=\"letterSpacingValue\">");
-    html += String(letterSpacing);
-    html += F("</span></div></div>");
-
-    html += F("<div><label for=\"typingSpeed\">Speed</label><input type=\"number\" id=\"typingSpeed\" min=\"0\" max=\"2000\" step=\"1\" value=\"");
-    html += String(typingSpeed);
-    html += F("\"><p class=\"note\">Default: 0. Changing this value can make typing less comfortable.</p></div>");
-
-    html += F("<div><label for=\"refreshLimit\">Refresh</label><input type=\"number\" id=\"refreshLimit\" min=\"0\" max=\"2000\" step=\"1\" value=\"");
-    html += String(refreshLimit);
-    html += F("\"><p class=\"note\">Default: 2000. Changing this value can make refresh behavior less comfortable.</p></div>");
-
-    html += F("<div class=\"full\"><label>English Keyboard</label><div class=\"radio-row\" id=\"englishLayoutGroup\">");
-    html += F("<label><input type=\"radio\" name=\"englishLayout\" value=\"1\"");
-    if (englishLayoutIndex != 0) html += F(" checked");
-    html += F(">Qwerty</label>");
-    html += F("<label><input type=\"radio\" name=\"englishLayout\" value=\"0\"");
-    if (englishLayoutIndex == 0) html += F(" checked");
-    html += F(">Dvorak</label></div></div>");
-
-    html += F("<div class=\"full\"><label for=\"language\">Language</label><select id=\"language\" size=\"10\">");
-    appendLanguageOptions(html);
-    html += F("</select></div>");
-    html += F("</div>");
-
-    html += F("<button id=\"settingsBtn\" onclick=\"saveSettings()\">Save</button><p class=\"status\" id=\"settingsStatus\">Waiting...</p></div></div>");
-
-    html += F("<div class=\"card\"><h2>Firmware Update</h2><label for=\"fwFile\">Firmware file</label><input type=\"file\" id=\"fwFile\" accept=\".bin\"><button id=\"fwBtn\" onclick=\"uploadFirmware()\">Upload and Update</button><p class=\"status\" id=\"fwStatus\">Waiting...</p></div>");
-    html += F("<div class=\"card\"><h2>Font / Image Upload</h2><label for=\"resFile\">File</label><input type=\"file\" id=\"resFile\" accept=\".bin,.png\"><p class=\"note\">The filename decides the target automatically. Examples: initial.png, hwalja_hangul.bin, NanumGothic_hangul.bin, NanumGothic_jamo.bin.</p><button id=\"resBtn\" onclick=\"uploadResource()\">Upload to SD</button><p class=\"status\" id=\"resStatus\">Waiting...</p></div>");
-    html += F("</section></main><script>");
-    html += F("const sleepLabels=['30 sec','1 min','5 min','10 min','30 min','1 hr','OFF'];");
-    html += F("function bindRange(id,render){const el=document.getElementById(id);const out=document.getElementById(id+'Value');const draw=()=>out.textContent=render(el.value);el.addEventListener('input',draw);draw();}");
-    html += F("bindRange('sleepTimer',v=>sleepLabels[Number(v)]||'OFF');");
-    html += F("bindRange('fontScale',v=>(Number(v)/10).toFixed(1)+'x');");
-    html += F("bindRange('lineSpacing',v=>String(v));");
-    html += F("bindRange('letterSpacing',v=>String(v));");
-    html += F("function syncEnglishState(){const isEnglish=document.getElementById('language').value==='english';const wrap=document.getElementById('englishLayoutGroup');wrap.classList.toggle('muted',!isEnglish);wrap.querySelectorAll('input').forEach(i=>i.disabled=!isEnglish);}document.getElementById('language').addEventListener('change',syncEnglishState);syncEnglishState();");
-    html += F("function getPin(){return document.getElementById('pin').value.trim();}");
-    html += F("async function saveSettings(){const pin=getPin();const status=document.getElementById('settingsStatus');const btn=document.getElementById('settingsBtn');if(!/^\\d{4}$/.test(pin)){status.textContent='Enter the 4-digit PIN.';return;}const english=document.querySelector('input[name=\"englishLayout\"]:checked').value;const body=new URLSearchParams({pin:pin,sleepTimer:document.getElementById('sleepTimer').value,fontScale:document.getElementById('fontScale').value,lineSpacing:document.getElementById('lineSpacing').value,letterSpacing:document.getElementById('letterSpacing').value,typingSpeed:document.getElementById('typingSpeed').value,refreshLimit:document.getElementById('refreshLimit').value,englishLayout:english,language:document.getElementById('language').value});btn.disabled=true;status.textContent='Saving...';try{const res=await fetch('/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});const text=await res.text();status.textContent=text||'Done.';}catch(e){status.textContent='Error: '+e.message;}finally{btn.disabled=false;}}");
-    html += F("async function sendUpload(inputId,statusId,buttonId,targetName){const input=document.getElementById(inputId);const status=document.getElementById(statusId);const btn=document.getElementById(buttonId);if(!input.files.length){status.textContent='Select a file.';return;}const pin=getPin();if(!/^\\d{4}$/.test(pin)){status.textContent='Enter the 4-digit PIN.';return;}const file=input.files[0];btn.disabled=true;status.textContent='Uploading...';const fd=new FormData();fd.append('file',file,targetName||file.name);try{const res=await fetch('/update',{method:'POST',headers:{'X-OTA-PIN':pin},body:fd});const text=await res.text();status.textContent=text||'Done.';}catch(e){status.textContent='Error: '+e.message;}finally{btn.disabled=false;}}");
-    html += F("function uploadFirmware(){sendUpload('fwFile','fwStatus','fwBtn','izefirmware.bin');}");
-    html += F("function uploadResource(){sendUpload('resFile','resStatus','resBtn','');}");
-    html += F("</script></body></html>");
-    server.send(200, "text/html", html);
+    server.send(500, "text/plain", "Missing /ize_compose/property_update.html on SD card.");
 }
 
 void handleRoot() {
@@ -611,6 +537,7 @@ void handleRoot() {
 }
 
 void handleRead() {
+    if (!documentAccessAllowed()) return;
     String fn = server.arg("file");
     if (!isDocFilename(fn)) {
         server.send(400, "text/plain", "Invalid file");
@@ -636,6 +563,7 @@ void handleRead() {
 }
 
 void handleDownload() {
+    if (!documentAccessAllowed()) return;
     String fn = server.arg("file");
     if (!isDocFilename(fn)) {
         server.send(400, "text/plain", "Invalid file");
@@ -662,6 +590,7 @@ void handleDownload() {
 }
 
 void handleDelete() {
+    if (!documentAccessAllowed()) return;
     String fn = server.arg("file");
     if (!isDocFilename(fn)) {
         server.send(400, "text/plain", "Invalid file");
@@ -687,6 +616,12 @@ String textUploadMessage = "";
 
 void handleTextUpload() {
     HTTPUpload& upload = server.upload();
+    if (!webServerUpdateOnly && !webDocumentUnlocked) {
+        textUploadAccepted = false;
+        textUploadStatus = 403;
+        textUploadMessage = "PIN required.";
+        return;
+    }
     if (webServerUpdateOnly) {
         textUploadAccepted = false;
         textUploadStatus = 403;
