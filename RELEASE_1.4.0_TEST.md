@@ -112,7 +112,7 @@ documents/doc_2.txt
 documents/doc_3.txt
 ```
 
-Use a simple folder name first. Avoid spaces or Korean folder names for the first test.
+Use a simple folder name first. For the first test, start with plain ASCII letters, numbers, `_`, `-`, and `/` so path debugging stays simple.
 
 ### 3. Create a GitHub token
 

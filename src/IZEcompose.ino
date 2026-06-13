@@ -91,6 +91,8 @@ void handleWebAuth();
 void handleDocumentsList();
 void handleGithubSettingsJson();
 void handleGithubSettingsSave();
+void resetStatusScreenCache();
+void drawStatusScreenFrame(const String& title, const String& line1, const String& line2, bool forceFullRefresh = false);
 
 TaskHandle_t CalcTaskHandle;
 volatile bool needCountUpdate = false; 
@@ -366,6 +368,10 @@ String githubBranch = "main";
 String githubPath = "documents";
 String githubToken = "";
 String githubSyncStatusMessage = "GitHub not connected";
+String lastStatusScreenTitle = "";
+String lastStatusScreenLine1 = "";
+String lastStatusScreenLine2 = "";
+bool statusScreenPrimed = false;
 
 const char* choStrs[] = {"ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"};
 const char* jungStrs[] = {"ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"};
@@ -2068,6 +2074,7 @@ void stopNetworkServices() {
     WiFi.softAPdisconnect(true);
     WiFi.disconnect(true, true);
     WiFi.mode(WIFI_OFF);
+    resetStatusScreenCache();
     currentNetSubMode = NET_MAIN;
     isFirmwareUpdateMode = false;
     updateState = UPD_NONE;
@@ -2181,9 +2188,7 @@ bool connectSelectedWifi(const String& password) {
     String targetSsid = wifiScanSsids[wifiScanSelected];
     wifiStatusMessage = "Connecting to " + targetSsid + "...";
     needUpdate = true;
-    display.fillRect(0, 0, display.width(), display.height(), WHITE);
-    printCleanText(u8g2_for_adafruit_gfx, wifiStatusMessage, MARGIN_X, MARGIN_Y + 40);
-    display.display();
+    drawStatusScreenFrame("WiFi", wifiStatusMessage, "", true);
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(targetSsid.c_str(), password.c_str());
@@ -2409,6 +2414,22 @@ bool githubCreateBlobForDoc(const String& filename, String& blobSha, String& err
     return true;
 }
 
+bool githubCreateBlobForContent(const String& content, String& blobSha, String& errorMessage) {
+    String escaped = jsonEscape(content);
+    String body = "{\"content\":\"" + escaped + "\",\"encoding\":\"utf-8\"}";
+    int code = 0;
+    String response;
+    if (!githubHttpRequest("POST", githubApiBase() + "/git/blobs", body, code, response)) {
+        errorMessage = "GitHub blob failed " + String(code);
+        return false;
+    }
+    if (!extractJsonStringValue(response, "sha", blobSha) || blobSha.length() == 0) {
+        errorMessage = "GitHub blob SHA missing";
+        return false;
+    }
+    return true;
+}
+
 int collectSyncDocs(String* docNames, int maxDocs) {
     SdFile root;
     SdFile file;
@@ -2445,6 +2466,61 @@ String githubRemoteDocPath(const String& filename) {
     return base + "/" + filename;
 }
 
+String githubBlobHtmlUrl(const String& filename) {
+    String path = githubRemoteDocPath(filename);
+    return "https://github.com/" + githubPathEncode(githubOwner, false) + "/" +
+           githubPathEncode(githubRepo, false) + "/blob/" +
+           githubPathEncode(githubBranchName(), false) + "/" +
+           githubPathEncode(path, true);
+}
+
+String githubHtmlEscape(const String& input) {
+    String out = "";
+    out.reserve(input.length() + 16);
+    for (int i = 0; i < input.length(); i++) {
+        char c = input[i];
+        switch (c) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            case '"': out += "&quot;"; break;
+            default: out += c; break;
+        }
+    }
+    return out;
+}
+
+String buildGithubIndexHtml(String* docNames, String* docPreviews, int* docChars, int docCount) {
+    String titlePath = githubCleanPath(githubPath);
+    if (titlePath.length() == 0) titlePath = "(repo root)";
+    String html = "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">";
+    html += "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
+    html += "<title>Ize Compose Sync Index</title><style>";
+    html += "body{font-family:Arial,sans-serif;background:#f3f1ea;color:#171717;margin:0;padding:24px;}";
+    html += "main{max-width:920px;margin:0 auto;}h1{font-size:28px;margin:0 0 10px;}p{line-height:1.5;}";
+    html += ".meta{color:#555;margin-bottom:18px}.list{display:grid;gap:14px}.item{background:#fff;border:1px solid #ddd;padding:16px;}";
+    html += ".top{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;}";
+    html += ".name{font-weight:700;font-size:18px}.chars{color:#666;font-size:13px}";
+    html += ".links{display:flex;gap:12px;flex-wrap:wrap}.links a,.links button{font:inherit}";
+    html += ".preview{display:none;white-space:pre-wrap;background:#fafafa;border:1px solid #e3e3e3;padding:12px;margin-top:12px}";
+    html += "button{border:1px solid #aaa;background:#f8f8f8;padding:6px 10px;cursor:pointer}";
+    html += "a{color:#0b57d0;text-decoration:none}a:hover{text-decoration:underline}</style>";
+    html += "<script>function togglePreview(id){var el=document.getElementById(id);el.style.display=(el.style.display==='block')?'none':'block';}</script></head><body><main>";
+    html += "<h1>Ize Compose Documents</h1>";
+    html += "<p class=\"meta\">Repository: " + githubHtmlEscape(githubOwner + "/" + githubRepo) + " | Branch: " + githubHtmlEscape(githubBranchName()) + " | Path: " + githubHtmlEscape(titlePath) + "</p>";
+    html += "<p class=\"meta\">Generated automatically during device sync.</p><section class=\"list\">";
+    for (int i = 0; i < docCount; i++) {
+        String previewId = "preview_" + String(i);
+        html += "<article class=\"item\"><div class=\"top\"><div><div class=\"name\">" + githubHtmlEscape(docNames[i]) + "</div>";
+        html += "<div class=\"chars\">Characters: " + String(docChars[i]) + "</div></div><div class=\"links\">";
+        html += "<button type=\"button\" onclick=\"togglePreview('" + previewId + "')\">미리보기</button>";
+        html += "<a href=\"" + githubHtmlEscape(githubBlobHtmlUrl(docNames[i])) + "\" target=\"_blank\" rel=\"noopener\">깃허브에서 해당 파일 열기</a>";
+        html += "</div></div><div class=\"preview\" id=\"" + previewId + "\">" + githubHtmlEscape(docPreviews[i]) + "</div></article>";
+    }
+    html += "</section></main></body></html>";
+    return html;
+}
+
 bool runGithubDocumentSync(String& resultMessage) {
     if (!githubConfigComplete()) {
         resultMessage = "GitHub settings missing";
@@ -2458,6 +2534,8 @@ bool runGithubDocumentSync(String& resultMessage) {
     static const int MAX_SYNC_DOCS = 65;
     static String docNames[MAX_SYNC_DOCS];
     static String blobShas[MAX_SYNC_DOCS];
+    static String docPreviews[MAX_SYNC_DOCS];
+    static int docChars[MAX_SYNC_DOCS];
     int docCount = collectSyncDocs(docNames, MAX_SYNC_DOCS);
     if (docCount <= 0) {
         resultMessage = "No documents to sync";
@@ -2471,44 +2549,66 @@ bool runGithubDocumentSync(String& resultMessage) {
     String baseTreeSha;
     String newTreeSha;
     String newCommitSha;
+    String indexBlobSha;
 
-    String refUrl = githubApiBase() + "/git/ref/heads/" + githubPathEncode(branch, true);
-    if (!githubHttpRequest("GET", refUrl, "", code, response) || !extractJsonStringValue(response, "sha", headCommitSha)) {
+    String getRefUrl = githubApiBase() + "/git/ref/heads/" + githubPathEncode(branch, true);
+    String updateRefUrl = githubApiBase() + "/git/refs/heads/" + githubPathEncode(branch, true);
+    if (!githubHttpRequest("GET", getRefUrl, "", code, response) || !extractJsonStringValue(response, "sha", headCommitSha)) {
         resultMessage = "GitHub branch read failed " + String(code);
+        String detail = githubErrorDetail(response);
+        if (detail.length() > 0) resultMessage += ": " + detail;
         return false;
     }
 
     if (!githubHttpRequest("GET", githubApiBase() + "/git/commits/" + headCommitSha, "", code, response) || !extractJsonStringValueAfter(response, "\"tree\"", "sha", baseTreeSha)) {
         resultMessage = "GitHub tree read failed " + String(code);
+        String detail = githubErrorDetail(response);
+        if (detail.length() > 0) resultMessage += ": " + detail;
         return false;
     }
 
     for (int i = 0; i < docCount; i++) {
         drawOnlineSyncScreen("GitHub Sync", "Uploading " + docNames[i], String(i + 1) + "/" + String(docCount));
         if (!githubCreateBlobForDoc(docNames[i], blobShas[i], resultMessage)) return false;
+        String content;
+        if (!githubReadDocText(docNames[i], content, resultMessage)) return false;
+        docPreviews[i] = utf8Truncate(content, 240);
+        docChars[i] = getTrueLength(content);
         yield();
     }
+
+    drawOnlineSyncScreen("GitHub Sync", "Building index.html", "");
+    String indexHtml = buildGithubIndexHtml(docNames, docPreviews, docChars, docCount);
+    if (!githubCreateBlobForContent(indexHtml, indexBlobSha, resultMessage)) return false;
 
     String treeBody = "{\"base_tree\":\"" + baseTreeSha + "\",\"tree\":[";
     for (int i = 0; i < docCount; i++) {
         if (i > 0) treeBody += ",";
         treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath(docNames[i])) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + blobShas[i] + "\"}";
     }
+    if (docCount > 0) treeBody += ",";
+    treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath("index.html")) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + indexBlobSha + "\"}";
     treeBody += "]}";
     if (!githubHttpRequest("POST", githubApiBase() + "/git/trees", treeBody, code, response) || !extractJsonStringValue(response, "sha", newTreeSha)) {
         resultMessage = "GitHub tree create failed " + String(code);
+        String detail = githubErrorDetail(response);
+        if (detail.length() > 0) resultMessage += ": " + detail;
         return false;
     }
 
     String commitBody = "{\"message\":\"Sync Ize Compose documents\",\"tree\":\"" + newTreeSha + "\",\"parents\":[\"" + headCommitSha + "\"]}";
     if (!githubHttpRequest("POST", githubApiBase() + "/git/commits", commitBody, code, response) || !extractJsonStringValue(response, "sha", newCommitSha)) {
         resultMessage = "GitHub commit failed " + String(code);
+        String detail = githubErrorDetail(response);
+        if (detail.length() > 0) resultMessage += ": " + detail;
         return false;
     }
 
     String refBody = "{\"sha\":\"" + newCommitSha + "\",\"force\":false}";
-    if (!githubHttpRequest("PATCH", refUrl, refBody, code, response)) {
+    if (!githubHttpRequest("PATCH", updateRefUrl, refBody, code, response)) {
         resultMessage = "GitHub ref update failed " + String(code);
+        String detail = githubErrorDetail(response);
+        if (detail.length() > 0) resultMessage += ": " + detail;
         return false;
     }
 
@@ -2522,13 +2622,50 @@ bool runGithubDocumentSync(String& resultMessage) {
 }
 #endif
 
-void drawOnlineSyncScreen(const String& title, const String& line1, const String& line2) {
+String githubErrorDetail(const String& response) {
+    String message;
+    if (extractJsonStringValue(response, "message", message) && message.length() > 0) {
+        return message;
+    }
+    String compact = response;
+    compact.replace('\r', ' ');
+    compact.replace('\n', ' ');
+    compact.trim();
+    if (compact.length() > 72) compact = compact.substring(0, 72) + "...";
+    return compact;
+}
+
+void resetStatusScreenCache() {
+    lastStatusScreenTitle = "";
+    lastStatusScreenLine1 = "";
+    lastStatusScreenLine2 = "";
+    statusScreenPrimed = false;
+}
+
+void drawStatusScreenFrame(const String& title, const String& line1, const String& line2, bool forceFullRefresh) {
+    bool sameAsLast = statusScreenPrimed &&
+                      title == lastStatusScreenTitle &&
+                      line1 == lastStatusScreenLine1 &&
+                      line2 == lastStatusScreenLine2;
+    if (sameAsLast) return;
+
     display.fillRect(0, 0, display.width(), display.height(), WHITE);
     u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
     printDualFont(title, MARGIN_X, MARGIN_Y + 10, true);
     printDualFont(line1, MARGIN_X, MARGIN_Y + 55, true);
     if (line2.length() > 0) printDualFont(line2, MARGIN_X, MARGIN_Y + 95, true);
-    display.display();
+
+    if (forceFullRefresh || !statusScreenPrimed) display.display();
+    else display.partialUpdate(false, true);
+
+    lastStatusScreenTitle = title;
+    lastStatusScreenLine1 = line1;
+    lastStatusScreenLine2 = line2;
+    statusScreenPrimed = true;
+}
+
+void drawOnlineSyncScreen(const String& title, const String& line1, const String& line2) {
+    drawStatusScreenFrame(title, line1, line2);
 }
 
 void finishOnlineSyncToMenu(const String& title, const String& detail) {
@@ -2813,10 +2950,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
     
         if (!updateScreenDrawn) {
-            display.fillRect(0, 0, display.width(), display.height(), WHITE);
-            int updateCenterY = (int)((display.height() / displayScale) / 2);
-            printCleanText(u8g2_for_adafruit_gfx, "Updating... Rebooting when done.", MARGIN_X, updateCenterY);
-            display.display();
+            drawStatusScreenFrame("Update", "Updating... Rebooting when done.", "", true);
             updateScreenDrawn = true;
         }
         if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA) server.handleClient();
@@ -2827,10 +2961,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     if (updateState == UPD_SD_RUNNING) {
 
             
-            display.fillRect(0, 0, display.width(), display.height(), WHITE);
-            int updateCenterY = (int)((display.height() / displayScale) / 2);
-            printCleanText(u8g2_for_adafruit_gfx, "Updating... Rebooting when done.", MARGIN_X, updateCenterY);
-            display.display();
+            drawStatusScreenFrame("Update", "Updating... Rebooting when done.", "", true);
             performSdOta();
             return;
         }
@@ -2839,16 +2970,11 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     if (updateState == UPD_PIN_INPUT) {
         
         if (needUpdate) {
-            display.fillRect(0, 0, display.width(), display.height(), WHITE);
-            int updateCenterY = (int)((display.height() / displayScale) / 2);
             String msg1 = "Enter 4-digit PIN for web update:";
             String msg2 = pinInputBuffer;
             for (int i = pinInputBuffer.length(); i < 4; i++) msg2 += "_";
             String msg3 = (pinInputBuffer.length() == 4) ? "Press Enter to confirm." : "";
-            printCleanText(u8g2_for_adafruit_gfx, msg1, MARGIN_X, updateCenterY - 35);
-            printCleanText(u8g2_for_adafruit_gfx, msg2, MARGIN_X, updateCenterY);
-            if (msg3 != "") printCleanText(u8g2_for_adafruit_gfx, msg3, MARGIN_X, updateCenterY + 35);
-            display.partialUpdate();
+            drawStatusScreenFrame(msg1, msg2, msg3, !statusScreenPrimed);
             needUpdate = false;
         }
 
@@ -2872,15 +2998,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                 isFirmwareUpdateMode = true;
                 setupWiFi();
 
-                display.fillRect(0, 0, display.width(), display.height(), WHITE);
-                int updateCenterY = (int)((display.height() / displayScale) / 2);
-                printCleanText(u8g2_for_adafruit_gfx, "Web Server Opened for Property and Update", MARGIN_X, updateCenterY - 70);
-                printCleanText(u8g2_for_adafruit_gfx, "Wi-Fi: IZEcompose_FileServer", MARGIN_X, updateCenterY - 35);
-                printCleanText(u8g2_for_adafruit_gfx, "Password: 00009888", MARGIN_X, updateCenterY);
-                printCleanText(u8g2_for_adafruit_gfx, "Open: 192.168.4.1/", MARGIN_X, updateCenterY + 35);
-                printCleanText(u8g2_for_adafruit_gfx, "Upload PIN: " + otaPinCode, MARGIN_X, updateCenterY + 70);
-                printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, updateCenterY + 105);
-                display.display();
+                drawStatusScreenFrame("Property and Update", "Wi-Fi: IZEcompose_FileServer", "Open: 192.168.4.1/  PIN: " + otaPinCode, true);
                 needUpdate = false;
                 break;
             }
@@ -3345,7 +3463,16 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     if (maxVisibleMenu < 1) maxVisibleMenu = 1;
     bool doFullRefresh = false;
     if (currentMode == TYPING_MODE && refreshLimit > 0 && charCounter >= refreshLimit) { doFullRefresh = true; charCounter = 0; }
-    if (modeChanged) {
+    bool networkOverlayMode =
+        currentMode == WIFI_SCAN_MODE ||
+        currentMode == WIFI_PASSWORD_MODE ||
+        currentNetSubMode != NET_MAIN ||
+        updateState == UPD_PIN_INPUT ||
+        updateState == UPD_SD_RUNNING ||
+        updateState == UPD_WIFI_WAITING ||
+        isUpdating;
+
+    if (modeChanged && !networkOverlayMode) {
         display.fillRect(0, 0, display.width(), display.height(), WHITE);
         lastSy = -1;
         lastCursorY = -1;
