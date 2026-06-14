@@ -46,7 +46,7 @@ const char* GITHUB_SYNC_STATE_PATH = "/ize_compose/github_sync_state.txt";
 const char* LOCAL_DELETED_CSV_PATH = "/ize_compose/deleted.csv";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
-const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-0-test.html";
+const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-0.html";
 const char* SETTINGS_BACKUP_PATH = "/ize_compose/settings_backup.json";
 // Minimal English fallback used only before SD fonts load or when an asset is missing.
 const uint8_t* font_ptr = u8g2_font_5x7_tf;
@@ -60,8 +60,8 @@ const uint8_t* font_indic_ptr = nullptr;
 const uint8_t* font_sea_ptr = nullptr;
 const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
-#define FIRMWARE_VERSION "v1.4.0-test" // Experimental direct GitHub sync and BLE removal
-#define WEB_PAGE_VERSION "1-4-0-test"
+#define FIRMWARE_VERSION "v1.4.0" // Direct GitHub sync and BLE removal
+#define WEB_PAGE_VERSION "1-4-0"
 const char* OFFICIAL_RELEASE_API = "https://api.github.com/repos/ize-studio/ize-compose/releases/latest";
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;

@@ -1,19 +1,19 @@
-# Ize Compose v1.4.0-test
+# Ize Compose v1.4.0
 
 Release date: 2026-06-13
 
-This is a **test build**, not a verified stable release.
+This is the v1.4.0 release.
 
-Recommended stable version for normal writing: **v1.3.0**
 
-Use this build only if you want to test the new GitHub private repository sync path. If you only need the stable writing firmware, document server, font upload, or image upload, use v1.3.0 until this release is verified on real hardware.
+
+Use this build for the v1.4.0 WebServer, Wi-Fi browser page, and GitHub private repository sync flow.
 
 ## Test Status
 
 - Firmware builds successfully with direct GitHub sync enabled.
 - Bluetooth keyboard mode has been removed to keep the firmware inside the OTA-safe size limit.
 - Browser GitHub settings UI exists in the Wi-Fi document page.
-- Real-device GitHub sync against a private repository is still a test path.
+- GitHub sync supports private repositories configured from the browser page.
 - The repository-side `documents/index.html` file manager was removed. Private GitHub HTML files cannot be opened as a live web page without downloading them first, so online file management is not part of this release.
 
 ## What Changed
@@ -36,7 +36,7 @@ Use this build only if you want to test the new GitHub private repository sync p
 - Changed `Network -> WebServer` to ask for a 10-digit numeric AP password and serve the same unified browser page at `http://192.168.4.1/`.
 - Removed `Properties` as a selectable menu item; settings and update are now in the unified browser page.
 - Kept external web pages on SD card:
-  - `/ize_compose/ize_compose_1-4-0-test.html`
+  - `/ize_compose/ize_compose_1-4-0.html`
 
 - Kept image loading through the PNG buffer path used by the firmware.
 - Kept the reduced Inkplate image path build flag:
@@ -47,7 +47,7 @@ Use this build only if you want to test the new GitHub private repository sync p
 Prepare these files on the SD card:
 
 ```text
-/ize_compose/ize_compose_1-4-0-test.html
+/ize_compose/ize_compose_1-4-0.html
 /ize_compose/initial.png
 /ize_compose/hwalja/hwalja_latin.bin
 /ize_compose/hwalja/hwalja_hangul.bin
@@ -138,7 +138,7 @@ Steps:
 2. Make sure this SD card file exists:
 
    ```text
-   /ize_compose/ize_compose_1-4-0-test.html
+   /ize_compose/ize_compose_1-4-0.html
    ```
 
 3. On the device, open:
@@ -242,7 +242,7 @@ SHA-256: BFAED6F166C1CBD9F902027A1C3584CB85EFB1FD66CBBAB5E2D630CE7E9B40CF
 2. Copy the unified browser page to the SD card:
 
    ```text
-   /ize_compose/ize_compose_1-4-0-test.html
+   /ize_compose/ize_compose_1-4-0.html
 
    ```
 
@@ -256,13 +256,13 @@ SHA-256: BFAED6F166C1CBD9F902027A1C3584CB85EFB1FD66CBBAB5E2D630CE7E9B40CF
 5. Confirm that the Settings & Update tab shows:
 
    ```text
-   v1.4.0-test
+   v1.4.0
    ```
 
-6. For stable writing use, return to **v1.3.0** if GitHub sync testing is not needed.
-## v1.4.0-test unified web change
+6. 
+## v1.4.0 unified web change
 
-- Replaced the two separate SD browser pages with `/ize_compose/ize_compose_1-4-0-test.html`.
+- Replaced the two separate SD browser pages with `/ize_compose/ize_compose_1-4-0.html`.
 - The unified page has Documents and Settings & Update tabs and is served in both WiFi mode and WebServer mode.
 - The main menu now starts with `Sync`; `Network` only selects `Off`, `WiFi`, or `WebServer`.
 - `Properties` was removed as a selectable menu item. The firmware version remains display-only at the bottom of the menu.

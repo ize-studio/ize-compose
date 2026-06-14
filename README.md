@@ -8,18 +8,11 @@
 Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a multi-language writing firmware and now supports 92 keyboard layouts across dozens of scripts.
 (if you are looking for Ize-Ribbon, go to https://github.com/ize-studio/Ize-Ribbon )
 
-Current test build: **v1.4.0-test**
-
-Recommended stable version: **v1.3.0**
-
-> **Test build warning**
->
-> `v1.4.0-test` is not fully verified yet. It adds the first direct GitHub private-repository sync path and removes Bluetooth keyboard mode to keep the firmware inside the OTA-safe size limit.
-> For normal writing use, install **v1.3.0** until the GitHub sync path has been tested on real hardware and real repositories.
+Current release: **v1.4.0**
 
 v1.3.0 adds Wi-Fi client document-server mode, splits browser support into SD-loadable files, and preserves the SD settings backup flow.
 
-v1.4.0-test adds the experimental top-level `Sync` flow for GitHub private repository sync. See [RELEASE_1.4.0_TEST.md](RELEASE_1.4.0_TEST.md) before trying it.
+v1.4.0 adds the top-level `Sync` flow for GitHub private repository sync. See [RELEASE_1.4.0.md](RELEASE_1.4.0.md) for release details.
 
 For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
@@ -86,7 +79,7 @@ The firmware expects support files on the SD card under `/ize_compose/`.
 | SD card path | Required | Purpose |
 |---|---:|---|
 | `/ize_compose/initial.png` | Recommended | Boot/sleep image, 800x600 PNG |
-| `/ize_compose/ize_compose_1-4-0-test.html` | Required for browser UI | Unified Documents, Settings, Update, and GitHub settings page |
+| `/ize_compose/ize_compose_1-4-0.html` | Required for browser UI | Unified Documents, Settings, Update, and GitHub settings page |
 | `/ize_compose/hwalja/hwalja_hangul.bin` | Recommended for multi-language Hangul input | Hangul syllable font |
 | `/ize_compose/hwalja/hwalja_jamo.bin` | Recommended for multi-language Hangul input | Hangul jamo/composition font |
 | `/ize_compose/hwalja/hwalja_latin.bin` | Recommended | Full Latin and Latin-extended font |
@@ -234,7 +227,7 @@ Download or open the `Ize-compose/` package.
 
 1. Upload `Ize-compose/firmware/izefirmware.bin` as the firmware image.
 2. Copy the contents of `Ize-compose/sdcard/` to the SD card root.
-3. Confirm that the SD card contains `/ize_compose/initial.png`, `/ize_compose/ize_compose_1-4-0-test.html`, and `/ize_compose/hwalja/*.bin`.
+3. Confirm that the SD card contains `/ize_compose/initial.png`, `/ize_compose/ize_compose_1-4-0.html`, and `/ize_compose/hwalja/*.bin`.
 
 ### Build and flash from source
 ```bash
@@ -247,7 +240,7 @@ pio run --target upload
 1. Format SD card as FAT32.
 2. Create `/ize_compose/` and `/ize_compose/hwalja/` on the SD card if they are not already present.
 3. Copy `initial.png` to `/ize_compose/`.
-4. Copy `ize_compose_1-4-0-test.html` to `/ize_compose/`.
+4. Copy `ize_compose_1-4-0.html` to `/ize_compose/`.
 5. Copy `hwalja_*.bin` font files into `/ize_compose/hwalja/`.
 6. Keep `settings_backup.json` if it exists and you want to preserve settings across reset/reinstall.
 
@@ -285,7 +278,7 @@ Ize-compose/
   sdcard/
     ize_compose/
       initial.png         - boot/sleep image
-      ize_compose_1-4-0-test.html - unified browser page
+      ize_compose_1-4-0.html - unified browser page
       hwalja/
         hwalja_*.bin      - font files to copy to SD card
       settings_backup.json - generated settings backup, if present
@@ -294,7 +287,7 @@ Ize-compose/
   others/                 - font sources and helper tools, not compiled
   WEB_INTERFACE.md        - browser page usage guide
   INSTALL.md              - install/build notes
-  RELEASE_1.4.0_TEST.md   - v1.4.0-test release notes
+  RELEASE_1.4.0.md   - v1.4.0 release notes
   RELEASE_1.1.2.md        - v1.1.2 release notes
   RELEASE_1.1.1.md        - v1.1.1 release notes
 
@@ -331,7 +324,7 @@ platformio.ini          - PlatformIO build config
 - Mid-syllable cursor movement during Hangul composition is not supported.
 - Only `.txt` files; no formatting.
 - Single document open at a time.
-- Bluetooth keyboard mode was removed in v1.4.0-test to make room for direct GitHub sync.
+- Bluetooth keyboard mode was removed in v1.4.0 to make room for direct GitHub sync.
 - The sleep image must be exactly 800x600 pixels; other sizes are not handled.
 
 ---
@@ -350,15 +343,15 @@ platformio.ini          - PlatformIO build config
         <p>Ko-fi: <a href="https://ko-fi.com/dievesa">https://ko-fi.com/dievesa</a></p>
       </div>
 
-### v1.4.0-test unified browser note
+### v1.4.0 unified browser note
 
-`/ize_compose/ize_compose_1-4-0-test.html` replaces the previous separate `property_update.html` and `document_server.html` pages. WiFi mode and WebServer mode serve the same page with Documents and Settings & Update tabs.
+`/ize_compose/ize_compose_1-4-0.html` replaces the previous separate `property_update.html` and `document_server.html` pages. WiFi mode and WebServer mode serve the same page with Documents and Settings & Update tabs.
 
 WebServer mode uses the fixed SSID `IZEcompose_FileServer`, but the device now asks for a 10-digit numeric Wi-Fi password before starting the access point. The password is shown on the device until the browser PIN is accepted. Automatic shutdown starts only after PIN authentication; after an authenticated client session has existed, WebServer mode shuts down if no clients remain connected for more than 2 seconds.
 
 Online firmware update is connected to firmware endpoints. Local SD upload remains the supported path for fonts and `initial.png`.
-### v1.4.0-test online update assets
+### v1.4.0 online update assets
 
 Online update checks the GitHub release firmware asset and the SD web-page asset. If the release includes a newer `ize_compose_<version>.html`, the device downloads that SD web page before starting firmware OTA. OTA begins only after every required download has completed.
 
-The web page filename includes the firmware/web-page version, for example `ize_compose_1-4-0-test.html`, so the currently served page is not overwritten while the browser is open.
+The web page filename includes the firmware/web-page version, for example `ize_compose_1-4-0.html`, so the currently served page is not overwritten while the browser is open.
