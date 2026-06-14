@@ -65,6 +65,7 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 **Settings and updates**
 - Device menu keeps Sync at the top and Network near the bottom; the version line is display-only
 - The unified browser page Settings & Update tab handles sleep timer, text size, line spacing, character spacing, typing speed, refresh limit, English keyboard, language selection, uploads, online update
+- Starting with v1.4.0, the Online Update button can update both firmware and the versioned SD web page from the GitHub Release assets in one flow.
 - Settings are saved to device preferences and backed up to `/ize_compose/settings_backup.json`; GitHub token is included so it survives reinstall/reset restore
 - Firmware uploads use `izefirmware.bin`
 - Font and image uploads are routed by filename
