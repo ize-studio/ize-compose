@@ -12,7 +12,7 @@ Current release: **v1.4.0**
 
 v1.3.0 adds Wi-Fi client document-server mode, splits browser support into SD-loadable files, and preserves the SD settings backup flow.
 
-v1.4.0 adds the top-level `Sync` flow for GitHub private repository sync. See [RELEASE_1.4.0.md](RELEASE_1.4.0.md) for release details.
+v1.4.0 adds the top-level `Sync` flow for GitHub private repository sync, then turns the Wi-Fi adapter off after sync. The Bluetooth feature that acted as an external keyboard in v1.3.0 was removed because of battery-use issues. See [RELEASE_1.4.0.md](RELEASE_1.4.0.md) for release details.
 
 For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
@@ -49,11 +49,13 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 - Two independent layout slots: one for English (QWERTY or Dvorak), one for a selected multi-language layout
 - 12 script composition engines: Hangul, Arabic, Indic scripts, Thai, Myanmar, Khmer, Lao, Tibetan, Sinhala, Ethiopic, Japanese, Hebrew
 - RTL layout support: Arabic, Hebrew, Kurdish (Arabic), Pashto, Persian, Urdu
+- The v1.3.0 Bluetooth external-keyboard feature is not included in v1.4.0 because of battery-use issues
 
 **Files**
 - Saves and loads `.txt` files on SD card (`/ize_compose/`)
 - File browser (up to 65 files)
 - Network modes: Sync command plus Network Off, WiFi, and WebServer
+- GitHub sync only runs the sync operation and then shuts the Wi-Fi adapter off
 - Browser document list shows 12 documents per page with a short preview beside each title
 - Documents, settings, firmware/font/image uploads, and GitHub settings are handled from the unified browser page
 
@@ -118,6 +120,7 @@ Detailed browser workflow is documented in [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 Top-level `Sync` is intended to keep Ize Compose SD-card documents and one private GitHub repository folder aligned.
 
+- `Sync` uses Wi-Fi only for the sync operation. After the sync succeeds or fails, the firmware turns Wi-Fi off and returns to the device menu.
 - Existing `docNNNN.txt` files can be edited on GitHub; if the GitHub copy is newer, the device downloads it.
 - New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as `.txt` files.
 - Files created only on GitHub are removed on the next sync, because the device assigns document numbers and owns document creation.
@@ -320,11 +323,11 @@ platformio.ini          - PlatformIO build config
 
 ## Current Limitations
 
-- Supports only Inkplate 5 V2 (800x600). Other Inkplate boards are not tested.
+- Supports only Inkplate 5 V2 (800x600). Other Inkplate boards are outside this release scope.
 - Mid-syllable cursor movement during Hangul composition is not supported.
 - Only `.txt` files; no formatting.
 - Single document open at a time.
-- Bluetooth keyboard mode was removed in v1.4.0 to make room for direct GitHub sync.
+- Bluetooth keyboard mode was removed in v1.4.0 because the v1.3.0 external-keyboard feature caused battery-use issues.
 - The sleep image must be exactly 800x600 pixels; other sizes are not handled.
 
 ---
