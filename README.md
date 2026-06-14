@@ -118,7 +118,7 @@ Detailed browser workflow is documented in [WEB_INTERFACE.md](WEB_INTERFACE.md).
 Top-level `Sync` is intended to keep Ize Compose SD-card documents and one private GitHub repository folder aligned.
 
 - `Sync` uses Wi-Fi only for the sync operation. After the sync succeeds or fails, the firmware turns Wi-Fi off and returns to the device menu.
-- GitHub sync supports up to 65 `docNNNN.txt` files per run.
+- Because of ESP32 memory load, GitHub sync can run only when the upload plus download count is under 128 files.
 - Existing `docNNNN.txt` files can be edited on GitHub; if the GitHub copy is newer, the device downloads it.
 - New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as `.txt` files.
 - Files created only on GitHub are removed on the next sync, because the device assigns document numbers and owns document creation.

@@ -196,7 +196,7 @@ After GitHub settings have been saved once:
 
 ## GitHub Sync Rules
 
-- GitHub sync supports up to 65 `docNNNN.txt` files per run.
+- Because of ESP32 memory load, GitHub sync can run only when the upload plus download count is under 128 files.
 - Existing `docNNNN.txt` files may be edited directly on GitHub.
 - If the GitHub copy of an existing document is newer, the device downloads it.
 - New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as text files.
@@ -245,8 +245,8 @@ Firmware:
 
 ```text
 firmware/izefirmware.bin
-Size: 1,254,880 bytes
-SHA-256: 8DD53D35A07FA6E94F0E4A4709684E44818A09E4E48CC66AF6ABB8C8FFF5A07D
+Size: 1,256,112 bytes
+SHA-256: EE22CA511686DB14404189B93C63128E2EF0AB6387EAAF51EB46993BA94073E6
 ```
 
 ## Upgrade Notes

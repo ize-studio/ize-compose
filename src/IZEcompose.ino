@@ -3282,7 +3282,7 @@ int collectSyncDocs(String* docNames, int maxDocs) {
     SdFile root;
     SdFile file;
     char name[64];
-    static int docNums[80];
+    static int docNums[MAX_DOCUMENT_FILES];
     int total = 0;
     if (!root.open("/", O_RDONLY)) return 0;
     while (file.openNext(&root, O_RDONLY)) {
@@ -3329,7 +3329,7 @@ bool runGithubDocumentSync(String& resultMessage) {
         return false;
     }
 
-    static const int MAX_SYNC_DOCS = 65;
+    static const int MAX_SYNC_DOCS = 128;
     static String docNames[MAX_SYNC_DOCS];
     static String finalDocNames[MAX_SYNC_DOCS];
     static String docPreviews[MAX_SYNC_DOCS];
@@ -3342,7 +3342,9 @@ bool runGithubDocumentSync(String& resultMessage) {
     static GitSyncPlanEntry syncPlan[MAX_SYNC_DOCS];
     int docCount = collectSyncDocs(docNames, MAX_SYNC_DOCS);
     if (docCount < 0) {
-        resultMessage = "GitHub sync supports up to " + String(MAX_SYNC_DOCS) + " documents";
+        resultMessage = "GitHub sync limit exceeded";
+        drawOnlineSyncScreen("GitHub Sync", "Sync limit exceeded", "Local documents exceed 128");
+        delay(5000);
         return false;
     }
 
@@ -3378,12 +3380,27 @@ bool runGithubDocumentSync(String& resultMessage) {
         return false;
     }
     int remoteDocCount = parseGithubTreeDocEntries(treeResponse, remoteDocs, MAX_SYNC_DOCS + 1);
+    if (remoteDocCount > MAX_SYNC_DOCS) {
+        resultMessage = "GitHub sync limit exceeded";
+        drawOnlineSyncScreen("GitHub Sync", "Sync limit exceeded", "Remote documents exceed 128");
+        delay(5000);
+        return false;
+    }
     int syncStateCount = loadGitSyncState(syncState, MAX_SYNC_DOCS + 4);
 
     if (remoteDocCount == 0) {
         if (docCount <= 0) {
             resultMessage = "No documents to sync";
             return true;
+        }
+
+        drawOnlineSyncScreen("GitHub Sync", "Push " + String(docCount) + " / Pull 0", "Delete 0");
+        delay(1200);
+        if (docCount >= MAX_SYNC_DOCS) {
+            resultMessage = "GitHub sync limit exceeded";
+            drawOnlineSyncScreen("GitHub Sync", "Sync limit exceeded", "Push+Pull must be under 128");
+            delay(5000);
+            return false;
         }
 
         int finalCount = 0;
@@ -3442,7 +3459,8 @@ bool runGithubDocumentSync(String& resultMessage) {
 
     int unionCount = 0;
     for (int i = 0; i < docCount && unionCount < MAX_SYNC_DOCS; i++) finalDocNames[unionCount++] = docNames[i];
-    for (int i = 0; i < remoteDocCount && unionCount < MAX_SYNC_DOCS; i++) {
+    bool unionLimitExceeded = false;
+    for (int i = 0; i < remoteDocCount; i++) {
         bool exists = false;
         for (int j = 0; j < unionCount; j++) {
             if (finalDocNames[j] == remoteDocs[i].name) {
@@ -3450,7 +3468,19 @@ bool runGithubDocumentSync(String& resultMessage) {
                 break;
             }
         }
-        if (!exists) finalDocNames[unionCount++] = remoteDocs[i].name;
+        if (!exists) {
+            if (unionCount >= MAX_SYNC_DOCS) {
+                unionLimitExceeded = true;
+                break;
+            }
+            finalDocNames[unionCount++] = remoteDocs[i].name;
+        }
+    }
+    if (unionLimitExceeded) {
+        resultMessage = "GitHub sync limit exceeded";
+        drawOnlineSyncScreen("GitHub Sync", "Sync limit exceeded", "Local+remote documents exceed 128");
+        delay(5000);
+        return false;
     }
 
     if (unionCount <= 0) {
@@ -3539,7 +3569,15 @@ bool runGithubDocumentSync(String& resultMessage) {
         yield();
     }
 
-    drawOnlineSyncScreen("GitHub Sync", "Compare done", "Upload " + String(uploadCount) + " / Download " + String(downloadCount) + " / Delete " + String(deleteRemoteCount));
+    int syncTransferCount = uploadCount + downloadCount;
+    drawOnlineSyncScreen("GitHub Sync", "Push " + String(uploadCount) + " / Pull " + String(downloadCount), "Delete " + String(deleteRemoteCount));
+    delay(1200);
+    if (syncTransferCount >= MAX_SYNC_DOCS) {
+        resultMessage = "GitHub sync limit exceeded";
+        drawOnlineSyncScreen("GitHub Sync", "Sync limit exceeded", "Push+Pull must be under 128");
+        delay(5000);
+        return false;
+    }
 
     int uploadProgress = 0;
     int downloadProgress = 0;
@@ -3705,7 +3743,7 @@ void drawOnlineSyncScreen(const String& title, const String& line1, const String
 
 void finishOnlineSyncToMenu(const String& title, const String& detail) {
     drawOnlineSyncScreen(title, detail, "");
-    delay(2200);
+    delay(title.indexOf("Failed") >= 0 ? 3000 : 2200);
     stopNetworkServices();
     currentMode = FILE_MENU_MODE;
     menuFocusSide = 0;
