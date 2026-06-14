@@ -14,7 +14,6 @@ extern int rightFileIndex;
 extern bool isKoreanMode;
 extern bool rtlTextMode;
 extern float displayScale;
-bool appendDeletedTombstone(const String& filename);
 #include <ESPmDNS.h>
 #include <U8g2_for_Adafruit_GFX.h>
 extern const uint8_t* font_ptr;
@@ -626,7 +625,6 @@ void handleDelete() {
     SdFile file;
     if (file.open(fn.c_str(), O_RDWR)) {
         if (file.remove()) {
-            appendDeletedTombstone(fn);
             server.sendHeader("Location", "/");
             server.send(303);
             return;

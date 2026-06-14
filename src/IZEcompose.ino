@@ -43,7 +43,6 @@ const char* FONT_DIR = "/ize_compose/hwalja";
 const char* FIRMWARE_DIR = "/ize_compose/upload";
 const char* INITIAL_IMAGE_PATH = "/ize_compose/initial.png";
 const char* GITHUB_SYNC_STATE_PATH = "/ize_compose/github_sync_state.txt";
-const char* LOCAL_DELETED_CSV_PATH = "/ize_compose/deleted.csv";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
 const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-0.html";
@@ -94,7 +93,6 @@ void handleGithubSettingsJson();
 void handleGithubSettingsSave();
 void resetStatusScreenCache();
 void drawStatusScreenFrame(const String& title, const String& line1, const String& line2, bool forceFullRefresh = false);
-bool appendDeletedTombstone(const String& filename);
 
 TaskHandle_t CalcTaskHandle;
 volatile bool needCountUpdate = false; 
@@ -2794,8 +2792,10 @@ String githubBlobShaForContent(const String& content) {
     mbedtls_sha1_context ctx;
     mbedtls_sha1_init(&ctx);
     mbedtls_sha1_starts_ret(&ctx);
-    String header = "blob " + String(content.length()) + "\0";
+    String header = "blob " + String(content.length());
+    const unsigned char nullByte = 0;
     mbedtls_sha1_update_ret(&ctx, (const unsigned char*)header.c_str(), header.length());
+    mbedtls_sha1_update_ret(&ctx, &nullByte, 1);
     mbedtls_sha1_update_ret(&ctx, (const unsigned char*)content.c_str(), content.length());
     uint8_t digest[20];
     mbedtls_sha1_finish_ret(&ctx, digest);
@@ -2872,59 +2872,6 @@ bool writeDocTextToSd(const String& filename, const String& content, String& err
     return true;
 }
 
-bool readSdTextFile(const char* path, String& content) {
-    SdFile file;
-    if (!file.open(path, O_RDONLY)) return false;
-    content = "";
-    char buffer[256];
-    while (file.available()) {
-        int n = file.read(buffer, sizeof(buffer));
-        if (n <= 0) break;
-        for (int i = 0; i < n; i++) content += buffer[i];
-        yield();
-    }
-    file.close();
-    return true;
-}
-
-bool writeSdTextFile(const char* path, const String& content) {
-    if (!ensureIzeComposeDirs()) return false;
-    SdFile file;
-    if (!file.open(path, O_WRONLY | O_CREAT | O_TRUNC)) return false;
-    bool ok = file.write(content.c_str(), content.length()) == (int)content.length();
-    file.sync();
-    file.close();
-    return ok;
-}
-
-bool csvHasDeletedEntry(const String& csv, const String& filename) {
-    int start = 0;
-    while (start < csv.length()) {
-        int end = csv.indexOf('\n', start);
-        if (end < 0) end = csv.length();
-        String line = csv.substring(start, end);
-        line.trim();
-        if (line.length() > 0) {
-            int comma = line.indexOf(',');
-            String name = (comma >= 0) ? line.substring(0, comma) : line;
-            name.trim();
-            if (name == filename) return true;
-        }
-        start = end + 1;
-    }
-    return false;
-}
-
-bool appendDeletedTombstone(const String& filename) {
-    if (!isDocFilename(filename)) return false;
-    String csv = "";
-    readSdTextFile(LOCAL_DELETED_CSV_PATH, csv);
-    if (csvHasDeletedEntry(csv, filename)) return true;
-    String line = filename + "," + String(millis()) + "\n";
-    csv += line;
-    return writeSdTextFile(LOCAL_DELETED_CSV_PATH, csv);
-}
-
 String generateDeleteConfirmCode() {
     char code[7];
     snprintf(code, sizeof(code), "%06lu", (unsigned long)(esp_random() % 1000000UL));
@@ -2954,7 +2901,6 @@ bool deletePendingFileFromMenu() {
         SdFile f;
         if (f.open(&root, pendingDeleteFilename.c_str(), O_WRONLY)) {
             removed = f.remove();
-            if (removed) appendDeletedTombstone(pendingDeleteFilename);
         }
         root.close();
     }
@@ -2986,26 +2932,6 @@ void drawDeleteCodePopup() {
     printCleanText(u8g2_for_adafruit_gfx, "Code: " + deleteConfirmCode, boxX + 18, boxY + 96, true);
     printCleanText(u8g2_for_adafruit_gfx, "Input: " + deleteConfirmInput + "_", boxX + 18, boxY + 126, true);
     printCleanText(u8g2_for_adafruit_gfx, "Enter: delete / Tab: cancel", boxX + 18, boxY + 158, true);
-}
-
-void applyDeletedCsvToLocal(const String& csv) {
-    int start = 0;
-    while (start < csv.length()) {
-        int end = csv.indexOf('\n', start);
-        if (end < 0) end = csv.length();
-        String line = csv.substring(start, end);
-        line.trim();
-        if (line.length() > 0) {
-            int comma = line.indexOf(',');
-            String name = (comma >= 0) ? line.substring(0, comma) : line;
-            name.trim();
-            if (isDocFilename(name)) {
-                removeSdFile(name.c_str());
-                if (currentFileName == name) currentFileName = nextDocFilename();
-            }
-        }
-        start = end + 1;
-    }
 }
 
 int findGitSyncStateEntry(GitSyncStateEntry* entries, int count, const String& name) {
@@ -3081,6 +3007,12 @@ void upsertGitSyncState(GitSyncStateEntry* entries, int& count, int maxEntries, 
     entries[idx].remoteBlobSha = remoteBlobSha;
 }
 
+void removeGitSyncStateEntry(GitSyncStateEntry* entries, int& count, const String& name) {
+    int idx = findGitSyncStateEntry(entries, count, name);
+    if (idx < 0) return;
+    for (int i = idx; i < count - 1; i++) entries[i] = entries[i + 1];
+    count--;
+}
 bool githubHttpRequest(const String& method, const String& url, const String& body, int& httpCode, String& response) {
     const char* host = "api.github.com";
     String prefix = "https://api.github.com";
@@ -3356,7 +3288,12 @@ int collectSyncDocs(String* docNames, int maxDocs) {
     while (file.openNext(&root, O_RDONLY)) {
         file.getName(name, sizeof(name));
         String fn = String(name);
-        if (!file.isDir() && isDocFilename(fn) && total < maxDocs) {
+        if (!file.isDir() && isDocFilename(fn)) {
+            if (total >= maxDocs) {
+                file.close();
+                root.close();
+                return -1;
+            }
             docNames[total] = fn;
             docNums[total] = docNumberFromName(fn);
             total++;
@@ -3404,6 +3341,10 @@ bool runGithubDocumentSync(String& resultMessage) {
     static GitSyncStateEntry syncState[MAX_SYNC_DOCS + 4];
     static GitSyncPlanEntry syncPlan[MAX_SYNC_DOCS];
     int docCount = collectSyncDocs(docNames, MAX_SYNC_DOCS);
+    if (docCount < 0) {
+        resultMessage = "GitHub sync supports up to " + String(MAX_SYNC_DOCS) + " documents";
+        return false;
+    }
 
     String branch = githubBranchName();
     int code = 0;
@@ -3612,6 +3553,7 @@ bool runGithubDocumentSync(String& resultMessage) {
             deleteRemoteProgress++;
             drawOnlineSyncScreen("GitHub Sync", "Deleting " + String(deleteRemoteProgress) + "/" + String(deleteRemoteCount), docName);
             deleteRemotePaths[deleteRemoteProgress - 1] = syncPlan[i].remotePath;
+            removeGitSyncStateEntry(syncState, syncStateCount, docName);
             yield();
             continue;
         } else if (syncPlan[i].action == GIT_SYNC_DOWNLOAD) {
@@ -3628,7 +3570,7 @@ bool runGithubDocumentSync(String& resultMessage) {
             finalSha = uploadBlobShas[uploadProgress - 1];
         }
 
-        if (finalContent.length() > 0 || syncPlan[i].action != GIT_SYNC_SKIP) {
+        if (syncPlan[i].action != GIT_SYNC_DELETE_REMOTE) {
             docPreviews[finalCount] = utf8Truncate(finalContent, 240);
             docChars[finalCount] = getTrueLength(finalContent);
             finalDocNames[finalCount] = docName;

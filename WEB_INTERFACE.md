@@ -84,11 +84,13 @@ Enter from the device menu:
 Menu -> Network -> WebServer or Menu -> Network -> WiFi
 ```
 
-Enter a 4-digit PIN on the device. After confirming the PIN, connect to the device Wi-Fi or the same LAN and open the shown address:
+For `Network -> WebServer`, enter the 10-digit AP password on the device, join `IZEcompose_FileServer`, open:
 
 ```text
 http://192.168.4.1/
 ```
+
+For `Network -> WiFi`, connect the device to the selected Wi-Fi network and open the local IP shown on the device. In both modes, enter the 4-digit browser PIN shown on the device page.
 
 The external web page is loaded from:
 
@@ -219,6 +221,6 @@ Recommended SD card layout:
 - Documents
 - Settings & Update
 
-The previous separate `property_update.html` and `document_server.html` files are superseded by this file.
+The previous separate `property_update.html` and `document_server.html` files are kept only as compatibility copies of this page.
 
 Online firmware update is active in this build. Local file upload remains the supported path for firmware, fonts, and `initial.png`.

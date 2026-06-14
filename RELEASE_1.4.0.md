@@ -24,7 +24,7 @@ Use this build for the v1.4.0 WebServer, Wi-Fi browser page, and GitHub private 
   - Uploads local `.txt` documents to the configured GitHub repository path.
   - Downloads newer GitHub edits for existing local documents.
   - Deletes remote-only `docNNNN.txt` files instead of downloading them.
-  - Restores local documents if the matching GitHub file was deleted.
+  - Uploads local documents back if the matching GitHub file was deleted remotely.
   - Shows sync success/failure on the device.
   - Turns Wi-Fi off and returns to the menu after the sync flow.
 - Changed the Network menu values to:
@@ -196,11 +196,12 @@ After GitHub settings have been saved once:
 
 ## GitHub Sync Rules
 
+- GitHub sync supports up to 65 `docNNNN.txt` files per run.
 - Existing `docNNNN.txt` files may be edited directly on GitHub.
 - If the GitHub copy of an existing document is newer, the device downloads it.
 - New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as text files.
 - Files created only on GitHub are removed on the next sync.
-- Files deleted only on GitHub are restored on the next sync if the SD card still has them.
+- Files deleted only on GitHub are uploaded back on the next sync if the SD card still has them.
 - Device-side deletion remains available and keeps its PIN/confirmation flow. Use device-side deletion when a document should be removed from both the SD card and GitHub.
 - There is no browser-side online file manager in the private GitHub repository.
 
@@ -244,8 +245,8 @@ Firmware:
 
 ```text
 firmware/izefirmware.bin
-Size: 1,255,728 bytes
-SHA-256: 4F01BF8597EDEB988CB7D79B08FC6D97A5F8E17FFF208F599D3721D255A8615C
+Size: 1,254,880 bytes
+SHA-256: 8DD53D35A07FA6E94F0E4A4709684E44818A09E4E48CC66AF6ABB8C8FFF5A07D
 ```
 
 ## Upgrade Notes

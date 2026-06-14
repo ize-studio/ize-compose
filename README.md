@@ -1,7 +1,6 @@
 # Ize Compose
 
 Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a multi-language writing firmware and now supports 92 keyboard layouts across dozens of scripts.
-(if you are looking for Ize-Ribbon, go to https://github.com/ize-studio/Ize-Ribbon )
 
 Current release: **v1.4.0**
 
@@ -50,7 +49,7 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 **Files**
 - Saves and loads `.txt` files on SD card (`/ize_compose/`)
-- File browser (up to 65 files)
+- File browser (up to 256 files)
 - Network modes: Sync command plus Network Off, WiFi, and WebServer
 - GitHub sync only runs the sync operation and then shuts the Wi-Fi adapter off
 - Browser document list shows 12 documents per page with a short preview beside each title
@@ -119,10 +118,11 @@ Detailed browser workflow is documented in [WEB_INTERFACE.md](WEB_INTERFACE.md).
 Top-level `Sync` is intended to keep Ize Compose SD-card documents and one private GitHub repository folder aligned.
 
 - `Sync` uses Wi-Fi only for the sync operation. After the sync succeeds or fails, the firmware turns Wi-Fi off and returns to the device menu.
+- GitHub sync supports up to 65 `docNNNN.txt` files per run.
 - Existing `docNNNN.txt` files can be edited on GitHub; if the GitHub copy is newer, the device downloads it.
 - New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as `.txt` files.
 - Files created only on GitHub are removed on the next sync, because the device assigns document numbers and owns document creation.
-- Files deleted only on GitHub are restored on the next sync if the SD card still has them.
+- Files deleted only on GitHub are uploaded back on the next sync if the SD card still has them.
 - Device-side deletion is kept and still requires the device confirmation flow; use that path when a document should be removed from both sides.
 
 Do not put a repository-side `index.html` document manager in the private writing repository. Private GitHub HTML files cannot be opened as a live web page without downloading them first, so online file management is not part of this release.
@@ -200,7 +200,7 @@ Without these files the device still works, but only the built-in Latin fallback
 | `-DSCREEN_WIDTH=800` / `-DSCREEN_HEIGHT=600` | Display resolution constants |
 | `-Os` | Size optimization for OTA-safe firmware size |
 | `-DIZE_INKPLATE_MINIMAL_IMAGE=1` | Keeps only the image loading path this firmware uses |
-| `-DIZE_ENABLE_DIRECT_GITHUB_SYNC=1` | Builds the experimental direct GitHub sync path |
+| `-DIZE_ENABLE_DIRECT_GITHUB_SYNC=1` | Builds the direct GitHub sync path |
 | `-DIZE_ENABLE_BLE_KEYBOARD=0` | Keeps removed Bluetooth keyboard code out of the build |
 | `-D CORE_DEBUG_LEVEL=0` | Suppresses all serial debug output |
 
