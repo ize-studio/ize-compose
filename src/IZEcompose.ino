@@ -2341,23 +2341,19 @@ bool httpsRequestUrl(const String& method, const String& url, const String& body
 }
 
 bool httpsDownloadToSd(const String& url, const String& targetPath, String& errorMessage, bool useGithubToken = false, int redirectDepth = 0) {
+    if (redirectDepth > 5) {
+        errorMessage = "Too many download redirects";
+        return false;
+    }
     String host, path;
     if (!parseHttpsUrl(url, host, path)) {
         errorMessage = "Invalid download URL";
-        return false;
-    }
-    removeSdFile(targetPath.c_str());
-    SdFile out;
-    if (!out.open(targetPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) {
-        errorMessage = "Cannot create " + targetPath;
         return false;
     }
     WiFiClientSecure client;
     client.setInsecure();
     client.setTimeout(30000);
     if (!client.connect(host.c_str(), 443)) {
-        out.close();
-        removeSdFile(targetPath.c_str());
         errorMessage = "Download connect failed";
         return false;
     }
@@ -2375,24 +2371,45 @@ bool httpsDownloadToSd(const String& url, const String& targetPath, String& erro
     int firstSpace = statusLine.indexOf(' ');
     int httpCode = (firstSpace >= 0) ? statusLine.substring(firstSpace + 1, firstSpace + 4).toInt() : -1;
     bool chunked = false;
+    long contentLength = -1;
+    String redirectUrl = "";
     while (client.connected() || client.available()) {
         String header = client.readStringUntil('\n');
         header.trim();
         if (header.length() == 0) break;
         String lower = header; lower.toLowerCase();
         if (lower.indexOf("transfer-encoding:") == 0 && lower.indexOf("chunked") >= 0) chunked = true;
+        if (lower.indexOf("content-length:") == 0) contentLength = header.substring(header.indexOf(':') + 1).toInt();
+        if (lower.indexOf("location:") == 0) {
+            redirectUrl = header.substring(header.indexOf(':') + 1);
+            redirectUrl.trim();
+        }
         yield();
     }
+    if (httpCode >= 300 && httpCode < 400 && redirectUrl.length() > 0) {
+        client.stop();
+        if (redirectUrl.startsWith("/")) redirectUrl = "https://" + host + redirectUrl;
+        return httpsDownloadToSd(redirectUrl, targetPath, errorMessage, useGithubToken, redirectDepth + 1);
+    }
     if (httpCode < 200 || httpCode >= 300) {
-        out.close();
-        removeSdFile(targetPath.c_str());
+        client.stop();
         errorMessage = "Download HTTP " + String(httpCode);
+        return false;
+    }
+    removeSdFile(targetPath.c_str());
+    SdFile out;
+    if (!out.open(targetPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) {
+        client.stop();
+        errorMessage = "Cannot create " + targetPath;
         return false;
     }
     uint8_t buffer[512];
     bool ok = true;
+    size_t totalWritten = 0;
+    unsigned long lastDataMs = millis();
     if (chunked) {
         while (client.connected() || client.available()) {
+            if (!client.available() && millis() - lastDataMs > 30000) { ok = false; break; }
             String lenLine = client.readStringUntil('\n');
             lenLine.trim();
             if (lenLine.length() == 0) continue;
@@ -2403,9 +2420,15 @@ bool httpsDownloadToSd(const String& url, const String& targetPath, String& erro
                 int got = 0;
                 while (got < want && (client.connected() || client.available())) {
                     if (client.available()) got += client.read(buffer + got, want - got);
-                    else { delay(1); yield(); }
+                    else {
+                        if (millis() - lastDataMs > 30000) break;
+                        delay(1);
+                        yield();
+                    }
                 }
                 if (got <= 0 || out.write(buffer, got) != got) { ok = false; break; }
+                totalWritten += got;
+                lastDataMs = millis();
                 chunkLen -= got;
                 yield();
             }
@@ -2416,15 +2439,26 @@ bool httpsDownloadToSd(const String& url, const String& targetPath, String& erro
     } else {
         while (client.connected() || client.available()) {
             int n = client.read(buffer, sizeof(buffer));
-            if (n > 0 && out.write(buffer, n) != n) { ok = false; break; }
+            if (n > 0) {
+                if (out.write(buffer, n) != n) { ok = false; break; }
+                totalWritten += n;
+                lastDataMs = millis();
+            } else if (millis() - lastDataMs > 30000) {
+                ok = false;
+                break;
+            }
             yield();
         }
     }
     out.close();
     client.stop();
+    if (ok && contentLength >= 0 && totalWritten != (size_t)contentLength) {
+        errorMessage = "Download incomplete";
+        ok = false;
+    }
     if (!ok) {
         removeSdFile(targetPath.c_str());
-        errorMessage = "Download write failed";
+        if (errorMessage.length() == 0) errorMessage = "Download write failed";
         return false;
     }
     return true;
