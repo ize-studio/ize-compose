@@ -2497,6 +2497,16 @@ bool latestReleaseInfo(String& latestTag, String& firmwareUrl, String& webUrl, S
     return latestTag.length() > 0;
 }
 
+String comparableReleaseVersion(String version) {
+    version.trim();
+    if (version.startsWith("v") || version.startsWith("V")) version.remove(0, 1);
+    return version;
+}
+
+bool releaseMatchesFirmware(const String& latest) {
+    return comparableReleaseVersion(latest) == comparableReleaseVersion(String(FIRMWARE_VERSION));
+}
+
 void handleReleaseStatus() {
     if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
         server.send(403, "application/json", "{\"error\":\"WiFi mode and PIN required\"}");
@@ -2507,7 +2517,7 @@ void handleReleaseStatus() {
         server.send(500, "application/json", "{\"error\":\"" + jsonEscape(err) + "\"}");
         return;
     }
-    bool firmwareAvailable = latest.length() > 0 && latest != String(FIRMWARE_VERSION);
+    bool firmwareAvailable = latest.length() > 0 && !releaseMatchesFirmware(latest);
     bool webAvailable = webName.length() > 0 && webName != String("ize_compose_") + String(WEB_PAGE_VERSION) + ".html";
     String json = "{\"current\":\"" + String(FIRMWARE_VERSION) + "\",\"latest\":\"" + jsonEscape(latest) + "\",\"available\":" + String((firmwareAvailable || webAvailable) ? "true" : "false") + ",\"webAsset\":\"" + jsonEscape(webName) + "\",\"webUpdate\":" + String(webAvailable ? "true" : "false") + "}";
     server.send(200, "application/json; charset=utf-8", json);
@@ -2523,7 +2533,7 @@ void handleReleaseUpdate() {
         server.send(500, "text/plain", err);
         return;
     }
-    bool firmwareAvailable = latest.length() > 0 && latest != String(FIRMWARE_VERSION);
+    bool firmwareAvailable = latest.length() > 0 && !releaseMatchesFirmware(latest);
     bool webAvailable = webName.length() > 0 && webName != String("ize_compose_") + String(WEB_PAGE_VERSION) + ".html";
     if (!firmwareAvailable && !webAvailable) {
         server.send(200, "text/plain", "Current firmware and SD web page are latest.");
@@ -2552,6 +2562,8 @@ void handleReleaseUpdate() {
         WiFi.disconnect(true, true);
         WiFi.mode(WIFI_OFF);
         currentNetSubMode = NET_MAIN;
+        isUpdating = false;
+        updateScreenDrawn = false;
         updateState = UPD_SD_RUNNING;
         pendingSdUpdate = false;
         needUpdate = true;

@@ -525,7 +525,7 @@ void handleDocumentsList() {
 }
 void handleDocumentRoot(const String& message = "") {
     if (sendSdFileResponse(WEB_DOCUMENT_PAGE_PATH, "text/html; charset=utf-8")) return;
-    server.send(500, "text/plain", "Missing /ize_compose/ize_compose_1-4-0-test.html on SD card.");
+    server.send(500, "text/plain", String("Missing ") + WEB_DOCUMENT_PAGE_PATH + " on SD card.");
 }
 
 void handleRoot() { handleDocumentRoot(); }
