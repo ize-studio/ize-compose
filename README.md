@@ -5,6 +5,8 @@ Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.or
 
 Current release: **v1.4.0**
 
+Code repository: [github.com/ize-studio/ize-compose](https://github.com/ize-studio/ize-compose)
+
 v1.3.0 adds Wi-Fi client document-server mode, splits browser support into SD-loadable files, and preserves the SD settings backup flow.
 
 v1.4.0 adds the top-level `Sync` flow for GitHub private repository sync, then turns the Wi-Fi adapter off after sync. The Bluetooth feature that acted as an external keyboard in v1.3.0 was removed because of battery-use issues. See [RELEASE_1.4.0.md](RELEASE_1.4.0.md) for release details.
@@ -355,3 +357,5 @@ Online firmware update is connected to firmware endpoints. Local SD upload remai
 Online update checks the GitHub release firmware asset and the SD web-page asset. If the release includes a newer `ize_compose_<version>.html`, the device downloads that SD web page before starting firmware OTA. OTA begins only after every required download has completed.
 
 The web page filename includes the firmware/web-page version, for example `ize_compose_1-4-0.html`, so the currently served page is not overwritten while the browser is open.
+
+Source and releases: [github.com/ize-studio/ize-compose](https://github.com/ize-studio/ize-compose)
