@@ -122,7 +122,7 @@ The Settings & Update tab edits these settings:
 | Speed | Number input | Default `0`; changing can affect typing feel |
 | Refresh | Number input | Default `2000`; changing can affect refresh behavior |
 | English Keyboard | Radio buttons | Qwerty or Dvorak |
-| Language | Scroll list | Selects the non-English layout |
+| Language | Scroll list | Selects English or a multi-language layout |
 
 Press `Save` to apply all settings at once.
 
@@ -136,7 +136,7 @@ When settings are saved, the firmware writes a backup file:
 /ize_compose/settings_backup.json
 ```
 
-This file is for recovery after reset/reinstall. If preferences are empty and the backup exists, the firmware can restore settings from this file and save them back into device preferences.
+This file is for recovery after reset/reinstall. If preferences are empty and the backup exists, the firmware can restore settings, including the saved GitHub token, and save them back into device preferences.
 
 ### Firmware update
 
@@ -221,4 +221,4 @@ Recommended SD card layout:
 
 The previous separate `property_update.html` and `document_server.html` files are superseded by this file.
 
-Online asset backup/restore and online firmware update controls are currently active controls in this build. Local file upload remains the working path for firmware, fonts, and `initial.png`.
+Online firmware update is active in this build. Local file upload remains the supported path for firmware, fonts, and `initial.png`.

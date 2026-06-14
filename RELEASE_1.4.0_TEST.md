@@ -267,12 +267,10 @@ SHA-256: BFAED6F166C1CBD9F902027A1C3584CB85EFB1FD66CBBAB5E2D630CE7E9B40CF
 - The main menu now starts with `Sync`; `Network` only selects `Off`, `WiFi`, or `WebServer`.
 - `Properties` was removed as a selectable menu item. The firmware version remains display-only at the bottom of the menu.
 - WebServer mode now asks for a 10-digit numeric access-point password before starting.
-- WebServer mode hides the password after a client connects and shuts down automatically after connected clients disappear for more than 2 seconds.
-- Online asset backup/restore and online firmware update buttons now call firmware endpoints. Online update downloads the required release firmware and versioned SD web page before OTA starts.
-## Online update and asset backup completion
+- WebServer mode hides the password after a client connects. Automatic shutdown begins only after browser PIN authentication; after that authenticated client session has existed, WebServer mode shuts down when connected clients disappear for more than 2 seconds.
+- Online firmware update now calls firmware endpoints. Online update downloads the required release firmware and versioned SD web page before OTA starts.
 
-- Online update now checks the latest GitHub release.
-- It compares both firmware version and SD web-page asset name.
-- If the release web page differs, the device downloads the new versioned web page first.
-- Firmware OTA starts only after the firmware file and required SD web-page file downloads have both completed.
-- GitHub asset backup/restore includes the versioned web page file in addition to fonts and `initial.png`.
+## Online update completion
+
+- Online update checks the GitHub latest release, downloads the firmware asset and versioned SD web page asset, then starts OTA only after required downloads finish.
+- Large binary SD assets are no longer handled through GitHub from the browser page because some font files exceed practical device memory limits. Use local SD upload for fonts and `initial.png`.

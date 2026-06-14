@@ -46,7 +46,6 @@ const char* GITHUB_SYNC_STATE_PATH = "/ize_compose/github_sync_state.txt";
 const char* LOCAL_DELETED_CSV_PATH = "/ize_compose/deleted.csv";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
-const char* WEB_PROPERTY_PAGE_PATH = "/ize_compose/ize_compose_1-4-0-test.html";
 const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-0-test.html";
 const char* SETTINGS_BACKUP_PATH = "/ize_compose/settings_backup.json";
 // Minimal English fallback used only before SD fonts load or when an asset is missing.
@@ -61,8 +60,6 @@ const uint8_t* font_indic_ptr = nullptr;
 const uint8_t* font_sea_ptr = nullptr;
 const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
-portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
-bool isFirmwareUpdateMode = false;
 #define FIRMWARE_VERSION "v1.4.0-test" // Experimental direct GitHub sync and BLE removal
 #define WEB_PAGE_VERSION "1-4-0-test"
 const char* OFFICIAL_RELEASE_API = "https://api.github.com/repos/ize-studio/ize-compose/releases/latest";
@@ -80,11 +77,7 @@ InkplateProxy display(INKPLATE_1BIT);
 AppMode currentMode = TYPING_MODE;
 bool needUpdate = false;
 int lastCursorY = -1; // Last cursor Y from previous frame; -1 forces full redraw.
-bool isSignatureChecked = false;
-bool isSignatureValid = false;
 bool isUpdating = false;             
-unsigned long lastActivityTime = 0;
-bool webServerUpdateOnly = false;
 String getKeyboardLayoutIdString(KeyboardLayoutId id);
 #include "insoe.h"
 void handleDownload(); 
@@ -416,8 +409,8 @@ struct GitSyncPlanEntry {
     GitSyncAction action = GIT_SYNC_SKIP;
 };
 
-const char* choStrs[] = {"ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"};
-const char* jungStrs[] = {"ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"};
+const char* choStrs[] = {"\xE3\x84\xB1","\xE3\x84\xB2","\xE3\x84\xB4","\xE3\x84\xB7","\xE3\x84\xB8","\xE3\x84\xB9","\xE3\x85\x81","\xE3\x85\x82","\xE3\x85\x83","\xE3\x85\x85","\xE3\x85\x86","\xE3\x85\x87","\xE3\x85\x88","\xE3\x85\x89","\xE3\x85\x8A","\xE3\x85\x8B","\xE3\x85\x8C","\xE3\x85\x8D","\xE3\x85\x8E"};
+const char* jungStrs[] = {"\xE3\x85\x8F","\xE3\x85\x90","\xE3\x85\x91","\xE3\x85\x92","\xE3\x85\x93","\xE3\x85\x94","\xE3\x85\x95","\xE3\x85\x96","\xE3\x85\x97","\xE3\x85\x98","\xE3\x85\x99","\xE3\x85\x9A","\xE3\x85\x9B","\xE3\x85\x9C","\xE3\x85\x9D","\xE3\x85\x9E","\xE3\x85\x9F","\xE3\x85\xA0","\xE3\x85\xA1","\xE3\x85\xA2","\xE3\x85\xA3"};
 int cho = -1, jung = -1, jong = -1; char lastJongChar = 0;
 #include "jeong_eum.h"
 KeyEngineScript getSelectedKeyEngine();
@@ -432,9 +425,11 @@ enum UpdateState { UPD_NONE, UPD_PIN_INPUT, UPD_WIFI_WAITING, UPD_SD_RUNNING };
 UpdateState updateState = UPD_NONE;
 String pinInputBuffer = "";          
 String webServerPasswordInput = "";
+String webServerPasswordHint = "Numbers only / Tab cancels";
 String activeApPassword = "0000000000";
 bool apHadClient = false;
 bool apPasswordHidden = false;
+bool apAuthenticatedClientSeen = false;
 unsigned long apNoClientSinceMs = 0;
 class ScaledDisplay : public Adafruit_GFX {
 public:
@@ -580,14 +575,6 @@ void doBackspace() {
     }
     needUpdate = true; 
     statusBarNeedsUpdate = true; 
-}
-
-void setupUSB() {
-}
-
-void handleUSB() {
-  // Intentionally no-op. The keyboard UART must be owned by loop() only;
-  // reading Serial here can steal keystrokes and cause writing/menu interference.
 }
 
 void insertText(String str) { 
@@ -1401,7 +1388,6 @@ void setup() {
     printCleanText(u8g2_for_adafruit_gfx, "Booting...", MARGIN_X, MARGIN_Y);  
     display.partialUpdate();
     
-    setupUSB();
     delay(1000); 
     while(Serial.available() > 0) Serial.read();  
     while(Serial1.available() > 0) Serial1.read(); 
@@ -1583,6 +1569,7 @@ bool writeSettingsBackupFile() {
     json += "  \"githubRepo\": \"" + jsonEscape(githubRepo) + "\",\n";
     json += "  \"githubBranch\": \"" + jsonEscape(githubBranch) + "\",\n";
     json += "  \"githubPath\": \"" + jsonEscape(githubPath) + "\",\n";
+    json += "  \"githubToken\": \"" + jsonEscape(githubToken) + "\",\n";
     json += "  \"currentFileName\": \"" + jsonEscape(currentFileName) + "\"\n";
     json += "}\n";
 
@@ -1625,6 +1612,7 @@ bool restoreSettingsFromBackup() {
     if (extractJsonStringValue(json, "githubRepo", stringValue)) githubRepo = stringValue;
     if (extractJsonStringValue(json, "githubBranch", stringValue) && stringValue.length() > 0) githubBranch = stringValue;
     if (extractJsonStringValue(json, "githubPath", stringValue)) githubPath = stringValue;
+    if (extractJsonStringValue(json, "githubToken", stringValue) && stringValue.length() > 0) githubToken = stringValue;
     if (extractJsonStringValue(json, "currentFileName", stringValue) && stringValue.length() > 0) currentFileName = stringValue;
 
     previewEnglishLayoutIndex = englishLayoutIndex;
@@ -1829,8 +1817,6 @@ void handleGithubSettingsSave() {
     saveSystemSettings();
     server.send(200, "text/plain", "GitHub settings saved.");
 }
-bool isFirmware = false;
-
 SdFile sdBackupFile;
 String uploadTargetPath = "";
 bool uploadAccepted = false;
@@ -2078,7 +2064,6 @@ void handleWebServerUpdate() {
         WiFi.softAPdisconnect(true);
         WiFi.mode(WIFI_OFF);
         currentNetSubMode = NET_MAIN;
-        isFirmwareUpdateMode = false;
         isUpdating = false;
         updateScreenDrawn = false;
         updateState = UPD_SD_RUNNING;
@@ -2238,6 +2223,10 @@ void generateWebPin() {
     otaPinCode = String(n);
     while (otaPinCode.length() < 4) otaPinCode = "0" + otaPinCode;
     webDocumentUnlocked = false;
+    apHadClient = false;
+    apPasswordHidden = false;
+    apAuthenticatedClientSeen = false;
+    apNoClientSinceMs = 0;
 }
 
 void stopNetworkServices() {
@@ -2248,87 +2237,16 @@ void stopNetworkServices() {
     resetStatusScreenCache();
     currentNetSubMode = NET_MAIN;
     tempNetCursor = NET_MAIN;
-    isFirmwareUpdateMode = false;
     updateState = UPD_NONE;
-    webServerUpdateOnly = false;
     webDocumentUnlocked = false;
+    apHadClient = false;
+    apPasswordHidden = false;
+    apAuthenticatedClientSeen = false;
+    apNoClientSinceMs = 0;
 }
 
 
 
-String assetSdPathFromName(const String& name) {
-    if (name == "initial.png") return String(INITIAL_IMAGE_PATH);
-    if (name == "ize_compose_" + String(WEB_PAGE_VERSION) + ".html") return String(WEB_DOCUMENT_PAGE_PATH);
-    String normalized = "";
-    if (normalizeFontUploadTarget(name, normalized)) return String(FONT_DIR) + "/" + normalized;
-    return "";
-}
-
-bool githubCreateBlobForSdFileBase64(const String& path, String& blobSha, String& errorMessage) {
-    SdFile file;
-    if (!file.open(path.c_str(), O_RDONLY)) {
-        errorMessage = "Could not open " + path;
-        return false;
-    }
-    size_t size = file.fileSize();
-    uint8_t* raw = (uint8_t*)ps_malloc(size);
-    if (!raw) raw = (uint8_t*)malloc(size);
-    if (!raw) {
-        file.close();
-        errorMessage = "Not enough memory for " + path;
-        return false;
-    }
-    size_t readTotal = 0;
-    while (file.available() && readTotal < size) {
-        int n = file.read(raw + readTotal, size - readTotal);
-        if (n <= 0) break;
-        readTotal += n;
-        yield();
-    }
-    file.close();
-    if (readTotal != size) {
-        free(raw);
-        errorMessage = "Could not read " + path;
-        return false;
-    }
-    size_t outLen = 0;
-    int rc = mbedtls_base64_encode(nullptr, 0, &outLen, raw, size);
-    if (rc != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL && rc != 0) {
-        free(raw);
-        errorMessage = "Base64 size failed";
-        return false;
-    }
-    unsigned char* encoded = (unsigned char*)ps_malloc(outLen + 1);
-    if (!encoded) encoded = (unsigned char*)malloc(outLen + 1);
-    if (!encoded) {
-        free(raw);
-        errorMessage = "Not enough memory for base64";
-        return false;
-    }
-    rc = mbedtls_base64_encode(encoded, outLen + 1, &outLen, raw, size);
-    free(raw);
-    if (rc != 0) {
-        free(encoded);
-        errorMessage = "Base64 encode failed";
-        return false;
-    }
-    encoded[outLen] = '\0';
-    String body = "{\"content\":\"";
-    body += (const char*)encoded;
-    body += "\",\"encoding\":\"base64\"}";
-    free(encoded);
-    int code = 0;
-    String response;
-    if (!githubHttpRequest("POST", githubApiBase() + "/git/blobs", body, code, response)) {
-        errorMessage = "GitHub blob failed " + String(code);
-        return false;
-    }
-    if (!extractJsonStringValue(response, "sha", blobSha) || blobSha.length() == 0) {
-        errorMessage = "GitHub blob SHA missing";
-        return false;
-    }
-    return true;
-}
 
 bool parseHttpsUrl(const String& url, String& host, String& path) {
     String prefix = "https://";
@@ -2448,8 +2366,8 @@ bool httpsDownloadToSd(const String& url, const String& targetPath, String& erro
     client.print(" HTTP/1.1\r\nHost: ");
     client.print(host);
     client.print("\r\nUser-Agent: Ize-Compose\r\nAccept: application/octet-stream\r\n");
-    if (useGithubToken && githubToken.length() > 0) { client.print("Authorization: Bearer "); client.print(githubToken); client.print("\\r\\n"); }
-    client.print("Connection: close\\r\\n\\r\\n");
+    if (useGithubToken && githubToken.length() > 0) { client.print("Authorization: Bearer "); client.print(githubToken); client.print("\r\n"); }
+    client.print("Connection: close\r\n\r\n");
     unsigned long startMs = millis();
     while (!client.available() && client.connected() && millis() - startMs < 30000) { delay(10); yield(); }
     String statusLine = client.readStringUntil('\n');
@@ -2512,68 +2430,6 @@ bool httpsDownloadToSd(const String& url, const String& targetPath, String& erro
     return true;
 }
 
-bool githubUpsertRootAsset(const String& assetName, const String& localPath, String& errorMessage) {
-    String blobSha;
-    if (!githubCreateBlobForSdFileBase64(localPath, blobSha, errorMessage)) return false;
-    int code = 0;
-    String response, headCommitSha, baseTreeSha, newTreeSha, newCommitSha;
-    String branch = githubBranchName();
-    String getRefUrl = githubApiBase() + "/git/ref/heads/" + githubPathEncode(branch, true);
-    String updateRefUrl = githubApiBase() + "/git/refs/heads/" + githubPathEncode(branch, true);
-    if (!githubHttpRequest("GET", getRefUrl, "", code, response) || !extractJsonStringValue(response, "sha", headCommitSha)) {
-        errorMessage = "GitHub branch read failed " + String(code);
-        return false;
-    }
-    if (!githubHttpRequest("GET", githubApiBase() + "/git/commits/" + headCommitSha, "", code, response) || !extractJsonStringValueAfter(response, "\"tree\"", "sha", baseTreeSha)) {
-        errorMessage = "GitHub tree read failed " + String(code);
-        return false;
-    }
-    String treeBody = "{\"base_tree\":\"" + baseTreeSha + "\",\"tree\":[{\"path\":\"" + jsonEscape(assetName) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + blobSha + "\"}]}";
-    if (!githubHttpRequest("POST", githubApiBase() + "/git/trees", treeBody, code, response) || !extractJsonStringValue(response, "sha", newTreeSha)) {
-        errorMessage = "GitHub asset tree failed " + String(code);
-        return false;
-    }
-    String commitBody = "{\"message\":\"Backup Ize Compose asset " + jsonEscape(assetName) + "\",\"tree\":\"" + newTreeSha + "\",\"parents\":[\"" + headCommitSha + "\"]}";
-    if (!githubHttpRequest("POST", githubApiBase() + "/git/commits", commitBody, code, response) || !extractJsonStringValue(response, "sha", newCommitSha)) {
-        errorMessage = "GitHub asset commit failed " + String(code);
-        return false;
-    }
-    String refBody = "{\"sha\":\"" + newCommitSha + "\",\"force\":false}";
-    if (!githubHttpRequest("PATCH", updateRefUrl, refBody, code, response)) {
-        errorMessage = "GitHub ref update failed " + String(code);
-        return false;
-    }
-    return true;
-}
-void handleGithubAssets() {
-    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
-        server.send(403, "text/plain", "Online backup/restore is available only in WiFi mode after PIN.");
-        return;
-    }
-    if (!githubConfigComplete()) {
-        server.send(400, "text/plain", "GitHub settings missing.");
-        return;
-    }
-    String action = server.arg("action");
-    int okCount = 0;
-    String err = "";
-    for (int i = 0; i < server.args(); i++) {
-        if (server.argName(i) != "asset") continue;
-        String asset = server.arg(i);
-        String localPath = assetSdPathFromName(asset);
-        if (localPath.length() == 0) { err = "Unsupported asset " + asset; break; }
-        if (action == "backup") {
-            if (!githubUpsertRootAsset(asset, localPath, err)) break;
-            okCount++;
-        } else if (action == "restore") {
-            String rawUrl = "https://raw.githubusercontent.com/" + githubPathEncode(githubOwner, false) + "/" + githubPathEncode(githubRepo, false) + "/" + githubPathEncode(githubBranchName(), false) + "/" + githubPathEncode(asset, true);
-            if (!httpsDownloadToSd(rawUrl, localPath, err, true)) break;
-            okCount++;
-        }
-    }
-    if (err.length() > 0) server.send(500, "text/plain", err);
-    else server.send(200, "text/plain", String(okCount) + " asset(s) " + (action == "restore" ? "restored." : "backed up."));
-}
 
 bool latestReleaseInfo(String& latestTag, String& firmwareUrl, String& webUrl, String& webName, String& errorMessage) {
     int code = 0;
@@ -2640,7 +2496,8 @@ void handleReleaseUpdate() {
         return;
     }
     isUpdating = true;
-    updateScreenDrawn = false;
+    drawStatusScreenFrame("Update", "Downloading update files.", "Do not close browser or power off.", true);
+    updateScreenDrawn = true;
     if (CalcTaskHandle != NULL) vTaskSuspend(CalcTaskHandle);
     if (firmwareAvailable) {
         if (fwUrl.length() == 0) { isUpdating = false; if (CalcTaskHandle != NULL) vTaskResume(CalcTaskHandle); server.send(500, "text/plain", "Firmware asset missing in release."); return; }
@@ -2682,7 +2539,6 @@ void registerWebRoutes() {
     server.on("/uploadText", HTTP_POST, handleTextUploadComplete, handleTextUpload);
     server.on("/github/settings.json", HTTP_GET, handleGithubSettingsJson);
     server.on("/github/settings", HTTP_POST, handleGithubSettingsSave);
-    server.on("/github/assets", HTTP_POST, handleGithubAssets);
     server.on("/release/status", HTTP_GET, handleReleaseStatus);
     server.on("/release/update", HTTP_POST, handleReleaseUpdate);
 
@@ -2708,10 +2564,10 @@ void setupWiFi() {
         MDNS.addService("http", "tcp", 80); 
     }
     WiFi.setTxPower(WIFI_POWER_15dBm);
-    webServerUpdateOnly = false;
     if (otaPinCode == "") generateWebPin();
     apHadClient = false;
     apPasswordHidden = false;
+    apAuthenticatedClientSeen = false;
     apNoClientSinceMs = 0;
     registerWebRoutes();
     server.begin();
@@ -2786,7 +2642,7 @@ bool connectSelectedWifi(const String& password) {
     WiFi.mode(WIFI_STA);
     WiFi.begin(targetSsid.c_str(), password.c_str());
     unsigned long startMs = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startMs < 15000) {
+    while (WiFi.status() != WL_CONNECTED && millis() - startMs < 5000) {
         delay(250);
         yield();
     }
@@ -2807,7 +2663,6 @@ bool connectSelectedWifi(const String& password) {
             return ok;
         }
         generateWebPin();
-        webServerUpdateOnly = false;
         currentNetSubMode = NET_WIFI_STA;
         currentMode = TYPING_MODE;
         registerWebRoutes();
@@ -3933,8 +3788,6 @@ void failSdOta(const char* reason) {
     isUpdating = false;
     updateScreenDrawn = false;
     updateState = UPD_NONE;
-    webServerUpdateOnly = false;
-    isFirmwareUpdateMode = false;
     currentNetSubMode = NET_MAIN;
     needUpdate = true;
 
@@ -4099,10 +3952,14 @@ if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA || update
     if (currentNetSubMode == NET_WIFI && !isUpdating && updateState == UPD_NONE) {
         int stations = WiFi.softAPgetStationNum();
         if (stations > 0) {
-            apHadClient = true;
-            apPasswordHidden = true;
+            if (apAuthenticatedClientSeen) apHadClient = true;
+            if (!apPasswordHidden) {
+                apPasswordHidden = true;
+                needUpdate = true;
+                statusBarNeedsUpdate = true;
+            }
             apNoClientSinceMs = 0;
-        } else if (apHadClient) {
+        } else if (apAuthenticatedClientSeen && apHadClient) {
             if (apNoClientSinceMs == 0) apNoClientSinceMs = millis();
             if (millis() - apNoClientSinceMs > 2000) {
                 stopNetworkServices();
@@ -4122,9 +3979,7 @@ if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA || update
                 WiFi.softAPdisconnect(true);
                 WiFi.mode(WIFI_OFF);
                 updateState = UPD_NONE;
-                webServerUpdateOnly = false;
                 currentNetSubMode = NET_MAIN;
-                isFirmwareUpdateMode = false;
                 pinInputBuffer = "";
                 otaPinCode = "";
                 isCtrlPressed = false;
@@ -4167,31 +4022,55 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             return;
         }
 
-    
     if (currentMode == WEB_PASSWORD_MODE) {
         if (needUpdate) {
-            String masked = "";
-            for (int i = 0; i < webServerPasswordInput.length(); i++) masked += "*";
-            for (int i = webServerPasswordInput.length(); i < 10; i++) masked += "_";
-            drawStatusScreenFrame("WebServer Password", "Enter 10 digits:", masked, !statusScreenPrimed);
+            if (webServerPasswordInput.length() == 0) {
+                drawStatusScreenFrame("WebServer Password", "Type 10 digits", webServerPasswordHint, !statusScreenPrimed);
+            } else {
+                String visiblePassword = webServerPasswordInput;
+                for (int i = webServerPasswordInput.length(); i < 10; i++) visiblePassword += "_";
+                drawStatusScreenFrame("WebServer Password", "Password: " + visiblePassword, webServerPasswordHint, !statusScreenPrimed);
+            }
             needUpdate = false;
         }
         while (Serial.available() > 0) {
             byte k = Serial.read();
             const char engMap[] = {'`','1','2','3','4','5','6','7','8','9','0','-','=','\b','\t','q','w','e','r','t','y','u','i','o','p','[',']','\\',0,'a','s','d','f','g','h','j','k','l',';','\'','\n',0,'z','x','c','v','b','n','m',',','.','/',0,0,0,0,0,' ',0,0,0};
             char c = (k < sizeof(engMap)) ? engMap[k] : 0;
-            if (c >= '0' && c <= '9' && webServerPasswordInput.length() < 10) { webServerPasswordInput += c; needUpdate = true; }
-            if (k == 13 && webServerPasswordInput.length() > 0) { webServerPasswordInput.remove(webServerPasswordInput.length() - 1); needUpdate = true; }
-            if (k == 40 && webServerPasswordInput.length() == 10) {
-                activeApPassword = webServerPasswordInput;
-                generateWebPin();
-                currentNetSubMode = NET_WIFI;
-                currentMode = TYPING_MODE;
-                setupWiFi();
+            if (c >= '0' && c <= '9') {
+                if (webServerPasswordInput.length() < 10) {
+                    webServerPasswordInput += c;
+                    webServerPasswordHint = (webServerPasswordInput.length() == 10) ? "Enter: start / Tab cancels" : "Numbers only / Tab cancels";
+                } else {
+                    webServerPasswordHint = "Press Enter to start";
+                }
+                needUpdate = true;
+            } else if (k == 13 && webServerPasswordInput.length() > 0) {
+                webServerPasswordInput.remove(webServerPasswordInput.length() - 1);
+                webServerPasswordHint = "Numbers only / Tab cancels";
+                needUpdate = true;
+            } else if (k == 40) {
+                if (webServerPasswordInput.length() == 10) {
+                    activeApPassword = webServerPasswordInput;
+                    generateWebPin();
+                    currentNetSubMode = NET_WIFI;
+                    currentMode = TYPING_MODE;
+                    setupWiFi();
+                    needUpdate = true;
+                    break;
+                }
+                webServerPasswordHint = "Need 10 digits";
+                needUpdate = true;
+            } else if (k == 246 || c == '\t') {
+                webServerPasswordInput = "";
+                webServerPasswordHint = "Numbers only / Tab cancels";
+                currentMode = FILE_MENU_MODE;
                 needUpdate = true;
                 break;
+            } else if (c != 0) {
+                webServerPasswordHint = "Numbers only";
+                needUpdate = true;
             }
-            if (k == 246 || c == '\t') { webServerPasswordInput = ""; currentMode = FILE_MENU_MODE; needUpdate = true; break; }
         }
         return;
     }
@@ -4432,7 +4311,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
                     if (real == '\n') {
                         isEditingValue = false;
                         currentNetSubMode = tempNetCursor;
-                        if (currentNetSubMode == NET_WIFI) { webServerPasswordInput = ""; currentMode = WEB_PASSWORD_MODE; resetStatusScreenCache(); }
+                        if (currentNetSubMode == NET_WIFI) { webServerPasswordInput = ""; webServerPasswordHint = "Numbers only / Tab cancels"; currentMode = WEB_PASSWORD_MODE; resetStatusScreenCache(); }
                         else if (currentNetSubMode == NET_WIFI_STA) { startWifiScanMode(); }
                         else { stopNetworkServices(); currentMode = TYPING_MODE; }
                     }
@@ -4687,10 +4566,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
         u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
         int infoY = statusBarBottom + 40;
-        if (isFirmwareUpdateMode) {
-            printCleanText(u8g2_for_adafruit_gfx, "WebServer (192.168.4.1/)", MARGIN_X, infoY);
-            printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 25);
-        } else if (currentNetSubMode == NET_WIFI_STA) {
+        if (currentNetSubMode == NET_WIFI_STA) {
             printCleanText(u8g2_for_adafruit_gfx, "Wi-Fi Web Server", MARGIN_X, infoY);
             printCleanText(u8g2_for_adafruit_gfx, "Open: http://" + WiFi.localIP().toString() + "/", MARGIN_X, infoY + 25);
             printCleanText(u8g2_for_adafruit_gfx, "PIN: " + otaPinCode, MARGIN_X, infoY + 50);
@@ -4744,6 +4620,10 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
         u8g2_for_adafruit_gfx.setForegroundColor(BLACK);
         u8g2_for_adafruit_gfx.setBackgroundColor(WHITE);
+        u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
+        printCleanText(u8g2_for_adafruit_gfx, String(FIRMWARE_VERSION), 25, (display.height() / displayScale) - 20);
+
+
         printDualFont("=== DOCUMENTS ===", 245, 30, true);
 
         const int maxVisibleItems = FILE_MENU_ITEMS_PER_PAGE;

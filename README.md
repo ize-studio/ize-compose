@@ -5,7 +5,7 @@
 > This repository is no longer updated. Future updates will be maintained at
 > [ize-studio/ize-compose](https://github.com/ize-studio/ize-compose).
 
-Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a Korean-input firmware, now supports 92 keyboard layouts across dozens of scripts.
+Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a multi-language writing firmware and now supports 92 keyboard layouts across dozens of scripts.
 (if you are looking for Ize-Ribbon, go to https://github.com/ize-studio/Ize-Ribbon )
 
 Current test build: **v1.4.0-test**
@@ -35,7 +35,7 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 ## Supported Device
 
 - **Zerowriter Ink** (Inkplate 5 V2)
-  - ESP32, 800??00 monochrome e-ink display
+  - ESP32, 800x600 monochrome e-ink display
   - Requires SD card for non-Latin fonts and document storage
 
 ---
@@ -44,8 +44,8 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 **Writing**
 - Plain-text editing with cursor navigation
-- Phonetic Korean composition (cho/jung/jong jamo assembly)
-- Latin accent cycling (e.g., a ??ì°???ì°???ì°???...)
+- Multi-language composition engines, including Hangul jamo assembly
+- Latin accent cycling, such as cycling the last typed Latin character through diacritic variants
 - Right-to-left (RTL) text mode for Arabic-script layouts
 - Text search (Ctrl+F)
 - Copy / paste (Ctrl+C / Ctrl+V)
@@ -53,8 +53,8 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 **Keyboard & Language**
 - 92 keyboard layouts selectable from the system menu
-- Two independent layout slots: one for English (QWERTY or Dvorak), one for a second language
-- 12 script composition engines: Korean, Arabic, Indic scripts, Thai, Myanmar, Khmer, Lao, Tibetan, Sinhala, Ethiopic, Japanese, Hebrew
+- Two independent layout slots: one for English (QWERTY or Dvorak), one for a selected multi-language layout
+- 12 script composition engines: Hangul, Arabic, Indic scripts, Thai, Myanmar, Khmer, Lao, Tibetan, Sinhala, Ethiopic, Japanese, Hebrew
 - RTL layout support: Arabic, Hebrew, Kurdish (Arabic), Pashto, Persian, Urdu
 
 **Files**
@@ -72,8 +72,8 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 **Settings and updates**
 - Device menu keeps Sync at the top and Network near the bottom; the version line is display-only
-- The unified browser page Settings & Update tab handles sleep timer, text size, line spacing, character spacing, typing speed, refresh limit, English keyboard, language selection, uploads, online backup/restore, and online update
-- Settings are saved to device preferences and backed up to `/ize_compose/settings_backup.json`
+- The unified browser page Settings & Update tab handles sleep timer, text size, line spacing, character spacing, typing speed, refresh limit, English keyboard, language selection, uploads, online update
+- Settings are saved to device preferences and backed up to `/ize_compose/settings_backup.json`; GitHub token is included so it survives reinstall/reset restore
 - Firmware uploads use `izefirmware.bin`
 - Font and image uploads are routed by filename
 
@@ -87,8 +87,8 @@ The firmware expects support files on the SD card under `/ize_compose/`.
 |---|---:|---|
 | `/ize_compose/initial.png` | Recommended | Boot/sleep image, 800x600 PNG |
 | `/ize_compose/ize_compose_1-4-0-test.html` | Required for browser UI | Unified Documents, Settings, Update, and GitHub settings page |
-| `/ize_compose/hwalja/hwalja_hangul.bin` | Recommended for Korean | Hangul syllable font |
-| `/ize_compose/hwalja/hwalja_jamo.bin` | Recommended for Korean | Korean jamo/composition font |
+| `/ize_compose/hwalja/hwalja_hangul.bin` | Recommended for multi-language Hangul input | Hangul syllable font |
+| `/ize_compose/hwalja/hwalja_jamo.bin` | Recommended for multi-language Hangul input | Hangul jamo/composition font |
 | `/ize_compose/hwalja/hwalja_latin.bin` | Recommended | Full Latin and Latin-extended font |
 | `/ize_compose/hwalja/hwalja_jp.bin` | Optional | Japanese Hiragana/Katakana |
 | `/ize_compose/hwalja/hwalja_greek_cyrillic.bin` | Optional | Greek and Cyrillic |
@@ -117,7 +117,7 @@ Use `Sync` for one-shot GitHub document sync. Use `Network` for `Off`, `WiFi`, o
 - `WiFi`: scans visible Wi-Fi networks, connects as a client, and serves the unified browser page at the local IP shown on the device.
 - `WebServer`: asks for a 10-digit numeric password, starts the fixed `IZEcompose_FileServer` access point, and serves the unified browser page at `http://192.168.4.1/`.
 
-The device screen shows the WebServer password until one client connects. After the last client disconnects for more than 2 seconds, WebServer mode shuts down automatically. Use `Ctrl + Menu` to exit manually.
+The device screen shows the WebServer password until one client connects. WebServer mode starts its automatic shutdown tracking only after the browser PIN is accepted. After that authenticated client session has existed and no clients remain connected for more than 2 seconds, WebServer mode shuts down automatically. Use `Ctrl + Menu` to exit manually.
 
 Detailed browser workflow is documented in [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
@@ -137,7 +137,7 @@ Do not put a repository-side `index.html` document manager in the private writin
 
 ## Keyboard Layouts (92)
 
-Dvorak, QWERTY, ??“ë…?? Shqip, ç¢??©é‚ˆç£?é¦? ??¿è˜­ï¥?ï¥œé¸, Deutsch (AT/DE/CH), Az?rbaycanca, ?ç­ å‰‹?????‹é€?, Nederlands (BE/NL), ?Ğ¾â”¥?ê·–?£é€? Bosanski / ?æ£??µæˆŸ??‹ï¤ˆ, Portuguì±—s (BR/PT), ???‹å‡????‹ï¤ˆ, Franì±Œais (CA/FR/CH), Catal?? Hrvatski, ?»e?„tina, Dansk, è¥¿â•†ìªè??€?¸è??½ì¨½è¥¿ê²¯?, Eesti, ??‡ë²????? Fì²©royskt, Suomi, Georgian, ?è²«è²«ç®¡é¤¨?…è??? å¤•ì€ ì³›å¤•ì’‰?å¤•?½ã„å¥?€, Hausa, é¬?æ·??? Magyar, ?’slenska, Gaeilge, Italiano, ?Î¶?æ²ƒ? æ·…ëº–êº¼æ½Ÿ??º¼æ·? Qazaq / ??µéˆ??, ?ê³?œŠ??‚ì›´?? Kurdì±?/ æ²??ˆè†œ?, ????????? ??ë³åƒŠ? Espaì±°ol Amì±•rica, Latvie?„u, Lietuvi?? Lì±˜tzebuergesch, ??? çŸ³??…çŸ³?€?? Malti, M?®ori, Romì°½n??(MD) / ?æ£˜å‰‹?‡æ£˜?»ç­ ?????, ?æ£˜æˆŸ?‡æ£˜?? Crnogorski / ???Ÿæ£˜?‡æ£˜???‹ï¤ˆ, ??¹Â€?½Â€ë¶³Â€ë·˜Â€?¹Â€? è¥¿â“£ìªè??€?è?ê¿?, ??µå…‹ç­ ç•‡æ£˜æˆŸ??‹ï¤ˆ, Norsk, æ¯?é­?, ?ç¢¼é‚ˆ??, Polski, é»ã?Å‰é»ì’‰??»Ğ¾?, Romì°½n?? ?????‹ï¤ˆæ©? Srpski / é¬?æ¥??‹ï¤ˆ, ?‹êºº?è“†ê·–í†¬?? Sloven?¾ina, Sloven?„í›¾ina, Espaì±°ol, Kiswahili, Svenska, ï¤‡æ£˜å¿µï¤ˆ?‹ä½†, ?”ã…°??”ìšˆ??? ?ã…°ì½Šæê¿‹ì½…?ì€ ì½…, ä»™ê¾? éŒ«? å¬‹ë½¤?¨å¬‹ë¬‚í»å¬‹â•†?Šå¬‹? Tì²´rkì±Œe, ?«å…‹???????‹é€? English UK, ç¢¼é‚ˆ??, Oè»»zbek / ??é–¨ç­ å…‹, Tiæ¢³í“†g Viæ²¼ë‡, Cymraeg
+The firmware includes 92 keyboard layouts. The authoritative layout names and keymaps are defined in `src/jado.h`; this README keeps the count and points to the source instead of duplicating a long multilingual list.
 
 ---
 
@@ -153,8 +153,8 @@ Copy the contents of `Ize-compose/sdcard/` to the root of the SD card. The devic
 
 | File | Scripts covered |
 |---|---|
-| `hwalja_hangul.bin` | Korean (Hangul syllables) |
-| `hwalja_jamo.bin` | Korean (Jamo, composition glyphs) |
+| `hwalja_hangul.bin` | Multi-language Hangul syllables |
+| `hwalja_jamo.bin` | Multi-language Hangul jamo/composition glyphs |
 | `hwalja_latin.bin` | Latin and Latin extended |
 | `hwalja_jp.bin` | Japanese (Hiragana, Katakana) |
 | `hwalja_greek_cyrillic.bin` | Greek, Cyrillic |
@@ -193,7 +193,7 @@ Without these files the device still works, but only the built-in Latin fallback
 | SdFat | 2.3.1 | PlatformIO registry |
 | U8g2_for_Adafruit_GFX | 1.8.0 | PlatformIO registry |
 | Adafruit GFX Library | 1.12.6 | PlatformIO registry |
-| Adafruit BusIO | ??| PlatformIO registry |
+| Adafruit BusIO | 1.17.4 | PlatformIO registry |
 
 ### Build flags
 
@@ -259,7 +259,7 @@ pio run --target upload
 5. Select the firmware file. The upload page sends it as `izefirmware.bin`.
 6. Wait for the device update/reboot flow to finish.
 
-For document transfer, settings, backup/restore, and update usage, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
+For document transfer, settings recovery, and update usage, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 ---
 
@@ -267,7 +267,7 @@ For document transfer, settings, backup/restore, and update usage, see [WEB_INTE
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+Space | Toggle Korean / English mode |
+| Ctrl+Space | Toggle selected language / English mode |
 | Ctrl+L | Sleep (shows boot image) |
 | Ctrl+F | Text search |
 | Ctrl+C | Copy all text to clipboard |
@@ -299,50 +299,50 @@ Ize-compose/
   RELEASE_1.1.1.md        - v1.1.1 release notes
 
 src/
-  IZEcompose.ino        ??main firmware
-  jado.h                ??keyboard layout definitions and keymaps (92 layouts)
-  jeong_eum.h           ??Korean composition engine and script engine types
-  insoe.h               ??text rendering, font selection
-  PsramAssets.h         ??PSRAM asset loading helpers
+  IZEcompose.ino        - main firmware
+  jado.h                - keyboard layout definitions and keymaps (92 layouts)
+  jeong_eum.h           - multi-language composition engine and script engine types
+  insoe.h               - text rendering, font selection
+  PsramAssets.h         - PSRAM asset loading helpers
 
 lib/
-  InkplateLibrary/      ??Inkplate driver (local copy)
+  InkplateLibrary/      - Inkplate driver (local copy)
 
 tools/
-  make_fonts.py         ??script used to build hwalja_*.bin from font sources
-  u8g2/bdfconv.exe      ??BDF font converter (used by make_fonts.py)
+  make_fonts.py         - script used to build hwalja_*.bin from font sources
+  u8g2/bdfconv.exe      - BDF font converter (used by make_fonts.py)
 
 build/
-  fontbuild*/           ??intermediate font build artifacts
-  noto_fonts/           ??source Noto font TTFs used for font building
+  fontbuild*/           - intermediate font build artifacts
+  noto_fonts/           - source Noto font TTFs used for font building
 
 others/
-  *.ttf                 ??original/reference font files
-  reference-headers/    ??unused generated/reference headers, not compiled
+  *.ttf                 - original/reference font files
+  reference-headers/    - unused generated/reference headers, not compiled
 
-platformio.ini          ??PlatformIO build config
+platformio.ini          - PlatformIO build config
 ```
 
 ---
 
 ## Current Limitations
 
-- Supports only Inkplate 5 V2 (800??00). Other Inkplate boards are not tested.
-- Korean cursor movement during mid-syllable composition is not supported.
+- Supports only Inkplate 5 V2 (800x600). Other Inkplate boards are not tested.
+- Mid-syllable cursor movement during Hangul composition is not supported.
 - Only `.txt` files; no formatting.
 - Single document open at a time.
 - Bluetooth keyboard mode was removed in v1.4.0-test to make room for direct GitHub sync.
-- The sleep image must be exactly 800??00 pixels; other sizes are not handled.
+- The sleep image must be exactly 800x600 pixels; other sizes are not handled.
 
 ---
 
 ## Credits
 
-- [Inkplate Arduino Library](https://github.com/SolderedElectronics/Inkplate-Arduino-library) ??Soldered Electronics
-- [U8g2_for_Adafruit_GFX](https://github.com/olikraus/U8g2_for_Adafruit_GFX) ??Oliver Kraus
-- [SdFat](https://github.com/greiman/SdFat) ??Bill Greiman
-- [Noto Fonts](https://fonts.google.com/noto) ??Google (used for font building; license: SIL OFL 1.1)
-- [Zerowriter Ink](https://www.zerowriter.org/) ??original hardware
+- [Inkplate Arduino Library](https://github.com/SolderedElectronics/Inkplate-Arduino-library) - Soldered Electronics
+- [U8g2_for_Adafruit_GFX](https://github.com/olikraus/U8g2_for_Adafruit_GFX) - Oliver Kraus
+- [SdFat](https://github.com/greiman/SdFat) - Bill Greiman
+- [Noto Fonts](https://fonts.google.com/noto) - Google, used for font building under the SIL OFL 1.1 license
+- [Zerowriter Ink](https://www.zerowriter.org/) - original hardware
 
 <div class="site-support" aria-label="Support">
         <img class="site-support-logo" src="https://storage.ko-fi.com/cdn/logomarkLogo.png" alt="Ko-fi">
@@ -354,9 +354,9 @@ platformio.ini          ??PlatformIO build config
 
 `/ize_compose/ize_compose_1-4-0-test.html` replaces the previous separate `property_update.html` and `document_server.html` pages. WiFi mode and WebServer mode serve the same page with Documents and Settings & Update tabs.
 
-WebServer mode uses the fixed SSID `IZEcompose_FileServer`, but the device now asks for a 10-digit numeric Wi-Fi password before starting the access point. The password is shown on the device until a client connects. After a client has connected once, the password is hidden; if no client remains connected for more than 2 seconds, WebServer mode shuts down automatically.
+WebServer mode uses the fixed SSID `IZEcompose_FileServer`, but the device now asks for a 10-digit numeric Wi-Fi password before starting the access point. The password is shown on the device until a client connects. Automatic shutdown starts only after the browser PIN is accepted; after an authenticated client session has existed, WebServer mode shuts down if no clients remain connected for more than 2 seconds.
 
-Online asset backup/restore and online firmware update controls are connected to firmware endpoints. Local SD upload remains available as the fallback path for firmware, fonts, and `initial.png`.
+Online firmware update is connected to firmware endpoints. Local SD upload remains the supported path for fonts and `initial.png`.
 ### v1.4.0-test online update assets
 
 Online update checks the GitHub release firmware asset and the SD web-page asset. If the release includes a newer `ize_compose_<version>.html`, the device downloads that SD web page before starting firmware OTA. OTA begins only after every required download has completed.

@@ -37,11 +37,8 @@ const int MARGIN_Y = 65;
 const int STATUS_Y = 30;
 const int RIGHT_EDGE_MARGIN = 35;
 
-uint8_t* fontBuffer = nullptr; 
-size_t fontBufferSize = 0;
 
-
-enum NetworkSubMode { NET_MAIN, NET_SYNC, NET_WIFI_STA, NET_WIFI };
+enum NetworkSubMode { NET_MAIN, NET_WIFI_STA, NET_WIFI };
 extern NetworkSubMode currentNetSubMode;
 
 
@@ -139,23 +136,23 @@ static inline const uint8_t* zwFontForCodepoint(uint32_t cp) {
     if (cp >= 0x0370 && cp <= 0x03FF) return font_greek_cyrillic_ptr ? font_greek_cyrillic_ptr : font_latin_ptr;
     if (cp >= 0x0400 && cp <= 0x052F) return font_greek_cyrillic_ptr ? font_greek_cyrillic_ptr : font_latin_ptr;
     if (cp >= 0x1F00 && cp <= 0x1FFF) return font_greek_cyrillic_ptr ? font_greek_cyrillic_ptr : font_latin_ptr;
-    // 以묐�?
+    // 繞벿살탮??
     if (cp >= 0x0530 && cp <= 0x058F) return font_misc_ptr    ? font_misc_ptr    : font_latin_ptr;  // Armenian
     if (cp >= 0x0590 && cp <= 0x05FF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Hebrew
     if (cp >= 0x0600 && cp <= 0x06FF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic
     if (cp >= 0x0750 && cp <= 0x077F) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic Supplement
     if (cp >= 0xFB50 && cp <= 0xFDFF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic Presentation Forms-A
     if (cp >= 0xFE70 && cp <= 0xFEFF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic Presentation Forms-B
-    // ??�븘??�븘 Indic
+    // ??貫???戮?닡 Indic
     if (cp >= 0x0900 && cp <= 0x0D7F) return font_indic_ptr   ? font_indic_ptr   : font_latin_ptr;
     if (cp >= 0x0D80 && cp <= 0x0DFF) return font_indic_ptr   ? font_indic_ptr   : font_latin_ptr;  // Sinhala
     if (cp >= 0x0E00 && cp <= 0x0E7F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;
-    // ??�궓?꾩떆??    if (cp >= 0x0E00 && cp <= 0x0E7F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Thai
+    // ???뺥뀣?熬곣뫖六??    if (cp >= 0x0E00 && cp <= 0x0E7F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Thai
     if (cp >= 0x0E80 && cp <= 0x0EFF) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Lao
     if (cp >= 0x1000 && cp <= 0x109F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Myanmar
     if (cp >= 0x1780 && cp <= 0x17FF) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Khmer
     if (cp >= 0x19E0 && cp <= 0x19FF) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;
-    // 湲고?
+    // ?リ옇??
     if (cp >= 0x0F00 && cp <= 0x0FFF) return font_misc_ptr    ? font_misc_ptr    : font_latin_ptr;  // Tibetan
     if (cp >= 0x10A0 && cp <= 0x10FF) return font_misc_ptr    ? font_misc_ptr    : font_latin_ptr;  // Georgian
     if (cp >= 0x1200 && cp <= 0x137F) return font_misc_ptr    ? font_misc_ptr    : font_latin_ptr;  // Ethiopic
@@ -257,29 +254,6 @@ void printCleanText(U8G2_FOR_ADAFRUIT_GFX &u8g2, const String& text, int x, int 
         i += l;
     }
 }
-void drawNetworkUI(Inkplate &display, U8G2_FOR_ADAFRUIT_GFX &u8g2, float scale, int selectedIdx) {
-    
-    display.fillRect(0, 0, display.width(), display.height(), WHITE);
-    
-    printCleanText(u8g2, "=== NETWORK MODE ===", MARGIN_X, MARGIN_Y, true);
-    
-    String options[] = {"1. Off", "2. WiFi", "3. WebServer"};
-    for(int i=0; i<3; i++) {
-        int ty = MARGIN_Y + 40 + (i * 30);
-        if (i == selectedIdx) {
-            
-            display.fillRect((int)((MARGIN_X-4)*scale), (int)((ty-16)*scale), (int)(300*scale), (int)(22*scale), BLACK);
-            u8g2.setForegroundColor(WHITE); u8g2.setBackgroundColor(BLACK);
-            printCleanText(u8g2, options[i], MARGIN_X, ty, true);
-            u8g2.setForegroundColor(BLACK); u8g2.setBackgroundColor(WHITE);
-        } else {
-            printCleanText(u8g2, options[i], MARGIN_X, ty, true);
-        }
-    }
-    
-    display.display();
-}
-
 #include <WiFi.h>
 #include <WebServer.h>
 
@@ -288,9 +262,9 @@ WebServer server(80);
 
 const char* ssid = "IZEcompose_FileServer";
 extern String activeApPassword;
+extern bool apAuthenticatedClientSeen;
 
 
-extern bool webServerUpdateOnly;
 extern bool webDocumentUnlocked;
 extern String otaPinCode;
 extern const char* WEB_DOCUMENT_PAGE_PATH;
@@ -532,6 +506,7 @@ void handleWebAuth() {
     String pin = server.arg("pin");
     if (pin.length() == 4 && pin == otaPinCode) {
         webDocumentUnlocked = true;
+        apAuthenticatedClientSeen = true;
         server.send(200, "text/plain", "OK");
         return;
     }
@@ -547,8 +522,6 @@ void handleDocumentRoot(const String& message = "") {
     if (sendSdFileResponse(WEB_DOCUMENT_PAGE_PATH, "text/html; charset=utf-8")) return;
     server.send(500, "text/plain", "Missing /ize_compose/ize_compose_1-4-0-test.html on SD card.");
 }
-
-void handleUpdateRoot() { handleDocumentRoot(); }
 
 void handleRoot() { handleDocumentRoot(); }
 void handleRead() {
