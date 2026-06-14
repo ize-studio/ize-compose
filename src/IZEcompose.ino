@@ -3952,14 +3952,14 @@ if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA || update
     if (currentNetSubMode == NET_WIFI && !isUpdating && updateState == UPD_NONE) {
         int stations = WiFi.softAPgetStationNum();
         if (stations > 0) {
-            if (apAuthenticatedClientSeen) apHadClient = true;
+            apHadClient = true;
             if (!apPasswordHidden) {
                 apPasswordHidden = true;
                 needUpdate = true;
                 statusBarNeedsUpdate = true;
             }
             apNoClientSinceMs = 0;
-        } else if (apAuthenticatedClientSeen && apHadClient) {
+        } else if (apHadClient) {
             if (apNoClientSinceMs == 0) apNoClientSinceMs = millis();
             if (millis() - apNoClientSinceMs > 2000) {
                 stopNetworkServices();
