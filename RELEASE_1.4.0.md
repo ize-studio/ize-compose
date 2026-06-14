@@ -8,7 +8,7 @@ This is the v1.4.0 release.
 
 Use this build for the v1.4.0 WebServer, Wi-Fi browser page, and GitHub private repository sync flow.
 
-## Test Status
+## Release Status
 
 - Firmware builds successfully with direct GitHub sync enabled.
 - Bluetooth keyboard mode has been removed to keep the firmware inside the OTA-safe size limit.
@@ -18,7 +18,7 @@ Use this build for the v1.4.0 WebServer, Wi-Fi browser page, and GitHub private 
 
 ## What Changed
 
-- Added experimental direct GitHub document sync.
+- Added direct GitHub document sync.
 - Added top-level `Sync`.
   - Uses the last successful Wi-Fi network.
   - Uploads local `.txt` documents to the configured GitHub repository path.
@@ -41,6 +41,18 @@ Use this build for the v1.4.0 WebServer, Wi-Fi browser page, and GitHub private 
 - Kept image loading through the PNG buffer path used by the firmware.
 - Kept the reduced Inkplate image path build flag:
   - `-DIZE_INKPLATE_MINIMAL_IMAGE=1`
+
+## Wi-Fi and WebServer Use
+
+Use `Network -> WiFi` when the device should join an existing Wi-Fi network as a client. The device scans visible networks, connects to the selected SSID, shows its local IP address, and serves the unified browser page from that IP. Open the shown IP address from a phone or computer on the same network, then enter the PIN shown on the device.
+
+Use `Network -> WebServer` when there is no trusted Wi-Fi network available or when direct device access is preferred. The device asks for a 10-digit numeric access-point password, starts the fixed `IZEcompose_FileServer` access point, and serves the same unified browser page at:
+
+```text
+http://192.168.4.1/
+```
+
+The WebServer password stays visible on the device until the browser PIN is accepted. WebServer automatic shutdown tracking starts only after PIN authentication. After that authenticated client session has existed, WebServer mode shuts down when connected clients disappear for more than 2 seconds. Use `Ctrl + Menu` to exit manually.
 
 ## Required SD Card Files
 
@@ -232,8 +244,8 @@ Firmware:
 
 ```text
 firmware/izefirmware.bin
-Size: 1,261,376 bytes
-SHA-256: BFAED6F166C1CBD9F902027A1C3584CB85EFB1FD66CBBAB5E2D630CE7E9B40CF
+Size: 1,254,480 bytes
+SHA-256: 884D984DC586A885F883075348DBD2F6433A89099683B8F795A4A54AEA3E31A6
 ```
 
 ## Upgrade Notes
@@ -259,7 +271,6 @@ SHA-256: BFAED6F166C1CBD9F902027A1C3584CB85EFB1FD66CBBAB5E2D630CE7E9B40CF
    v1.4.0
    ```
 
-6. 
 ## v1.4.0 unified web change
 
 - Replaced the two separate SD browser pages with `/ize_compose/ize_compose_1-4-0.html`.
