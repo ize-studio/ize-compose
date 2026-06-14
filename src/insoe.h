@@ -262,6 +262,8 @@ WebServer server(80);
 
 const char* ssid = "IZEcompose_FileServer";
 extern String activeApPassword;
+extern bool apHadClient;
+extern bool apPasswordHidden;
 extern bool apAuthenticatedClientSeen;
 
 
@@ -506,7 +508,10 @@ void handleWebAuth() {
     String pin = server.arg("pin");
     if (pin.length() == 4 && pin == otaPinCode) {
         webDocumentUnlocked = true;
+        apHadClient = true;
+        apPasswordHidden = true;
         apAuthenticatedClientSeen = true;
+        needUpdate = true;
         server.send(200, "text/plain", "OK");
         return;
     }

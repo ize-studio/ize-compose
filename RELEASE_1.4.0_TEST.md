@@ -267,7 +267,7 @@ SHA-256: BFAED6F166C1CBD9F902027A1C3584CB85EFB1FD66CBBAB5E2D630CE7E9B40CF
 - The main menu now starts with `Sync`; `Network` only selects `Off`, `WiFi`, or `WebServer`.
 - `Properties` was removed as a selectable menu item. The firmware version remains display-only at the bottom of the menu.
 - WebServer mode now asks for a 10-digit numeric access-point password before starting.
-- WebServer mode hides the password after a client connects. Automatic shutdown begins only after browser PIN authentication; after that authenticated client session has existed, WebServer mode shuts down when connected clients disappear for more than 2 seconds.
+- WebServer mode keeps showing the password until browser PIN authentication. Automatic shutdown begins only after PIN authentication; after that authenticated client session has existed, WebServer mode shuts down when connected clients disappear for more than 2 seconds.
 - Online firmware update now calls firmware endpoints. Online update downloads the required release firmware and versioned SD web page before OTA starts.
 
 ## Online update completion

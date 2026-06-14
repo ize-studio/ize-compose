@@ -117,7 +117,7 @@ Use `Sync` for one-shot GitHub document sync. Use `Network` for `Off`, `WiFi`, o
 - `WiFi`: scans visible Wi-Fi networks, connects as a client, and serves the unified browser page at the local IP shown on the device.
 - `WebServer`: asks for a 10-digit numeric password, starts the fixed `IZEcompose_FileServer` access point, and serves the unified browser page at `http://192.168.4.1/`.
 
-The device screen shows the WebServer password until one client connects. WebServer mode starts its automatic shutdown tracking only after the browser PIN is accepted. After that authenticated client session has existed and no clients remain connected for more than 2 seconds, WebServer mode shuts down automatically. Use `Ctrl + Menu` to exit manually.
+The device screen shows the WebServer password until the browser PIN is accepted. WebServer mode starts its automatic shutdown tracking only after PIN authentication. After that authenticated client session has existed and no clients remain connected for more than 2 seconds, WebServer mode shuts down automatically. Use `Ctrl + Menu` to exit manually.
 
 Detailed browser workflow is documented in [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
@@ -354,7 +354,7 @@ platformio.ini          - PlatformIO build config
 
 `/ize_compose/ize_compose_1-4-0-test.html` replaces the previous separate `property_update.html` and `document_server.html` pages. WiFi mode and WebServer mode serve the same page with Documents and Settings & Update tabs.
 
-WebServer mode uses the fixed SSID `IZEcompose_FileServer`, but the device now asks for a 10-digit numeric Wi-Fi password before starting the access point. The password is shown on the device until a client connects. Automatic shutdown starts only after the browser PIN is accepted; after an authenticated client session has existed, WebServer mode shuts down if no clients remain connected for more than 2 seconds.
+WebServer mode uses the fixed SSID `IZEcompose_FileServer`, but the device now asks for a 10-digit numeric Wi-Fi password before starting the access point. The password is shown on the device until the browser PIN is accepted. Automatic shutdown starts only after PIN authentication; after an authenticated client session has existed, WebServer mode shuts down if no clients remain connected for more than 2 seconds.
 
 Online firmware update is connected to firmware endpoints. Local SD upload remains the supported path for fonts and `initial.png`.
 ### v1.4.0-test online update assets
