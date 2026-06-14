@@ -248,6 +248,8 @@ pio run --target upload
 6. Keep `settings_backup.json` if it exists and you want to preserve settings across reset/reinstall.
 
 ### Firmware OTA update (WiFi)
+If the device is already running v1.3.x, update from the WebServer or WiFi browser page. If the installed firmware does not provide that browser update page, disconnect the keyboard cable and connect the device by USB for a wired firmware upload.
+
 1. Open `Menu -> Network -> WebServer` or `Menu -> Network -> WiFi`.
 2. Enter the 4-digit PIN on the device.
 3. Connect to the device access point from a PC or phone.
