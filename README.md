@@ -1,4 +1,4 @@
-﻿# Ize Compose
+# Ize Compose
 
 > **Repository moved**
 >
@@ -17,9 +17,9 @@ Recommended stable version: **v1.3.0**
 > `v1.4.0-test` is not fully verified yet. It adds the first direct GitHub private-repository sync path and removes Bluetooth keyboard mode to keep the firmware inside the OTA-safe size limit.
 > For normal writing use, install **v1.3.0** until the GitHub sync path has been tested on real hardware and real repositories.
 
-v1.3.0 adds Wi-Fi client document-server mode, splits the document web page into an SD-loadable file, keeps Properties in the browser, and preserves the SD settings backup flow.
+v1.3.0 adds Wi-Fi client document-server mode, splits browser support into SD-loadable files, and preserves the SD settings backup flow.
 
-v1.4.0-test adds the experimental `Network -> Sync` flow for GitHub private repository sync. See [RELEASE_1.4.0_TEST.md](RELEASE_1.4.0_TEST.md) before trying it.
+v1.4.0-test adds the experimental top-level `Sync` flow for GitHub private repository sync. See [RELEASE_1.4.0_TEST.md](RELEASE_1.4.0_TEST.md) before trying it.
 
 For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
@@ -35,7 +35,7 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 ## Supported Device
 
 - **Zerowriter Ink** (Inkplate 5 V2)
-  - ESP32, 800횞600 monochrome e-ink display
+  - ESP32, 800??00 monochrome e-ink display
   - Requires SD card for non-Latin fonts and document storage
 
 ---
@@ -45,7 +45,7 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 **Writing**
 - Plain-text editing with cursor navigation
 - Phonetic Korean composition (cho/jung/jong jamo assembly)
-- Latin accent cycling (e.g., a ??찼 ??창 ??찾 ??...)
+- Latin accent cycling (e.g., a ??�???�???�???...)
 - Right-to-left (RTL) text mode for Arabic-script layouts
 - Text search (Ctrl+F)
 - Copy / paste (Ctrl+C / Ctrl+V)
@@ -60,9 +60,9 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 **Files**
 - Saves and loads `.txt` files on SD card (`/ize_compose/`)
 - File browser (up to 65 files)
-- Network modes: Off, Sync, WiFi client document server, and AP Server document page
+- Network modes: Sync command plus Network Off, WiFi, and WebServer
 - Browser document list shows 12 documents per page with a short preview beside each title
-- Properties and firmware/font/image updates are handled from the browser-based Properties page
+- Documents, settings, firmware/font/image uploads, and GitHub settings are handled from the unified browser page
 
 **Display**
 - Partial screen update for fast typing feedback
@@ -71,8 +71,8 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 - Sleep mode: Ctrl+L or sleep button; wake with wake button
 
 **Settings and updates**
-- Device menu keeps writing/file commands compact: New, Save, Count, Network, Sleep, Properties
-- Properties mode opens the browser page for sleep timer, text size, line spacing, character spacing, typing speed, refresh limit, English keyboard, and language selection
+- Device menu keeps Sync at the top and Network near the bottom; the version line is display-only
+- The unified browser page Settings & Update tab handles sleep timer, text size, line spacing, character spacing, typing speed, refresh limit, English keyboard, language selection, uploads, online backup/restore, and online update
 - Settings are saved to device preferences and backed up to `/ize_compose/settings_backup.json`
 - Firmware uploads use `izefirmware.bin`
 - Font and image uploads are routed by filename
@@ -86,8 +86,7 @@ The firmware expects support files on the SD card under `/ize_compose/`.
 | SD card path | Required | Purpose |
 |---|---:|---|
 | `/ize_compose/initial.png` | Recommended | Boot/sleep image, 800x600 PNG |
-| `/ize_compose/property_update.html` | Required for Properties browser UI | External Properties and Update web page |
-| `/ize_compose/document_server.html` | Required for document/GitHub browser UI | External document-management and GitHub settings web page |
+| `/ize_compose/ize_compose_1-4-0-test.html` | Required for browser UI | Unified Documents, Settings, Update, and GitHub settings page |
 | `/ize_compose/hwalja/hwalja_hangul.bin` | Recommended for Korean | Hangul syllable font |
 | `/ize_compose/hwalja/hwalja_jamo.bin` | Recommended for Korean | Korean jamo/composition font |
 | `/ize_compose/hwalja/hwalja_latin.bin` | Recommended | Full Latin and Latin-extended font |
@@ -102,7 +101,7 @@ The firmware expects support files on the SD card under `/ize_compose/`.
 
 When using files directly from this repository, make sure the final SD card paths match the table above. Font files must end up inside `/ize_compose/hwalja/`.
 
-The repository `sdcard/ize_compose/` folder currently contains the two browser pages. Font binaries may be distributed separately or generated from the font tools; the device still expects them at the paths listed above.
+The repository `sdcard/ize_compose/` folder contains the unified browser page. Font binaries may be distributed separately or generated from the font tools; the device still expects them at the paths listed above.
 
 ---
 
@@ -110,30 +109,35 @@ The repository `sdcard/ize_compose/` folder currently contains the two browser p
 
 The main device menu is intentionally small:
 
-`New`, `Save`, `Count`, `Network`, `Sleep`, `Properties`
+`Sync`, `New`, `Save`, `Count`, `Sleep`, `Network`
 
-Use `Network` for `Off`, `Sync`, `WiFi`, or `Server`.
+Use `Sync` for one-shot GitHub document sync. Use `Network` for `Off`, `WiFi`, or `WebServer`.
 
 - `Off`: turns network services off.
-- `Sync`: connects to the last successful Wi-Fi network, runs GitHub document sync, turns Wi-Fi off, and returns to the menu.
-- `WiFi`: scans visible Wi-Fi networks, connects as a client, and serves the document/GitHub settings page at the local IP shown on the device.
-- `Server`: starts the device access point and serves the document page at `http://192.168.4.1/`.
+- `WiFi`: scans visible Wi-Fi networks, connects as a client, and serves the unified browser page at the local IP shown on the device.
+- `WebServer`: asks for a 10-digit numeric password, starts the fixed `IZEcompose_FileServer` access point, and serves the unified browser page at `http://192.168.4.1/`.
 
-Use `Properties` for environment settings, firmware update, font upload, and image upload.
-
-AP Web Server and Properties create the device access point and are opened from a browser at:
-
-`http://192.168.4.1/`
-
-The device screen shows the access point, password, and exit hint. Use `Ctrl + Menu` to exit the web mode.
+The device screen shows the WebServer password until one client connects. After the last client disconnects for more than 2 seconds, WebServer mode shuts down automatically. Use `Ctrl + Menu` to exit manually.
 
 Detailed browser workflow is documented in [WEB_INTERFACE.md](WEB_INTERFACE.md).
+
+### GitHub Sync Scope
+
+Top-level `Sync` is intended to keep Ize Compose SD-card documents and one private GitHub repository folder aligned.
+
+- Existing `docNNNN.txt` files can be edited on GitHub; if the GitHub copy is newer, the device downloads it.
+- New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as `.txt` files.
+- Files created only on GitHub are removed on the next sync, because the device assigns document numbers and owns document creation.
+- Files deleted only on GitHub are restored on the next sync if the SD card still has them.
+- Device-side deletion is kept and still requires the device confirmation flow; use that path when a document should be removed from both sides.
+
+Do not put a repository-side `index.html` document manager in the private writing repository. Private GitHub HTML files cannot be opened as a live web page without downloading them first, so online file management is not part of this release.
 
 ---
 
 ## Keyboard Layouts (92)
 
-Dvorak, QWERTY, ?쒓뎅?? Shqip, 碼?晩邈磨?馬, ?蘿蘭樂?樂鸞, Deutsch (AT/DE/CH), Az?rbaycanca, ?筠剋逵???克逵?, Nederlands (BE/NL), 逝о┥逝귖┣逝? Bosanski / ?棘?逵戟?克龜, Portugu챗s (BR/PT), ??剋均逵??克龜, Fran챌ais (CA/FR/CH), Catal횪, Hrvatski, 훻e큄tina, Dansk, 西╆쪍西듀ㄸ西약쨽西겯?, Eesti, ?㏇돲??뙲?? F첩royskt, Suomi, Georgian, ?貫貫管館菅觀郭, 夕쀠쳛夕쒉ぐ夕약い奭, Hausa, 鬧?淚?瘻, Magyar, 횒slenska, Gaeilge, Italiano, ?ζ쑍沃? 淅뺖꺼潟띭꺼淅? Qazaq / ?逵鈞逵?, ?곢윊?섂웴?? Kurd챤 / 沕?邈膜?, ???均?鈞?逵, 僊?볏僊? Espa챰ol Am챕rica, Latvie큄u, Lietuvi킬, L챘tzebuergesch, 石?눠石?늅石녀큲, Malti, M훮ori, Rom창n훱 (MD) / ?棘剋畇棘勻筠戟??克?, ?棘戟均棘剋, Crnogorski / 揆?戟棘均棘??克龜, ?쇹솽붳뷘쇹? 西ⓣ쪍西むㅎ西꿋?, ?逵克筠畇棘戟?克龜, Norsk, 毛?魔?, ?碼邈卍?, Polski, 黍むŉ黍쒉㉭黍о?, Rom창n훱, ????克龜橘, Srpski / 鬼?極?克龜, 釋꺺퇁蓆귖톬蓆? Sloven훾ina, Sloven큄훾ina, Espa챰ol, Kiswahili, Svenska, 龜棘念龜克但, 昔ㅰ?昔욈?晳? 析ㅰ콊析꿋콅析쀠콅, 仙꾝툠錫? 嬋뽤슨嬋묂펻嬋╆풊嬋? T체rk챌e, 叫克?逵?戟??克逵, English UK, 碼邈膜?, O軻zbek / ?鈞閨筠克, Ti梳퓆g Vi沼뇍, Cymraeg
+Dvorak, QWERTY, ??�뎅?? Shqip, �??�邈�?�? ??�蘭�?樂鸞, Deutsch (AT/DE/CH), Az?rbaycanca, ?筠剋?????��?, Nederlands (BE/NL), ?�о┥?�귖?��? Bosanski / ?�??�戟??�龜, Portugu챗s (BR/PT), ???�均????�龜, Fran챌ais (CA/FR/CH), Catal?? Hrvatski, ?�e?�tina, Dansk, 西╆쪍�??�?��??�쨽西겯?, Eesti, ??�돲????? F첩royskt, Suomi, Georgian, ?貫貫管館?��??? 夕쀠쳛夕쒉?�夕?�い�?�, Hausa, �?�??? Magyar, ?�slenska, Gaeilge, Italiano, ?ζ?�沃? 淅뺖꺼潟??���? Qazaq / ??�鈞??, ?�?��??�웴?? Kurd�?/ �??�膜?, ????????? ??볏僊? Espa챰ol Am챕rica, Latvie?�u, Lietuvi?? L챘tzebuergesch, ???�石??�石?�?? Malti, M?�ori, Rom창n??(MD) / ?棘剋?�棘?�筠?????, ?棘戟?�棘?? Crnogorski / ???�棘?�棘???�龜, ??�?�붳뷘?�? 西ⓣ쪍�??�?��?�?, ??�克筠畇棘戟??�龜, Norsk, �?�?, ?碼邈??, Polski, 黍�?ŉ黍쒉??��о?, Rom창n?? ?????�龜�? Srpski / �?�??�龜, ?�꺺?�蓆귖톬?? Sloven?�ina, Sloven?�훾ina, Espa챰ol, Kiswahili, Svenska, 龜棘念龜?�但, ?�ㅰ??�욈??? ?�ㅰ콊析꿋콅?�쀠콅, 仙꾝?�錫? 嬋뽤?�嬋묂펻嬋╆?�嬋? T체rk챌e, ?�克???????��? English UK, 碼邈??, O軻zbek / ??�閨筠克, Ti梳퓆g Vi沼뇍, Cymraeg
 
 ---
 
@@ -230,7 +234,7 @@ Download or open the `Ize-compose/` package.
 
 1. Upload `Ize-compose/firmware/izefirmware.bin` as the firmware image.
 2. Copy the contents of `Ize-compose/sdcard/` to the SD card root.
-3. Confirm that the SD card contains `/ize_compose/initial.png`, `/ize_compose/property_update.html`, `/ize_compose/document_server.html`, and `/ize_compose/hwalja/*.bin`.
+3. Confirm that the SD card contains `/ize_compose/initial.png`, `/ize_compose/ize_compose_1-4-0-test.html`, and `/ize_compose/hwalja/*.bin`.
 
 ### Build and flash from source
 ```bash
@@ -243,19 +247,19 @@ pio run --target upload
 1. Format SD card as FAT32.
 2. Create `/ize_compose/` and `/ize_compose/hwalja/` on the SD card if they are not already present.
 3. Copy `initial.png` to `/ize_compose/`.
-4. Copy `property_update.html` and `document_server.html` to `/ize_compose/`.
+4. Copy `ize_compose_1-4-0-test.html` to `/ize_compose/`.
 5. Copy `hwalja_*.bin` font files into `/ize_compose/hwalja/`.
 6. Keep `settings_backup.json` if it exists and you want to preserve settings across reset/reinstall.
 
 ### Firmware OTA update (WiFi)
-1. Open `Menu -> Properties`.
+1. Open `Menu -> Network -> WebServer` or `Menu -> Network -> WiFi`.
 2. Enter the 4-digit PIN on the device.
 3. Connect to the device access point from a PC or phone.
 4. Open `http://192.168.4.1/` in a browser.
 5. Select the firmware file. The upload page sends it as `izefirmware.bin`.
 6. Wait for the device update/reboot flow to finish.
 
-For document transfer and Properties page usage, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
+For document transfer, settings, backup/restore, and update usage, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
 ---
 
@@ -281,8 +285,7 @@ Ize-compose/
   sdcard/
     ize_compose/
       initial.png         - boot/sleep image
-      property_update.html - external Properties web page
-      document_server.html - external document web page
+      ize_compose_1-4-0-test.html - unified browser page
       hwalja/
         hwalja_*.bin      - font files to copy to SD card
       settings_backup.json - generated settings backup, if present
@@ -324,12 +327,12 @@ platformio.ini          ??PlatformIO build config
 
 ## Current Limitations
 
-- Supports only Inkplate 5 V2 (800횞600). Other Inkplate boards are not tested.
+- Supports only Inkplate 5 V2 (800??00). Other Inkplate boards are not tested.
 - Korean cursor movement during mid-syllable composition is not supported.
 - Only `.txt` files; no formatting.
 - Single document open at a time.
 - Bluetooth keyboard mode was removed in v1.4.0-test to make room for direct GitHub sync.
-- The sleep image must be exactly 800횞600 pixels; other sizes are not handled.
+- The sleep image must be exactly 800??00 pixels; other sizes are not handled.
 
 ---
 
@@ -346,3 +349,16 @@ platformio.ini          ??PlatformIO build config
         <p>I build strange little writing tools.<br>If you enjoyed this project, coffee support is welcome.</p>
         <p>Ko-fi: <a href="https://ko-fi.com/dievesa">https://ko-fi.com/dievesa</a></p>
       </div>
+
+### v1.4.0-test unified browser note
+
+`/ize_compose/ize_compose_1-4-0-test.html` replaces the previous separate `property_update.html` and `document_server.html` pages. WiFi mode and WebServer mode serve the same page with Documents and Settings & Update tabs.
+
+WebServer mode uses the fixed SSID `IZEcompose_FileServer`, but the device now asks for a 10-digit numeric Wi-Fi password before starting the access point. The password is shown on the device until a client connects. After a client has connected once, the password is hidden; if no client remains connected for more than 2 seconds, WebServer mode shuts down automatically.
+
+Online asset backup/restore and online firmware update controls are connected to firmware endpoints. Local SD upload remains available as the fallback path for firmware, fonts, and `initial.png`.
+### v1.4.0-test online update assets
+
+Online update checks the GitHub release firmware asset and the SD web-page asset. If the release includes a newer `ize_compose_<version>.html`, the device downloads that SD web page before starting firmware OTA. OTA begins only after every required download has completed.
+
+The web page filename includes the firmware/web-page version, for example `ize_compose_1-4-0-test.html`, so the currently served page is not overwritten while the browser is open.

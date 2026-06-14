@@ -14,6 +14,7 @@ extern int rightFileIndex;
 extern bool isKoreanMode;
 extern bool rtlTextMode;
 extern float displayScale;
+bool appendDeletedTombstone(const String& filename);
 #include <ESPmDNS.h>
 #include <U8g2_for_Adafruit_GFX.h>
 extern const uint8_t* font_ptr;
@@ -138,18 +139,18 @@ static inline const uint8_t* zwFontForCodepoint(uint32_t cp) {
     if (cp >= 0x0370 && cp <= 0x03FF) return font_greek_cyrillic_ptr ? font_greek_cyrillic_ptr : font_latin_ptr;
     if (cp >= 0x0400 && cp <= 0x052F) return font_greek_cyrillic_ptr ? font_greek_cyrillic_ptr : font_latin_ptr;
     if (cp >= 0x1F00 && cp <= 0x1FFF) return font_greek_cyrillic_ptr ? font_greek_cyrillic_ptr : font_latin_ptr;
-    // 以묐룞
+    // 以묐�?
     if (cp >= 0x0530 && cp <= 0x058F) return font_misc_ptr    ? font_misc_ptr    : font_latin_ptr;  // Armenian
     if (cp >= 0x0590 && cp <= 0x05FF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Hebrew
     if (cp >= 0x0600 && cp <= 0x06FF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic
     if (cp >= 0x0750 && cp <= 0x077F) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic Supplement
     if (cp >= 0xFB50 && cp <= 0xFDFF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic Presentation Forms-A
     if (cp >= 0xFE70 && cp <= 0xFEFF) return font_arabic_ptr  ? font_arabic_ptr  : font_latin_ptr;  // Arabic Presentation Forms-B
-    // ?⑥븘?쒖븘 Indic
+    // ??�븘??�븘 Indic
     if (cp >= 0x0900 && cp <= 0x0D7F) return font_indic_ptr   ? font_indic_ptr   : font_latin_ptr;
     if (cp >= 0x0D80 && cp <= 0x0DFF) return font_indic_ptr   ? font_indic_ptr   : font_latin_ptr;  // Sinhala
     if (cp >= 0x0E00 && cp <= 0x0E7F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;
-    // ?숇궓?꾩떆??    if (cp >= 0x0E00 && cp <= 0x0E7F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Thai
+    // ??�궓?꾩떆??    if (cp >= 0x0E00 && cp <= 0x0E7F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Thai
     if (cp >= 0x0E80 && cp <= 0x0EFF) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Lao
     if (cp >= 0x1000 && cp <= 0x109F) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Myanmar
     if (cp >= 0x1780 && cp <= 0x17FF) return font_sea_ptr     ? font_sea_ptr     : font_latin_ptr;  // Khmer
@@ -262,8 +263,8 @@ void drawNetworkUI(Inkplate &display, U8G2_FOR_ADAFRUIT_GFX &u8g2, float scale, 
     
     printCleanText(u8g2, "=== NETWORK MODE ===", MARGIN_X, MARGIN_Y, true);
     
-    String options[] = {"1. Off", "2. Sync", "3. WiFi", "4. Server"};
-    for(int i=0; i<4; i++) {
+    String options[] = {"1. Off", "2. WiFi", "3. WebServer"};
+    for(int i=0; i<3; i++) {
         int ty = MARGIN_Y + 40 + (i * 30);
         if (i == selectedIdx) {
             
@@ -286,7 +287,7 @@ WebServer server(80);
 
 
 const char* ssid = "IZEcompose_FileServer";
-const char* password = "00009888";
+extern String activeApPassword;
 
 
 extern bool webServerUpdateOnly;
@@ -295,23 +296,50 @@ extern String otaPinCode;
 extern const char* WEB_DOCUMENT_PAGE_PATH;
 extern String githubSyncStatusMessage;
 
-bool isDocFilename(const String& fn) {
-    if (!fn.startsWith("doc_") || !fn.endsWith(".txt")) return false;
+bool parseDocNumberFromName(const String& fn, int& outValue) {
+    if (!fn.endsWith(".txt")) return false;
     if (fn.indexOf('/') >= 0 || fn.indexOf('\\') >= 0) return false;
-    if (fn.length() <= 8) return false;
-    for (int i = 4; i < fn.length() - 4; i++) {
+    int digitStart = -1;
+    if (fn.startsWith("doc_")) digitStart = 4;
+    else if (fn.startsWith("doc")) digitStart = 3;
+    else return false;
+    int digitEnd = fn.length() - 4;
+    if (digitEnd <= digitStart) return false;
+    int value = 0;
+    for (int i = digitStart; i < digitEnd; i++) {
         if (!isDigit(fn[i])) return false;
+        value = value * 10 + (fn[i] - '0');
     }
+    if (value <= 0) return false;
+    outValue = value;
     return true;
 }
 
-int docNumberFromName(const String& fn) {
-    if (!isDocFilename(fn)) return 0;
+bool isLegacyDocFilename(const String& fn) {
+    if (!fn.startsWith("doc_")) return false;
     int value = 0;
-    for (int i = 4; i < fn.length() - 4; i++) {
-        value = value * 10 + (fn[i] - '0');
-    }
-    return value;
+    return parseDocNumberFromName(fn, value);
+}
+
+bool isDocFilename(const String& fn) {
+    int value = 0;
+    return parseDocNumberFromName(fn, value);
+}
+
+int docNumberFromName(const String& fn) {
+    int value = 0;
+    return parseDocNumberFromName(fn, value) ? value : 0;
+}
+
+String formatDocFilename(int docNumber) {
+    if (docNumber < 1) docNumber = 1;
+    char buf[24];
+    snprintf(buf, sizeof(buf), "doc%04d.txt", docNumber);
+    return String(buf);
+}
+
+String canonicalDocFilename(const String& fn) {
+    return formatDocFilename(docNumberFromName(fn));
 }
 
 String nextDocFilename() {
@@ -320,7 +348,7 @@ String nextDocFilename() {
     char name[64];
     int maxNum = 0;
 
-    if (!root.open("/", O_RDONLY)) return "doc_1.txt";
+    if (!root.open("/", O_RDONLY)) return formatDocFilename(1);
     while (file.openNext(&root, O_RDONLY)) {
         if (!file.isDir()) {
             file.getName(name, sizeof(name));
@@ -331,7 +359,7 @@ String nextDocFilename() {
         yield();
     }
     root.close();
-    return "doc_" + String(maxNum + 1) + ".txt";
+    return formatDocFilename(maxNum + 1);
 }
 
 String htmlEscape(const String& src) {
@@ -467,7 +495,7 @@ void appendDocList(String& html) {
         html += "</td><td>" + String(docSizes[i]) + "</td><td>";
         html += "<a href=\"/read?file=" + urlName + "\">Read</a> ";
         html += "<a href=\"/download?file=" + urlName + "\">Download</a> ";
-        html += "<a href=\"/delete?file=" + urlName + "\" onclick=\"return confirm('Delete " + safeName + "?')\">Delete</a>";
+        html += "<a href=\"/delete?file=" + urlName + "\">Delete</a>";
         html += "</td></tr>";
     }
     html += "</tbody></table>";
@@ -495,17 +523,12 @@ bool sendSdFileResponse(const char* path, const char* contentType) {
 
 
 bool documentAccessAllowed() {
-    if (webServerUpdateOnly) return true;
     if (webDocumentUnlocked) return true;
     server.send(403, "text/plain", "PIN required.");
     return false;
 }
 
 void handleWebAuth() {
-    if (webServerUpdateOnly) {
-        server.send(403, "text/plain", "Document auth is not available in Properties mode.");
-        return;
-    }
     String pin = server.arg("pin");
     if (pin.length() == 4 && pin == otaPinCode) {
         webDocumentUnlocked = true;
@@ -514,7 +537,6 @@ void handleWebAuth() {
     }
     server.send(403, "text/plain", "Invalid PIN.");
 }
-
 void handleDocumentsList() {
     if (!documentAccessAllowed()) return;
     String html = "";
@@ -523,19 +545,12 @@ void handleDocumentsList() {
 }
 void handleDocumentRoot(const String& message = "") {
     if (sendSdFileResponse(WEB_DOCUMENT_PAGE_PATH, "text/html; charset=utf-8")) return;
-    server.send(500, "text/plain", "Missing /ize_compose/document_server.html on SD card.");
+    server.send(500, "text/plain", "Missing /ize_compose/ize_compose_1-4-0-test.html on SD card.");
 }
 
-void handleUpdateRoot() {
-    if (sendSdFileResponse(WEB_PROPERTY_PAGE_PATH, "text/html; charset=utf-8")) return;
-    server.send(500, "text/plain", "Missing /ize_compose/property_update.html on SD card.");
-}
+void handleUpdateRoot() { handleDocumentRoot(); }
 
-void handleRoot() {
-    if (webServerUpdateOnly) handleUpdateRoot();
-    else handleDocumentRoot();
-}
-
+void handleRoot() { handleDocumentRoot(); }
 void handleRead() {
     if (!documentAccessAllowed()) return;
     String fn = server.arg("file");
@@ -589,6 +604,29 @@ void handleDownload() {
     file.close();
 }
 
+void sendDeleteConfirmPage(const String& fn, const String& message = "") {
+    String code = server.hasArg("code") ? server.arg("code") : "";
+    if (code.length() != 6) {
+        char generated[7];
+        snprintf(generated, sizeof(generated), "%06lu", (unsigned long)(esp_random() % 1000000UL));
+        code = String(generated);
+    }
+    String safeName = htmlEscape(fn);
+    String safeCode = htmlEscape(code);
+    String html = "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
+    html += "<title>Delete document</title><style>body{font-family:system-ui,sans-serif;max-width:520px;margin:32px auto;padding:0 16px}input,button{font-size:18px;padding:10px;margin:6px 0;width:100%;box-sizing:border-box}.code{font-size:32px;font-weight:700;letter-spacing:4px}.err{color:#b00020}</style></head><body>";
+    html += "<h1>Delete document</h1>";
+    if (message.length() > 0) html += "<p class=\"err\">" + htmlEscape(message) + "</p>";
+    html += "<p>Type the 6-digit code to delete <b>" + safeName + "</b>.</p>";
+    html += "<p class=\"code\">" + safeCode + "</p>";
+    html += "<form method=\"get\" action=\"/delete\">";
+    html += "<input type=\"hidden\" name=\"file\" value=\"" + safeName + "\">";
+    html += "<input type=\"hidden\" name=\"code\" value=\"" + safeCode + "\">";
+    html += "<input name=\"confirm\" inputmode=\"numeric\" pattern=\"[0-9]{6}\" maxlength=\"6\" autofocus>";
+    html += "<button type=\"submit\">Delete</button></form><p><a href=\"/\">Cancel</a></p></body></html>";
+    server.send(200, "text/html", html);
+}
+
 void handleDelete() {
     if (!documentAccessAllowed()) return;
     String fn = server.arg("file");
@@ -596,10 +634,21 @@ void handleDelete() {
         server.send(400, "text/plain", "Invalid file");
         return;
     }
+    if (!server.hasArg("confirm")) {
+        sendDeleteConfirmPage(fn);
+        return;
+    }
+    String code = server.arg("code");
+    String confirm = server.arg("confirm");
+    if (code.length() != 6 || confirm != code) {
+        sendDeleteConfirmPage(fn, "Code did not match.");
+        return;
+    }
 
     SdFile file;
     if (file.open(fn.c_str(), O_RDWR)) {
         if (file.remove()) {
+            appendDeletedTombstone(fn);
             server.sendHeader("Location", "/");
             server.send(303);
             return;
@@ -616,16 +665,10 @@ String textUploadMessage = "";
 
 void handleTextUpload() {
     HTTPUpload& upload = server.upload();
-    if (!webServerUpdateOnly && !webDocumentUnlocked) {
+    if (!webDocumentUnlocked) {
         textUploadAccepted = false;
         textUploadStatus = 403;
         textUploadMessage = "PIN required.";
-        return;
-    }
-    if (webServerUpdateOnly) {
-        textUploadAccepted = false;
-        textUploadStatus = 403;
-        textUploadMessage = "Text upload is not available in update mode.";
         return;
     }
 

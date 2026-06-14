@@ -43,10 +43,11 @@ const char* FONT_DIR = "/ize_compose/hwalja";
 const char* FIRMWARE_DIR = "/ize_compose/upload";
 const char* INITIAL_IMAGE_PATH = "/ize_compose/initial.png";
 const char* GITHUB_SYNC_STATE_PATH = "/ize_compose/github_sync_state.txt";
+const char* LOCAL_DELETED_CSV_PATH = "/ize_compose/deleted.csv";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
-const char* WEB_PROPERTY_PAGE_PATH = "/ize_compose/property_update.html";
-const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/document_server.html";
+const char* WEB_PROPERTY_PAGE_PATH = "/ize_compose/ize_compose_1-4-0-test.html";
+const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-0-test.html";
 const char* SETTINGS_BACKUP_PATH = "/ize_compose/settings_backup.json";
 // Minimal English fallback used only before SD fonts load or when an asset is missing.
 const uint8_t* font_ptr = u8g2_font_5x7_tf;
@@ -63,9 +64,11 @@ int currentFontSlot = 1;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 bool isFirmwareUpdateMode = false;
 #define FIRMWARE_VERSION "v1.4.0-test" // Experimental direct GitHub sync and BLE removal
+#define WEB_PAGE_VERSION "1-4-0-test"
+const char* OFFICIAL_RELEASE_API = "https://api.github.com/repos/ize-studio/ize-compose/releases/latest";
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
-enum AppMode { TYPING_MODE, FILE_MENU_MODE, INITIAL_MODE, SEARCH_MODE, WIFI_SCAN_MODE, WIFI_PASSWORD_MODE };
+enum AppMode { TYPING_MODE, FILE_MENU_MODE, INITIAL_MODE, SEARCH_MODE, WIFI_SCAN_MODE, WIFI_PASSWORD_MODE, WEB_PASSWORD_MODE };
 class InkplateProxy : public Inkplate {
 public:
     InkplateProxy(uint8_t mode) : Inkplate(mode), Adafruit_GFX(800, 600) {}
@@ -98,6 +101,7 @@ void handleGithubSettingsJson();
 void handleGithubSettingsSave();
 void resetStatusScreenCache();
 void drawStatusScreenFrame(const String& title, const String& line1, const String& line2, bool forceFullRefresh = false);
+bool appendDeletedTombstone(const String& filename);
 
 TaskHandle_t CalcTaskHandle;
 volatile bool needCountUpdate = false; 
@@ -113,7 +117,11 @@ NetworkSubMode lastNetSubMode = NET_MAIN;
 
 NetworkSubMode currentNetSubMode = NET_MAIN;
 
-bool isDeletingFile = false; 
+bool isDeletingFile = false;
+bool deleteCodePromptActive = false;
+String deleteConfirmCode = "";
+String deleteConfirmInput = "";
+String pendingDeleteFilename = "";
 String clipboard = "";
 bool isEnglishInputMode = false;
 
@@ -122,7 +130,7 @@ float displayScale = 2.0;
 
 const float UI_SCALE = 2.0f;        
 int baseFontSize = 16;     
-String currentFileName = "doc_1.txt"; 
+String currentFileName = "doc0001.txt"; 
 
 struct FileInfo {
     String name;
@@ -390,6 +398,24 @@ struct GitRemoteDocEntry {
     String blobSha;
 };
 
+enum GitSyncAction {
+    GIT_SYNC_SKIP = 0,
+    GIT_SYNC_UPLOAD = 1,
+    GIT_SYNC_DOWNLOAD = 2,
+    GIT_SYNC_DELETE_REMOTE = 3,
+};
+
+struct GitSyncPlanEntry {
+    String name;
+    String remotePath;
+    String localContent;
+    String localSha;
+    String remoteSha;
+    String finalContent;
+    String finalSha;
+    GitSyncAction action = GIT_SYNC_SKIP;
+};
+
 const char* choStrs[] = {"ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"};
 const char* jungStrs[] = {"ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"};
 int cho = -1, jung = -1, jong = -1; char lastJongChar = 0;
@@ -405,6 +431,11 @@ bool isOtaUpdatePending = false;
 enum UpdateState { UPD_NONE, UPD_PIN_INPUT, UPD_WIFI_WAITING, UPD_SD_RUNNING };
 UpdateState updateState = UPD_NONE;
 String pinInputBuffer = "";          
+String webServerPasswordInput = "";
+String activeApPassword = "0000000000";
+bool apHadClient = false;
+bool apPasswordHidden = false;
+unsigned long apNoClientSinceMs = 0;
 class ScaledDisplay : public Adafruit_GFX {
 public:
   InkplateProxy* tft;
@@ -895,11 +926,7 @@ void refreshFileList() {
         pv.replace("\n", " ");
         files[fileCount].preview = utf8Truncate(pv, 14);
         
-        
-        int docNum = 0;
-        for(int k = 0; k < fn.length(); k++) {
-            if(isDigit(fn[k])) docNum = docNum * 10 + (fn[k] - '0');
-        }
+        int docNum = docNumberFromName(fn);
         files[fileCount].time = docNum; 
       }
     }
@@ -1200,9 +1227,7 @@ void loadFile() {
 }
 
 void createNewDoc() { 
-    int n = 1; SdFile temp; 
-    while (temp.open(("doc_" + String(n) + ".txt").c_str(), O_RDONLY)) { temp.close(); n++; } 
-    currentFileName = "doc_" + String(n) + ".txt"; fullText = ""; cursorPos = 0; forceSafeFullTextRedraw = true; 
+    currentFileName = nextDocFilename(); fullText = ""; cursorPos = 0; forceSafeFullTextRedraw = true; 
     saveFile(); currentMode = TYPING_MODE; needUpdate = true; 
 }
 
@@ -1355,6 +1380,7 @@ void setup() {
     
     if (display.sdCardInit()) { 
         if (ensureIzeComposeDirs()) migrateLegacyIzeComposeFiles();
+        migrateLegacyDocFilenames();
         
         
         font_ptr = loadFontToPSRAM(currentFontSlot);
@@ -1655,19 +1681,11 @@ String buildSettingsJson() {
 }
 
 void handleSettingsJson() {
-    if (!webServerUpdateOnly) {
-        server.send(403, "application/json", "{\"error\":\"Properties mode only\"}");
-        return;
-    }
+    if (!documentAccessAllowed()) return;
     server.send(200, "application/json; charset=utf-8", buildSettingsJson());
 }
 
 void handleSettingsSave() {
-    if (!webServerUpdateOnly) {
-        server.send(403, "text/plain", "Settings are only available from Properties mode.");
-        return;
-    }
-
     String pin = server.arg("pin");
     if (pin.length() != 4 || pin != otaPinCode) {
         server.send(403, "text/plain", "Invalid PIN.");
@@ -1891,6 +1909,56 @@ bool copySdFileIfMissing(const char* fromPath, const char* toPath) {
     return ok;
 }
 
+bool moveSdFileWithFallback(const String& fromPath, const String& toPath) {
+    SdFile src;
+    if (!src.open(fromPath.c_str(), O_RDWR)) return false;
+    if (src.rename(toPath.c_str())) {
+        src.close();
+        return true;
+    }
+    src.close();
+
+    SdFile inFile;
+    SdFile outFile;
+    if (!inFile.open(fromPath.c_str(), O_RDONLY)) return false;
+    if (!outFile.open(toPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) {
+        inFile.close();
+        return false;
+    }
+
+    uint8_t buf[512];
+    bool ok = true;
+    while (inFile.available()) {
+        int n = inFile.read(buf, sizeof(buf));
+        if (n <= 0) break;
+        if (outFile.write(buf, n) != n) {
+            ok = false;
+            break;
+        }
+        yield();
+    }
+    outFile.sync();
+    inFile.close();
+    outFile.close();
+    if (!ok) {
+        removeSdFile(toPath.c_str());
+        return false;
+    }
+
+    SdFile oldFile;
+    if (!oldFile.open(fromPath.c_str(), O_RDWR)) {
+        removeSdFile(toPath.c_str());
+        return false;
+    }
+    bool removed = oldFile.remove();
+    oldFile.close();
+    if (!removed) {
+        removeSdFile(toPath.c_str());
+        return false;
+    }
+    return true;
+}
+
 void migrateLegacyIzeComposeFiles() {
     copySdFileIfMissing("/backup/initial.png", INITIAL_IMAGE_PATH);
     copySdFileIfMissing("/backup/font_latin.bin", LATIN_FONT_PATH);
@@ -1905,12 +1973,105 @@ void migrateLegacyIzeComposeFiles() {
     copySdFileIfMissing("/backup/font_misc.bin", "/ize_compose/hwalja/hwalja_misc.bin");
 }
 
+int highestDocNumberOnSd() {
+    SdFile root;
+    SdFile file;
+    char name[64];
+    int maxNum = 0;
+    if (!root.open("/", O_RDONLY)) return 0;
+    while (file.openNext(&root, O_RDONLY)) {
+        if (!file.isDir()) {
+            file.getName(name, sizeof(name));
+            int n = docNumberFromName(String(name));
+            if (n > maxNum) maxNum = n;
+        }
+        file.close();
+        yield();
+    }
+    root.close();
+    return maxNum;
+}
+
+void migrateGitSyncStateDocNames() {
+    SdFile file;
+    if (!file.open(GITHUB_SYNC_STATE_PATH, O_RDONLY)) return;
+
+    String lines[80];
+    int count = 0;
+    String line = "";
+    while (file.available() && count < 80) {
+        char c = (char)file.read();
+        if (c == '\r') continue;
+        if (c != '\n') {
+            line += c;
+            continue;
+        }
+        if (line.length() > 0) lines[count++] = line;
+        line = "";
+    }
+    if (line.length() > 0 && count < 80) lines[count++] = line;
+    file.close();
+
+    if (!file.open(GITHUB_SYNC_STATE_PATH, O_WRONLY | O_CREAT | O_TRUNC)) return;
+    for (int i = 0; i < count; i++) {
+        String row = lines[i];
+        int tab1 = row.indexOf('\t');
+        int tab2 = tab1 >= 0 ? row.indexOf('\t', tab1 + 1) : -1;
+        if (tab1 <= 0 || tab2 <= tab1) continue;
+        String name = row.substring(0, tab1);
+        if (isDocFilename(name)) name = canonicalDocFilename(name);
+        String out = name + row.substring(tab1) + "\n";
+        file.print(out);
+    }
+    file.close();
+}
+
+void migrateLegacyDocFilenames() {
+    SdFile root;
+    SdFile file;
+    char name[64];
+    String legacyNames[80];
+    int legacyCount = 0;
+    int maxNum = highestDocNumberOnSd();
+    if (!root.open("/", O_RDONLY)) return;
+
+    while (file.openNext(&root, O_RDONLY) && legacyCount < 80) {
+        if (!file.isDir()) {
+            file.getName(name, sizeof(name));
+            String fn = String(name);
+            if (isLegacyDocFilename(fn)) legacyNames[legacyCount++] = fn;
+        }
+        file.close();
+        yield();
+    }
+    root.close();
+
+    bool migratedAny = false;
+    for (int i = 0; i < legacyCount; i++) {
+        String fromName = legacyNames[i];
+        String toName = canonicalDocFilename(fromName);
+        if (toName == fromName) continue;
+        if (sdPathExists(toName.c_str())) {
+            do {
+                maxNum++;
+                toName = formatDocFilename(maxNum);
+            } while (sdPathExists(toName.c_str()));
+        }
+
+        if (!moveSdFileWithFallback(fromName, toName)) continue;
+        migratedAny = true;
+        if (currentFileName == fromName) currentFileName = toName;
+    }
+
+    if (isLegacyDocFilename(currentFileName)) currentFileName = canonicalDocFilename(currentFileName);
+    if (migratedAny) {
+        migrateGitSyncStateDocNames();
+        writeSettingsBackupFile();
+    }
+}
+
 void handleWebServerUpdate() {
     server.sendHeader("Connection", "close");
-    if (!webServerUpdateOnly) {
-        server.send(403, "text/plain", "Update upload is only available from Update mode.");
-        return;
-    }
     server.send(uploadHttpStatus, "text/plain", uploadHttpMessage);
     if (pendingSdUpdate) {
         delay(200);
@@ -1965,14 +2126,7 @@ void handleWebServerUpload() {
     HTTPUpload& upload = server.upload();
 
     if (upload.status == UPLOAD_FILE_START) {
-        if (!webServerUpdateOnly) {
-            uploadAccepted = false;
-            uploadHttpStatus = 403;
-            uploadHttpMessage = "Update upload is only available from Update mode.";
-            return;
-        }
-
-        String clientPin = server.header("X-OTA-PIN");
+String clientPin = server.header("X-OTA-PIN");
         if (otaPinCode != "" && clientPin != otaPinCode) {
             uploadAccepted = false;
             uploadHttpStatus = 403;
@@ -2100,6 +2254,421 @@ void stopNetworkServices() {
     webDocumentUnlocked = false;
 }
 
+
+
+String assetSdPathFromName(const String& name) {
+    if (name == "initial.png") return String(INITIAL_IMAGE_PATH);
+    if (name == "ize_compose_" + String(WEB_PAGE_VERSION) + ".html") return String(WEB_DOCUMENT_PAGE_PATH);
+    String normalized = "";
+    if (normalizeFontUploadTarget(name, normalized)) return String(FONT_DIR) + "/" + normalized;
+    return "";
+}
+
+bool githubCreateBlobForSdFileBase64(const String& path, String& blobSha, String& errorMessage) {
+    SdFile file;
+    if (!file.open(path.c_str(), O_RDONLY)) {
+        errorMessage = "Could not open " + path;
+        return false;
+    }
+    size_t size = file.fileSize();
+    uint8_t* raw = (uint8_t*)ps_malloc(size);
+    if (!raw) raw = (uint8_t*)malloc(size);
+    if (!raw) {
+        file.close();
+        errorMessage = "Not enough memory for " + path;
+        return false;
+    }
+    size_t readTotal = 0;
+    while (file.available() && readTotal < size) {
+        int n = file.read(raw + readTotal, size - readTotal);
+        if (n <= 0) break;
+        readTotal += n;
+        yield();
+    }
+    file.close();
+    if (readTotal != size) {
+        free(raw);
+        errorMessage = "Could not read " + path;
+        return false;
+    }
+    size_t outLen = 0;
+    int rc = mbedtls_base64_encode(nullptr, 0, &outLen, raw, size);
+    if (rc != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL && rc != 0) {
+        free(raw);
+        errorMessage = "Base64 size failed";
+        return false;
+    }
+    unsigned char* encoded = (unsigned char*)ps_malloc(outLen + 1);
+    if (!encoded) encoded = (unsigned char*)malloc(outLen + 1);
+    if (!encoded) {
+        free(raw);
+        errorMessage = "Not enough memory for base64";
+        return false;
+    }
+    rc = mbedtls_base64_encode(encoded, outLen + 1, &outLen, raw, size);
+    free(raw);
+    if (rc != 0) {
+        free(encoded);
+        errorMessage = "Base64 encode failed";
+        return false;
+    }
+    encoded[outLen] = '\0';
+    String body = "{\"content\":\"";
+    body += (const char*)encoded;
+    body += "\",\"encoding\":\"base64\"}";
+    free(encoded);
+    int code = 0;
+    String response;
+    if (!githubHttpRequest("POST", githubApiBase() + "/git/blobs", body, code, response)) {
+        errorMessage = "GitHub blob failed " + String(code);
+        return false;
+    }
+    if (!extractJsonStringValue(response, "sha", blobSha) || blobSha.length() == 0) {
+        errorMessage = "GitHub blob SHA missing";
+        return false;
+    }
+    return true;
+}
+
+bool parseHttpsUrl(const String& url, String& host, String& path) {
+    String prefix = "https://";
+    if (!url.startsWith(prefix)) return false;
+    int hostStart = prefix.length();
+    int slash = url.indexOf('/', hostStart);
+    if (slash < 0) {
+        host = url.substring(hostStart);
+        path = "/";
+    } else {
+        host = url.substring(hostStart, slash);
+        path = url.substring(slash);
+    }
+    return host.length() > 0;
+}
+
+bool httpsRequestUrl(const String& method, const String& url, const String& body, bool useGithubToken, const String& accept, int& httpCode, String& response) {
+    String host, path;
+    if (!parseHttpsUrl(url, host, path)) {
+        httpCode = -1;
+        response = "Invalid HTTPS URL";
+        return false;
+    }
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(30000);
+    if (!client.connect(host.c_str(), 443)) {
+        httpCode = -1;
+        response = "HTTPS connect failed";
+        return false;
+    }
+    client.print(method);
+    client.print(" ");
+    client.print(path);
+    client.print(" HTTP/1.1\r\nHost: ");
+    client.print(host);
+    client.print("\r\nUser-Agent: Ize-Compose\r\nAccept: ");
+    client.print(accept.length() ? accept : "*/*");
+    client.print("\r\nConnection: close\r\n");
+    if (useGithubToken && githubToken.length() > 0) {
+        client.print("Authorization: Bearer ");
+        client.print(githubToken);
+        client.print("\r\n");
+    }
+    if (method == "POST" || method == "PATCH") {
+        client.print("Content-Type: application/json\r\nContent-Length: ");
+        client.print(body.length());
+        client.print("\r\n");
+    }
+    client.print("\r\n");
+    if (method == "POST" || method == "PATCH") client.print(body);
+
+    unsigned long startMs = millis();
+    while (!client.available() && client.connected() && millis() - startMs < 30000) { delay(10); yield(); }
+    String statusLine = client.readStringUntil('\n');
+    statusLine.trim();
+    int firstSpace = statusLine.indexOf(' ');
+    httpCode = (firstSpace >= 0) ? statusLine.substring(firstSpace + 1, firstSpace + 4).toInt() : -1;
+    bool chunked = false;
+    while (client.connected() || client.available()) {
+        String header = client.readStringUntil('\n');
+        header.trim();
+        if (header.length() == 0) break;
+        String lower = header; lower.toLowerCase();
+        if (lower.indexOf("transfer-encoding:") == 0 && lower.indexOf("chunked") >= 0) chunked = true;
+        yield();
+    }
+    response = "";
+    if (chunked) {
+        while (client.connected() || client.available()) {
+            String lenLine = client.readStringUntil('\n');
+            lenLine.trim();
+            if (lenLine.length() == 0) continue;
+            int chunkLen = (int)strtol(lenLine.c_str(), nullptr, 16);
+            if (chunkLen <= 0) break;
+            while (chunkLen-- > 0 && (client.connected() || client.available())) {
+                while (!client.available() && client.connected()) { delay(1); yield(); }
+                if (client.available()) response += (char)client.read();
+            }
+            if (client.available()) client.read();
+            if (client.available()) client.read();
+            yield();
+        }
+    } else {
+        while (client.connected() || client.available()) {
+            while (client.available()) response += (char)client.read();
+            yield();
+        }
+    }
+    client.stop();
+    return httpCode >= 200 && httpCode < 300;
+}
+
+bool httpsDownloadToSd(const String& url, const String& targetPath, String& errorMessage, bool useGithubToken = false, int redirectDepth = 0) {
+    String host, path;
+    if (!parseHttpsUrl(url, host, path)) {
+        errorMessage = "Invalid download URL";
+        return false;
+    }
+    removeSdFile(targetPath.c_str());
+    SdFile out;
+    if (!out.open(targetPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) {
+        errorMessage = "Cannot create " + targetPath;
+        return false;
+    }
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(30000);
+    if (!client.connect(host.c_str(), 443)) {
+        out.close();
+        removeSdFile(targetPath.c_str());
+        errorMessage = "Download connect failed";
+        return false;
+    }
+    client.print("GET ");
+    client.print(path);
+    client.print(" HTTP/1.1\r\nHost: ");
+    client.print(host);
+    client.print("\r\nUser-Agent: Ize-Compose\r\nAccept: application/octet-stream\r\n");
+    if (useGithubToken && githubToken.length() > 0) { client.print("Authorization: Bearer "); client.print(githubToken); client.print("\\r\\n"); }
+    client.print("Connection: close\\r\\n\\r\\n");
+    unsigned long startMs = millis();
+    while (!client.available() && client.connected() && millis() - startMs < 30000) { delay(10); yield(); }
+    String statusLine = client.readStringUntil('\n');
+    statusLine.trim();
+    int firstSpace = statusLine.indexOf(' ');
+    int httpCode = (firstSpace >= 0) ? statusLine.substring(firstSpace + 1, firstSpace + 4).toInt() : -1;
+    bool chunked = false;
+    while (client.connected() || client.available()) {
+        String header = client.readStringUntil('\n');
+        header.trim();
+        if (header.length() == 0) break;
+        String lower = header; lower.toLowerCase();
+        if (lower.indexOf("transfer-encoding:") == 0 && lower.indexOf("chunked") >= 0) chunked = true;
+        yield();
+    }
+    if (httpCode < 200 || httpCode >= 300) {
+        out.close();
+        removeSdFile(targetPath.c_str());
+        errorMessage = "Download HTTP " + String(httpCode);
+        return false;
+    }
+    uint8_t buffer[512];
+    bool ok = true;
+    if (chunked) {
+        while (client.connected() || client.available()) {
+            String lenLine = client.readStringUntil('\n');
+            lenLine.trim();
+            if (lenLine.length() == 0) continue;
+            int chunkLen = (int)strtol(lenLine.c_str(), nullptr, 16);
+            if (chunkLen <= 0) break;
+            while (chunkLen > 0) {
+                int want = min(chunkLen, (int)sizeof(buffer));
+                int got = 0;
+                while (got < want && (client.connected() || client.available())) {
+                    if (client.available()) got += client.read(buffer + got, want - got);
+                    else { delay(1); yield(); }
+                }
+                if (got <= 0 || out.write(buffer, got) != got) { ok = false; break; }
+                chunkLen -= got;
+                yield();
+            }
+            if (!ok) break;
+            if (client.available()) client.read();
+            if (client.available()) client.read();
+        }
+    } else {
+        while (client.connected() || client.available()) {
+            int n = client.read(buffer, sizeof(buffer));
+            if (n > 0 && out.write(buffer, n) != n) { ok = false; break; }
+            yield();
+        }
+    }
+    out.close();
+    client.stop();
+    if (!ok) {
+        removeSdFile(targetPath.c_str());
+        errorMessage = "Download write failed";
+        return false;
+    }
+    return true;
+}
+
+bool githubUpsertRootAsset(const String& assetName, const String& localPath, String& errorMessage) {
+    String blobSha;
+    if (!githubCreateBlobForSdFileBase64(localPath, blobSha, errorMessage)) return false;
+    int code = 0;
+    String response, headCommitSha, baseTreeSha, newTreeSha, newCommitSha;
+    String branch = githubBranchName();
+    String getRefUrl = githubApiBase() + "/git/ref/heads/" + githubPathEncode(branch, true);
+    String updateRefUrl = githubApiBase() + "/git/refs/heads/" + githubPathEncode(branch, true);
+    if (!githubHttpRequest("GET", getRefUrl, "", code, response) || !extractJsonStringValue(response, "sha", headCommitSha)) {
+        errorMessage = "GitHub branch read failed " + String(code);
+        return false;
+    }
+    if (!githubHttpRequest("GET", githubApiBase() + "/git/commits/" + headCommitSha, "", code, response) || !extractJsonStringValueAfter(response, "\"tree\"", "sha", baseTreeSha)) {
+        errorMessage = "GitHub tree read failed " + String(code);
+        return false;
+    }
+    String treeBody = "{\"base_tree\":\"" + baseTreeSha + "\",\"tree\":[{\"path\":\"" + jsonEscape(assetName) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + blobSha + "\"}]}";
+    if (!githubHttpRequest("POST", githubApiBase() + "/git/trees", treeBody, code, response) || !extractJsonStringValue(response, "sha", newTreeSha)) {
+        errorMessage = "GitHub asset tree failed " + String(code);
+        return false;
+    }
+    String commitBody = "{\"message\":\"Backup Ize Compose asset " + jsonEscape(assetName) + "\",\"tree\":\"" + newTreeSha + "\",\"parents\":[\"" + headCommitSha + "\"]}";
+    if (!githubHttpRequest("POST", githubApiBase() + "/git/commits", commitBody, code, response) || !extractJsonStringValue(response, "sha", newCommitSha)) {
+        errorMessage = "GitHub asset commit failed " + String(code);
+        return false;
+    }
+    String refBody = "{\"sha\":\"" + newCommitSha + "\",\"force\":false}";
+    if (!githubHttpRequest("PATCH", updateRefUrl, refBody, code, response)) {
+        errorMessage = "GitHub ref update failed " + String(code);
+        return false;
+    }
+    return true;
+}
+void handleGithubAssets() {
+    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
+        server.send(403, "text/plain", "Online backup/restore is available only in WiFi mode after PIN.");
+        return;
+    }
+    if (!githubConfigComplete()) {
+        server.send(400, "text/plain", "GitHub settings missing.");
+        return;
+    }
+    String action = server.arg("action");
+    int okCount = 0;
+    String err = "";
+    for (int i = 0; i < server.args(); i++) {
+        if (server.argName(i) != "asset") continue;
+        String asset = server.arg(i);
+        String localPath = assetSdPathFromName(asset);
+        if (localPath.length() == 0) { err = "Unsupported asset " + asset; break; }
+        if (action == "backup") {
+            if (!githubUpsertRootAsset(asset, localPath, err)) break;
+            okCount++;
+        } else if (action == "restore") {
+            String rawUrl = "https://raw.githubusercontent.com/" + githubPathEncode(githubOwner, false) + "/" + githubPathEncode(githubRepo, false) + "/" + githubPathEncode(githubBranchName(), false) + "/" + githubPathEncode(asset, true);
+            if (!httpsDownloadToSd(rawUrl, localPath, err, true)) break;
+            okCount++;
+        }
+    }
+    if (err.length() > 0) server.send(500, "text/plain", err);
+    else server.send(200, "text/plain", String(okCount) + " asset(s) " + (action == "restore" ? "restored." : "backed up."));
+}
+
+bool latestReleaseInfo(String& latestTag, String& firmwareUrl, String& webUrl, String& webName, String& errorMessage) {
+    int code = 0;
+    String response;
+    if (!httpsRequestUrl("GET", OFFICIAL_RELEASE_API, "", false, "application/vnd.github+json", code, response)) {
+        errorMessage = "Release check failed " + String(code);
+        return false;
+    }
+    if (!extractJsonStringValue(response, "tag_name", latestTag)) latestTag = "";
+    firmwareUrl = "";
+    webUrl = "";
+    webName = "";
+    int pos = 0;
+    while (true) {
+        int namePos = response.indexOf("\"name\":\"", pos);
+        if (namePos < 0) break;
+        namePos += 8;
+        int nameEnd = response.indexOf('"', namePos);
+        if (nameEnd < 0) break;
+        String name = response.substring(namePos, nameEnd);
+        int urlPos = response.indexOf("\"browser_download_url\":\"", nameEnd);
+        if (urlPos < 0) break;
+        urlPos += 24;
+        int urlEnd = response.indexOf('"', urlPos);
+        if (urlEnd < 0) break;
+        String url = response.substring(urlPos, urlEnd);
+        if ((name == "izefirmware.bin" || name.indexOf("izefirmware") >= 0) && firmwareUrl.length() == 0) firmwareUrl = url;
+        if (name.startsWith("ize_compose_") && name.endsWith(".html")) { webUrl = url; webName = name; }
+        pos = urlEnd + 1;
+    }
+    return latestTag.length() > 0;
+}
+
+void handleReleaseStatus() {
+    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
+        server.send(403, "application/json", "{\"error\":\"WiFi mode and PIN required\"}");
+        return;
+    }
+    String latest, fwUrl, webUrl, webName, err;
+    if (!latestReleaseInfo(latest, fwUrl, webUrl, webName, err)) {
+        server.send(500, "application/json", "{\"error\":\"" + jsonEscape(err) + "\"}");
+        return;
+    }
+    bool firmwareAvailable = latest.length() > 0 && latest != String(FIRMWARE_VERSION);
+    bool webAvailable = webName.length() > 0 && webName != String("ize_compose_") + String(WEB_PAGE_VERSION) + ".html";
+    String json = "{\"current\":\"" + String(FIRMWARE_VERSION) + "\",\"latest\":\"" + jsonEscape(latest) + "\",\"available\":" + String((firmwareAvailable || webAvailable) ? "true" : "false") + ",\"webAsset\":\"" + jsonEscape(webName) + "\",\"webUpdate\":" + String(webAvailable ? "true" : "false") + "}";
+    server.send(200, "application/json; charset=utf-8", json);
+}
+
+void handleReleaseUpdate() {
+    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
+        server.send(403, "text/plain", "WiFi mode and PIN required.");
+        return;
+    }
+    String latest, fwUrl, webUrl, webName, err;
+    if (!latestReleaseInfo(latest, fwUrl, webUrl, webName, err)) {
+        server.send(500, "text/plain", err);
+        return;
+    }
+    bool firmwareAvailable = latest.length() > 0 && latest != String(FIRMWARE_VERSION);
+    bool webAvailable = webName.length() > 0 && webName != String("ize_compose_") + String(WEB_PAGE_VERSION) + ".html";
+    if (!firmwareAvailable && !webAvailable) {
+        server.send(200, "text/plain", "Current firmware and SD web page are latest.");
+        return;
+    }
+    isUpdating = true;
+    updateScreenDrawn = false;
+    if (CalcTaskHandle != NULL) vTaskSuspend(CalcTaskHandle);
+    if (firmwareAvailable) {
+        if (fwUrl.length() == 0) { isUpdating = false; if (CalcTaskHandle != NULL) vTaskResume(CalcTaskHandle); server.send(500, "text/plain", "Firmware asset missing in release."); return; }
+        if (!ensureIzeComposeDirs() || !httpsDownloadToSd(fwUrl, FIRMWARE_UPDATE_PATH, err)) {
+            isUpdating = false; if (CalcTaskHandle != NULL) vTaskResume(CalcTaskHandle); server.send(500, "text/plain", err); return;
+        }
+    }
+    if (webAvailable) {
+        if (webUrl.length() == 0) { isUpdating = false; if (CalcTaskHandle != NULL) vTaskResume(CalcTaskHandle); server.send(500, "text/plain", "Web page asset missing in release."); return; }
+        String target = String(APP_ROOT_DIR) + "/" + webName;
+        if (!ensureIzeComposeDirs() || !httpsDownloadToSd(webUrl, target, err)) {
+            isUpdating = false; if (CalcTaskHandle != NULL) vTaskResume(CalcTaskHandle); server.send(500, "text/plain", err); return;
+        }
+    }
+    server.send(200, "text/plain", "Downloaded release assets. Updating...");
+    if (firmwareAvailable) {
+        delay(200);
+        WiFi.disconnect(true, true);
+        WiFi.mode(WIFI_OFF);
+        currentNetSubMode = NET_MAIN;
+        updateState = UPD_SD_RUNNING;
+        pendingSdUpdate = false;
+        needUpdate = true;
+    } else {
+        isUpdating = false;
+        if (CalcTaskHandle != NULL) vTaskResume(CalcTaskHandle);
+    }
+}
 void registerWebRoutes() {
     const char* otaHeaderKeys[] = {"X-OTA-PIN"};
     server.collectHeaders(otaHeaderKeys, 1);
@@ -2113,6 +2682,9 @@ void registerWebRoutes() {
     server.on("/uploadText", HTTP_POST, handleTextUploadComplete, handleTextUpload);
     server.on("/github/settings.json", HTTP_GET, handleGithubSettingsJson);
     server.on("/github/settings", HTTP_POST, handleGithubSettingsSave);
+    server.on("/github/assets", HTTP_POST, handleGithubAssets);
+    server.on("/release/status", HTTP_GET, handleReleaseStatus);
+    server.on("/release/update", HTTP_POST, handleReleaseUpdate);
 
     server.on("/settings.json", HTTP_GET, handleSettingsJson);
     server.on("/settings", HTTP_POST, handleSettingsSave);
@@ -2130,14 +2702,17 @@ void setupWiFi() {
     IPAddress subnet(255, 255, 255, 0);
     WiFi.softAPConfig(local_IP, gateway, subnet);
 
-    WiFi.softAP(ssid, password);
+    WiFi.softAP(ssid, activeApPassword.c_str());
 
     if (MDNS.begin("izecompose")) {
         MDNS.addService("http", "tcp", 80); 
     }
     WiFi.setTxPower(WIFI_POWER_15dBm);
-    webServerUpdateOnly = (updateState == UPD_WIFI_WAITING);
-    if (!webServerUpdateOnly && otaPinCode == "") generateWebPin();
+    webServerUpdateOnly = false;
+    if (otaPinCode == "") generateWebPin();
+    apHadClient = false;
+    apPasswordHidden = false;
+    apNoClientSinceMs = 0;
     registerWebRoutes();
     server.begin();
     
@@ -2396,6 +2971,142 @@ bool writeDocTextToSd(const String& filename, const String& content, String& err
     return true;
 }
 
+bool readSdTextFile(const char* path, String& content) {
+    SdFile file;
+    if (!file.open(path, O_RDONLY)) return false;
+    content = "";
+    char buffer[256];
+    while (file.available()) {
+        int n = file.read(buffer, sizeof(buffer));
+        if (n <= 0) break;
+        for (int i = 0; i < n; i++) content += buffer[i];
+        yield();
+    }
+    file.close();
+    return true;
+}
+
+bool writeSdTextFile(const char* path, const String& content) {
+    if (!ensureIzeComposeDirs()) return false;
+    SdFile file;
+    if (!file.open(path, O_WRONLY | O_CREAT | O_TRUNC)) return false;
+    bool ok = file.write(content.c_str(), content.length()) == (int)content.length();
+    file.sync();
+    file.close();
+    return ok;
+}
+
+bool csvHasDeletedEntry(const String& csv, const String& filename) {
+    int start = 0;
+    while (start < csv.length()) {
+        int end = csv.indexOf('\n', start);
+        if (end < 0) end = csv.length();
+        String line = csv.substring(start, end);
+        line.trim();
+        if (line.length() > 0) {
+            int comma = line.indexOf(',');
+            String name = (comma >= 0) ? line.substring(0, comma) : line;
+            name.trim();
+            if (name == filename) return true;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+
+bool appendDeletedTombstone(const String& filename) {
+    if (!isDocFilename(filename)) return false;
+    String csv = "";
+    readSdTextFile(LOCAL_DELETED_CSV_PATH, csv);
+    if (csvHasDeletedEntry(csv, filename)) return true;
+    String line = filename + "," + String(millis()) + "\n";
+    csv += line;
+    return writeSdTextFile(LOCAL_DELETED_CSV_PATH, csv);
+}
+
+String generateDeleteConfirmCode() {
+    char code[7];
+    snprintf(code, sizeof(code), "%06lu", (unsigned long)(esp_random() % 1000000UL));
+    return String(code);
+}
+
+void cancelDeleteCodePrompt() {
+    deleteCodePromptActive = false;
+    deleteConfirmCode = "";
+    deleteConfirmInput = "";
+    pendingDeleteFilename = "";
+}
+
+void startDeleteCodePrompt() {
+    if (rightFileIndex < 1 || rightFileIndex > fileCount) return;
+    pendingDeleteFilename = files[rightFileIndex].name;
+    deleteConfirmCode = generateDeleteConfirmCode();
+    deleteConfirmInput = "";
+    deleteCodePromptActive = true;
+}
+
+bool deletePendingFileFromMenu() {
+    if (!isDocFilename(pendingDeleteFilename)) return false;
+    SdFile root;
+    bool removed = false;
+    if (root.open("/", O_RDONLY)) {
+        SdFile f;
+        if (f.open(&root, pendingDeleteFilename.c_str(), O_WRONLY)) {
+            removed = f.remove();
+            if (removed) appendDeletedTombstone(pendingDeleteFilename);
+        }
+        root.close();
+    }
+    if (!removed) return false;
+    refreshFileList();
+    if (fileCount == 0) createNewDoc();
+    if (rightFileIndex < 1) rightFileIndex = 1;
+    if (rightFileIndex > fileCount) rightFileIndex = fileCount;
+    int maxFileOffsetAfterDelete = fileCount - FILE_MENU_ITEMS_PER_PAGE;
+    if (maxFileOffsetAfterDelete < 0) maxFileOffsetAfterDelete = 0;
+    if (fileScrollOffset > maxFileOffsetAfterDelete) fileScrollOffset = maxFileOffsetAfterDelete;
+    if (fileScrollOffset < 0) fileScrollOffset = 0;
+    return true;
+}
+
+void drawDeleteCodePopup() {
+    if (!deleteCodePromptActive) return;
+    const int boxX = 220;
+    const int boxY = 165;
+    const int boxW = 360;
+    const int boxH = 185;
+    display.fillRect((int)(boxX * displayScale), (int)(boxY * displayScale), (int)(boxW * displayScale), (int)(boxH * displayScale), WHITE);
+    display.drawRect((int)(boxX * displayScale), (int)(boxY * displayScale), (int)(boxW * displayScale), (int)(boxH * displayScale), BLACK);
+    display.drawRect((int)((boxX + 3) * displayScale), (int)((boxY + 3) * displayScale), (int)((boxW - 6) * displayScale), (int)((boxH - 6) * displayScale), BLACK);
+    u8g2_for_adafruit_gfx.setForegroundColor(BLACK);
+    u8g2_for_adafruit_gfx.setBackgroundColor(WHITE);
+    printCleanText(u8g2_for_adafruit_gfx, "DELETE FILE", boxX + 18, boxY + 30, true);
+    printCleanText(u8g2_for_adafruit_gfx, utf8Truncate(pendingDeleteFilename, 28), boxX + 18, boxY + 62, true);
+    printCleanText(u8g2_for_adafruit_gfx, "Code: " + deleteConfirmCode, boxX + 18, boxY + 96, true);
+    printCleanText(u8g2_for_adafruit_gfx, "Input: " + deleteConfirmInput + "_", boxX + 18, boxY + 126, true);
+    printCleanText(u8g2_for_adafruit_gfx, "Enter: delete / Tab: cancel", boxX + 18, boxY + 158, true);
+}
+
+void applyDeletedCsvToLocal(const String& csv) {
+    int start = 0;
+    while (start < csv.length()) {
+        int end = csv.indexOf('\n', start);
+        if (end < 0) end = csv.length();
+        String line = csv.substring(start, end);
+        line.trim();
+        if (line.length() > 0) {
+            int comma = line.indexOf(',');
+            String name = (comma >= 0) ? line.substring(0, comma) : line;
+            name.trim();
+            if (isDocFilename(name)) {
+                removeSdFile(name.c_str());
+                if (currentFileName == name) currentFileName = nextDocFilename();
+            }
+        }
+        start = end + 1;
+    }
+}
+
 int findGitSyncStateEntry(GitSyncStateEntry* entries, int count, const String& name) {
     for (int i = 0; i < count; i++) {
         if (entries[i].name == name) return i;
@@ -2420,6 +3131,7 @@ int loadGitSyncState(GitSyncStateEntry* entries, int maxEntries) {
             int tab2 = tab1 >= 0 ? line.indexOf('\t', tab1 + 1) : -1;
             if (tab1 > 0 && tab2 > tab1) {
                 entries[count].name = line.substring(0, tab1);
+                if (isDocFilename(entries[count].name)) entries[count].name = canonicalDocFilename(entries[count].name);
                 entries[count].localBlobSha = line.substring(tab1 + 1, tab2);
                 entries[count].remoteBlobSha = line.substring(tab2 + 1);
                 count++;
@@ -2432,6 +3144,7 @@ int loadGitSyncState(GitSyncStateEntry* entries, int maxEntries) {
         int tab2 = tab1 >= 0 ? line.indexOf('\t', tab1 + 1) : -1;
         if (tab1 > 0 && tab2 > tab1) {
             entries[count].name = line.substring(0, tab1);
+            if (isDocFilename(entries[count].name)) entries[count].name = canonicalDocFilename(entries[count].name);
             entries[count].localBlobSha = line.substring(tab1 + 1, tab2);
             entries[count].remoteBlobSha = line.substring(tab2 + 1);
             count++;
@@ -2512,6 +3225,7 @@ bool githubHttpRequest(const String& method, const String& url, const String& bo
     httpCode = (firstSpace >= 0) ? statusLine.substring(firstSpace + 1, firstSpace + 4).toInt() : -1;
 
     bool chunked = false;
+    String location = "";
     while (client.connected() || client.available()) {
         String header = client.readStringUntil('\n');
         header.trim();
@@ -2519,6 +3233,7 @@ bool githubHttpRequest(const String& method, const String& url, const String& bo
         String lower = header;
         lower.toLowerCase();
         if (lower.indexOf("transfer-encoding:") == 0 && lower.indexOf("chunked") >= 0) chunked = true;
+        if (lower.indexOf("location:") == 0) { location = header.substring(9); location.trim(); }
         yield();
     }
 
@@ -2622,7 +3337,9 @@ bool githubDocNameFromRemotePath(const String& remotePath, String& docName) {
         docName = remotePath;
     }
     if (docName.indexOf('/') >= 0) return false;
-    return isDocFilename(docName) || docName == "index.html";
+    if (!isDocFilename(docName)) return false;
+    docName = canonicalDocFilename(docName);
+    return true;
 }
 
 int parseGithubTreeDocEntries(const String& json, GitRemoteDocEntry* entries, int maxEntries) {
@@ -2764,61 +3481,6 @@ String githubRemoteDocPath(const String& filename) {
     return base + "/" + filename;
 }
 
-String githubBlobHtmlUrl(const String& filename) {
-    String path = githubRemoteDocPath(filename);
-    return "https://github.com/" + githubPathEncode(githubOwner, false) + "/" +
-           githubPathEncode(githubRepo, false) + "/blob/" +
-           githubPathEncode(githubBranchName(), false) + "/" +
-           githubPathEncode(path, true);
-}
-
-String githubHtmlEscape(const String& input) {
-    String out = "";
-    out.reserve(input.length() + 16);
-    for (int i = 0; i < input.length(); i++) {
-        char c = input[i];
-        switch (c) {
-            case '&': out += "&amp;"; break;
-            case '<': out += "&lt;"; break;
-            case '>': out += "&gt;"; break;
-            case '"': out += "&quot;"; break;
-            default: out += c; break;
-        }
-    }
-    return out;
-}
-
-String buildGithubIndexHtml(String* docNames, String* docPreviews, int* docChars, int docCount) {
-    String titlePath = githubCleanPath(githubPath);
-    if (titlePath.length() == 0) titlePath = "(repo root)";
-    String html = "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">";
-    html += "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
-    html += "<title>Ize Compose Sync Index</title><style>";
-    html += "body{font-family:Arial,sans-serif;background:#f3f1ea;color:#171717;margin:0;padding:24px;}";
-    html += "main{max-width:920px;margin:0 auto;}h1{font-size:28px;margin:0 0 10px;}p{line-height:1.5;}";
-    html += ".meta{color:#555;margin-bottom:18px}.list{display:grid;gap:14px}.item{background:#fff;border:1px solid #ddd;padding:16px;}";
-    html += ".top{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;}";
-    html += ".name{font-weight:700;font-size:18px}.chars{color:#666;font-size:13px}";
-    html += ".links{display:flex;gap:12px;flex-wrap:wrap}.links a,.links button{font:inherit}";
-    html += ".preview{display:none;white-space:pre-wrap;background:#fafafa;border:1px solid #e3e3e3;padding:12px;margin-top:12px}";
-    html += "button{border:1px solid #aaa;background:#f8f8f8;padding:6px 10px;cursor:pointer}";
-    html += "a{color:#0b57d0;text-decoration:none}a:hover{text-decoration:underline}</style>";
-    html += "<script>function togglePreview(id){var el=document.getElementById(id);el.style.display=(el.style.display==='block')?'none':'block';}</script></head><body><main>";
-    html += "<h1>Ize Compose Documents</h1>";
-    html += "<p class=\"meta\">Repository: " + githubHtmlEscape(githubOwner + "/" + githubRepo) + " | Branch: " + githubHtmlEscape(githubBranchName()) + " | Path: " + githubHtmlEscape(titlePath) + "</p>";
-    html += "<p class=\"meta\">Generated automatically during device sync.</p><section class=\"list\">";
-    for (int i = 0; i < docCount; i++) {
-        String previewId = "preview_" + String(i);
-        html += "<article class=\"item\"><div class=\"top\"><div><div class=\"name\">" + githubHtmlEscape(docNames[i]) + "</div>";
-        html += "<div class=\"chars\">Characters: " + String(docChars[i]) + "</div></div><div class=\"links\">";
-        html += "<button type=\"button\" onclick=\"togglePreview('" + previewId + "')\">미리보기</button>";
-        html += "<a href=\"" + githubHtmlEscape(githubBlobHtmlUrl(docNames[i])) + "\" target=\"_blank\" rel=\"noopener\">깃허브에서 해당 파일 열기</a>";
-        html += "</div></div><div class=\"preview\" id=\"" + previewId + "\">" + githubHtmlEscape(docPreviews[i]) + "</div></article>";
-    }
-    html += "</section></main></body></html>";
-    return html;
-}
-
 bool runGithubDocumentSync(String& resultMessage) {
     if (!githubConfigComplete()) {
         resultMessage = "GitHub settings missing";
@@ -2836,8 +3498,10 @@ bool runGithubDocumentSync(String& resultMessage) {
     static int docChars[MAX_SYNC_DOCS];
     static String uploadDocNames[MAX_SYNC_DOCS];
     static String uploadBlobShas[MAX_SYNC_DOCS];
+    static String deleteRemotePaths[MAX_SYNC_DOCS];
     static GitRemoteDocEntry remoteDocs[MAX_SYNC_DOCS + 1];
     static GitSyncStateEntry syncState[MAX_SYNC_DOCS + 4];
+    static GitSyncPlanEntry syncPlan[MAX_SYNC_DOCS];
     int docCount = collectSyncDocs(docNames, MAX_SYNC_DOCS);
 
     String branch = githubBranchName();
@@ -2847,7 +3511,6 @@ bool runGithubDocumentSync(String& resultMessage) {
     String baseTreeSha;
     String newTreeSha;
     String newCommitSha;
-    String indexBlobSha = "";
 
     String getRefUrl = githubApiBase() + "/git/ref/heads/" + githubPathEncode(branch, true);
     String updateRefUrl = githubApiBase() + "/git/refs/heads/" + githubPathEncode(branch, true);
@@ -2875,10 +3538,69 @@ bool runGithubDocumentSync(String& resultMessage) {
     int remoteDocCount = parseGithubTreeDocEntries(treeResponse, remoteDocs, MAX_SYNC_DOCS + 1);
     int syncStateCount = loadGitSyncState(syncState, MAX_SYNC_DOCS + 4);
 
+    if (remoteDocCount == 0) {
+        if (docCount <= 0) {
+            resultMessage = "No documents to sync";
+            return true;
+        }
+
+        int finalCount = 0;
+        for (int i = 0; i < docCount; i++) {
+            drawOnlineSyncScreen("GitHub Sync", "Uploading " + String(i + 1) + "/" + String(docCount), docNames[i]);
+            if (!githubCreateBlobForDoc(docNames[i], uploadBlobShas[i], resultMessage)) return false;
+            uploadDocNames[i] = docNames[i];
+
+            String content;
+            if (!githubReadDocText(docNames[i], content, resultMessage)) return false;
+            finalDocNames[finalCount] = docNames[i];
+            docPreviews[finalCount] = utf8Truncate(content, 240);
+            docChars[finalCount] = getTrueLength(content);
+            finalCount++;
+            upsertGitSyncState(syncState, syncStateCount, MAX_SYNC_DOCS + 4, docNames[i], uploadBlobShas[i], uploadBlobShas[i]);
+            yield();
+        }
+
+        String treeBody = "{\"base_tree\":\"" + baseTreeSha + "\",\"tree\":[";
+        for (int i = 0; i < docCount; i++) {
+            if (i > 0) treeBody += ",";
+            treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath(uploadDocNames[i])) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + uploadBlobShas[i] + "\"}";
+        }
+        treeBody += "]}";
+        if (!githubHttpRequest("POST", githubApiBase() + "/git/trees", treeBody, code, response) || !extractJsonStringValue(response, "sha", newTreeSha)) {
+            resultMessage = "GitHub tree create failed " + String(code);
+            String detail = githubErrorDetail(response);
+            if (detail.length() > 0) resultMessage += ": " + detail;
+            return false;
+        }
+
+        String commitBody = "{\"message\":\"Sync Ize Compose documents\",\"tree\":\"" + newTreeSha + "\",\"parents\":[\"" + headCommitSha + "\"]}";
+        if (!githubHttpRequest("POST", githubApiBase() + "/git/commits", commitBody, code, response) || !extractJsonStringValue(response, "sha", newCommitSha)) {
+            resultMessage = "GitHub commit failed " + String(code);
+            String detail = githubErrorDetail(response);
+            if (detail.length() > 0) resultMessage += ": " + detail;
+            return false;
+        }
+
+        String refBody = "{\"sha\":\"" + newCommitSha + "\",\"force\":false}";
+        if (!githubHttpRequest("PATCH", updateRefUrl, refBody, code, response)) {
+            resultMessage = "GitHub ref update failed " + String(code);
+            String detail = githubErrorDetail(response);
+            if (detail.length() > 0) resultMessage += ": " + detail;
+            return false;
+        }
+
+        if (!saveGitSyncState(syncState, syncStateCount)) {
+            resultMessage = "Sync state save failed";
+            return false;
+        }
+        tempNetCursor = NET_MAIN;
+        resultMessage = "Uploaded " + String(docCount) + ", downloaded 0";
+        return true;
+    }
+
     int unionCount = 0;
     for (int i = 0; i < docCount && unionCount < MAX_SYNC_DOCS; i++) finalDocNames[unionCount++] = docNames[i];
     for (int i = 0; i < remoteDocCount && unionCount < MAX_SYNC_DOCS; i++) {
-        if (remoteDocs[i].name == "index.html") continue;
         bool exists = false;
         for (int j = 0; j < unionCount; j++) {
             if (finalDocNames[j] == remoteDocs[i].name) {
@@ -2895,19 +3617,23 @@ bool runGithubDocumentSync(String& resultMessage) {
     }
 
     int uploadCount = 0;
-    int finalCount = 0;
     int downloadCount = 0;
+    int deleteRemoteCount = 0;
+    int finalCount = 0;
     for (int i = 0; i < unionCount; i++) {
         String docName = finalDocNames[i];
+        syncPlan[i] = GitSyncPlanEntry();
+        syncPlan[i].name = docName;
         int remoteIdx = findRemoteDocEntry(remoteDocs, remoteDocCount, docName);
         bool remoteExists = remoteIdx >= 0;
         String remotePath = remoteExists ? remoteDocs[remoteIdx].remotePath : githubRemoteDocPath(docName);
         String remoteSha = remoteExists ? remoteDocs[remoteIdx].blobSha : "";
+        syncPlan[i].remotePath = remotePath;
+        syncPlan[i].remoteSha = remoteSha;
 
         bool localExists = false;
         String localContent = "";
         String localSha = "";
-        String fileError = "";
         for (int localIdx = 0; localIdx < docCount; localIdx++) {
             if (docNames[localIdx] == docName) {
                 localExists = true;
@@ -2918,6 +3644,8 @@ bool runGithubDocumentSync(String& resultMessage) {
             if (!githubReadDocText(docName, localContent, resultMessage)) return false;
             localSha = githubBlobShaForContent(localContent);
         }
+        syncPlan[i].localContent = localContent;
+        syncPlan[i].localSha = localSha;
 
         int stateIdx = findGitSyncStateEntry(syncState, syncStateCount, docName);
         String lastLocalSha = stateIdx >= 0 ? syncState[stateIdx].localBlobSha : "";
@@ -2927,18 +3655,10 @@ bool runGithubDocumentSync(String& resultMessage) {
         String finalSha = localSha;
 
         if (!localExists && remoteExists) {
-            drawOnlineSyncScreen("GitHub Sync", "Downloading " + docName, String(i + 1) + "/" + String(unionCount));
-            if (!githubFetchRemoteFileContent(remotePath, finalContent, finalSha, resultMessage)) return false;
-            if (!writeDocTextToSd(docName, finalContent, resultMessage)) return false;
-            localExists = true;
-            downloadCount++;
+            syncPlan[i].action = GIT_SYNC_DELETE_REMOTE;
+            deleteRemoteCount++;
         } else if (localExists && !remoteExists) {
-            drawOnlineSyncScreen("GitHub Sync", "Uploading " + docName, String(i + 1) + "/" + String(unionCount));
-            if (!githubCreateBlobForContent(localContent, uploadBlobShas[uploadCount], resultMessage)) return false;
-            remoteSha = uploadBlobShas[uploadCount];
-            finalSha = remoteSha;
-            finalContent = localContent;
-            uploadDocNames[uploadCount] = docName;
+            syncPlan[i].action = GIT_SYNC_UPLOAD;
             uploadCount++;
         } else if (localExists && remoteExists) {
             if (localSha == remoteSha) {
@@ -2948,17 +3668,10 @@ bool runGithubDocumentSync(String& resultMessage) {
                 bool localChanged = (stateIdx < 0) ? true : (localSha != lastLocalSha);
                 bool remoteChanged = (stateIdx < 0) ? true : (remoteSha != lastRemoteSha);
                 if (!localChanged && remoteChanged) {
-                    drawOnlineSyncScreen("GitHub Sync", "Downloading " + docName, String(i + 1) + "/" + String(unionCount));
-                    if (!githubFetchRemoteFileContent(remotePath, finalContent, finalSha, resultMessage)) return false;
-                    if (!writeDocTextToSd(docName, finalContent, resultMessage)) return false;
+                    syncPlan[i].action = GIT_SYNC_DOWNLOAD;
                     downloadCount++;
                 } else if (localChanged && !remoteChanged) {
-                    drawOnlineSyncScreen("GitHub Sync", "Uploading " + docName, String(i + 1) + "/" + String(unionCount));
-                    if (!githubCreateBlobForContent(localContent, uploadBlobShas[uploadCount], resultMessage)) return false;
-                    remoteSha = uploadBlobShas[uploadCount];
-                    finalSha = remoteSha;
-                    finalContent = localContent;
-                    uploadDocNames[uploadCount] = docName;
+                    syncPlan[i].action = GIT_SYNC_UPLOAD;
                     uploadCount++;
                 } else {
                     uint64_t localStamp = 0;
@@ -2971,65 +3684,93 @@ bool runGithubDocumentSync(String& resultMessage) {
                         return false;
                     }
                     if (remoteStamp > localStamp) {
-                        drawOnlineSyncScreen("GitHub Sync", "Downloading " + docName, String(i + 1) + "/" + String(unionCount));
-                        if (!githubFetchRemoteFileContent(remotePath, finalContent, finalSha, resultMessage)) return false;
-                        if (!writeDocTextToSd(docName, finalContent, resultMessage)) return false;
+                        syncPlan[i].action = GIT_SYNC_DOWNLOAD;
                         downloadCount++;
                     } else {
-                        drawOnlineSyncScreen("GitHub Sync", "Uploading " + docName, String(i + 1) + "/" + String(unionCount));
-                        if (!githubCreateBlobForContent(localContent, uploadBlobShas[uploadCount], resultMessage)) return false;
-                        remoteSha = uploadBlobShas[uploadCount];
-                        finalSha = remoteSha;
-                        finalContent = localContent;
-                        uploadDocNames[uploadCount] = docName;
+                        syncPlan[i].action = GIT_SYNC_UPLOAD;
                         uploadCount++;
                     }
                 }
             }
         }
 
-        if (localExists || remoteExists) {
+        yield();
+    }
+
+    drawOnlineSyncScreen("GitHub Sync", "Compare done", "Upload " + String(uploadCount) + " / Download " + String(downloadCount) + " / Delete " + String(deleteRemoteCount));
+
+    int uploadProgress = 0;
+    int downloadProgress = 0;
+    int deleteRemoteProgress = 0;
+    for (int i = 0; i < unionCount; i++) {
+        String docName = syncPlan[i].name;
+        String finalContent = syncPlan[i].localContent;
+        String finalSha = syncPlan[i].localSha;
+
+        if (syncPlan[i].action == GIT_SYNC_DELETE_REMOTE) {
+            deleteRemoteProgress++;
+            drawOnlineSyncScreen("GitHub Sync", "Deleting " + String(deleteRemoteProgress) + "/" + String(deleteRemoteCount), docName);
+            deleteRemotePaths[deleteRemoteProgress - 1] = syncPlan[i].remotePath;
+            yield();
+            continue;
+        } else if (syncPlan[i].action == GIT_SYNC_DOWNLOAD) {
+            downloadProgress++;
+            drawOnlineSyncScreen("GitHub Sync", "Downloading " + String(downloadProgress) + "/" + String(downloadCount), docName);
+            if (!githubFetchRemoteFileContent(syncPlan[i].remotePath, finalContent, finalSha, resultMessage)) return false;
+            if (!writeDocTextToSd(docName, finalContent, resultMessage)) return false;
+        } else if (syncPlan[i].action == GIT_SYNC_UPLOAD) {
+            uploadProgress++;
+            drawOnlineSyncScreen("GitHub Sync", "Uploading " + String(uploadProgress) + "/" + String(uploadCount), docName);
+            if (!githubCreateBlobForContent(syncPlan[i].localContent, uploadBlobShas[uploadProgress - 1], resultMessage)) return false;
+            uploadDocNames[uploadProgress - 1] = docName;
+            finalContent = syncPlan[i].localContent;
+            finalSha = uploadBlobShas[uploadProgress - 1];
+        }
+
+        if (finalContent.length() > 0 || syncPlan[i].action != GIT_SYNC_SKIP) {
             docPreviews[finalCount] = utf8Truncate(finalContent, 240);
             docChars[finalCount] = getTrueLength(finalContent);
             finalDocNames[finalCount] = docName;
             finalCount++;
             upsertGitSyncState(syncState, syncStateCount, MAX_SYNC_DOCS + 4, docName, finalSha, finalSha);
         }
-        yield();
     }
 
     if (downloadCount > 0) refreshFileList();
+    
+    bool anyDocChanged = (uploadCount > 0 || downloadCount > 0 || deleteRemoteCount > 0);
 
-    drawOnlineSyncScreen("GitHub Sync", "Building index.html", "");
-    String indexHtml = buildGithubIndexHtml(finalDocNames, docPreviews, docChars, finalCount);
-    String desiredIndexSha = githubBlobShaForContent(indexHtml);
-    int remoteIndexIdx = findRemoteDocEntry(remoteDocs, remoteDocCount, "index.html");
-    String remoteIndexSha = remoteIndexIdx >= 0 ? remoteDocs[remoteIndexIdx].blobSha : "";
-    bool indexNeedsUpload = desiredIndexSha != remoteIndexSha;
-    if (indexNeedsUpload) {
-        if (!githubCreateBlobForContent(indexHtml, indexBlobSha, resultMessage)) return false;
-    }
-
-    if (uploadCount == 0 && !indexNeedsUpload) {
+    if (!anyDocChanged) {
         if (!saveGitSyncState(syncState, syncStateCount)) {
             resultMessage = "Sync state save failed";
             return false;
         }
         tempNetCursor = NET_MAIN;
-        resultMessage = (downloadCount > 0)
-            ? ("Downloaded " + String(downloadCount) + " newer documents")
-            : "Already up to date";
+        resultMessage = "Already up to date";
+        return true;
+    }
+
+    if (uploadCount == 0 && deleteRemoteCount == 0) {
+        if (!saveGitSyncState(syncState, syncStateCount)) {
+            resultMessage = "Sync state save failed";
+            return false;
+        }
+        tempNetCursor = NET_MAIN;
+        resultMessage = "Uploaded 0, downloaded " + String(downloadCount) + ", deleted 0";
         return true;
     }
 
     String treeBody = "{\"base_tree\":\"" + baseTreeSha + "\",\"tree\":[";
+    int treeEntryCount = 0;
     for (int i = 0; i < uploadCount; i++) {
-        if (i > 0) treeBody += ",";
+        if (treeEntryCount > 0) treeBody += ",";
         treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath(uploadDocNames[i])) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + uploadBlobShas[i] + "\"}";
+        treeEntryCount++;
     }
-    if (indexNeedsUpload) {
-        if (uploadCount > 0) treeBody += ",";
-        treeBody += "{\"path\":\"" + jsonEscape(githubRemoteDocPath("index.html")) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"" + indexBlobSha + "\"}";
+    for (int i = 0; i < deleteRemoteCount; i++) {
+        if (treeEntryCount > 0) treeBody += ",";
+        treeBody += "{\"path\":\"" + jsonEscape(deleteRemotePaths[i]) + "\",\"sha\":null}";
+        treeEntryCount++;
     }
     treeBody += "]}";
     if (!githubHttpRequest("POST", githubApiBase() + "/git/trees", treeBody, code, response) || !extractJsonStringValue(response, "sha", newTreeSha)) {
@@ -3063,7 +3804,7 @@ bool runGithubDocumentSync(String& resultMessage) {
         return false;
     }
     tempNetCursor = NET_MAIN;
-    resultMessage = "Uploaded " + String(uploadCount) + ", downloaded " + String(downloadCount);
+    resultMessage = "Uploaded " + String(uploadCount) + ", downloaded " + String(downloadCount) + ", deleted " + String(deleteRemoteCount);
     return true;
 }
 #else
@@ -3125,7 +3866,7 @@ void finishOnlineSyncToMenu(const String& title, const String& detail) {
     stopNetworkServices();
     currentMode = FILE_MENU_MODE;
     menuFocusSide = 0;
-    leftMenuIndex = 3;
+    leftMenuIndex = 0;
     isEditingValue = false;
     needUpdate = true;
     statusBarNeedsUpdate = true;
@@ -3149,9 +3890,8 @@ void runOnlineSyncFlow() {
     startWifiScanMode(true);
 }
 String getNetworkModeLabel(NetworkSubMode mode) {
-    if (mode == NET_SYNC) return "Sync";
     if (mode == NET_WIFI_STA) return "WiFi";
-    if (mode == NET_WIFI) return "Server";
+    if (mode == NET_WIFI) return "WebServer";
     return "Off";
 }
 String getAccentChar(char base, int mode, int cycle) {
@@ -3356,6 +4096,21 @@ if (savedMessageVisible && millis() - showSavedMessageTime >= 2000) {
 
 if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA || updateState == UPD_WIFI_WAITING) {
     server.handleClient(); 
+    if (currentNetSubMode == NET_WIFI && !isUpdating && updateState == UPD_NONE) {
+        int stations = WiFi.softAPgetStationNum();
+        if (stations > 0) {
+            apHadClient = true;
+            apPasswordHidden = true;
+            apNoClientSinceMs = 0;
+        } else if (apHadClient) {
+            if (apNoClientSinceMs == 0) apNoClientSinceMs = millis();
+            if (millis() - apNoClientSinceMs > 2000) {
+                stopNetworkServices();
+                needUpdate = true;
+                statusBarNeedsUpdate = true;
+            }
+        }
+    }
     }
     
     if (updateState == UPD_WIFI_WAITING) {
@@ -3396,7 +4151,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
 
     
         if (!updateScreenDrawn) {
-            drawStatusScreenFrame("Update", "Updating... Rebooting when done.", "", true);
+            drawStatusScreenFrame("Update", "Updating. Do not close browser.", "Do not disconnect power.", true);
             updateScreenDrawn = true;
         }
         if (currentNetSubMode == NET_WIFI || currentNetSubMode == NET_WIFI_STA) server.handleClient();
@@ -3407,57 +4162,39 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     if (updateState == UPD_SD_RUNNING) {
 
             
-            drawStatusScreenFrame("Update", "Updating... Rebooting when done.", "", true);
+            drawStatusScreenFrame("Update", "Updating. Do not close browser.", "Do not disconnect power.", true);
             performSdOta();
             return;
         }
 
     
-    if (updateState == UPD_PIN_INPUT) {
-        
+    if (currentMode == WEB_PASSWORD_MODE) {
         if (needUpdate) {
-            String msg1 = "Enter 4-digit PIN for web update:";
-            String msg2 = pinInputBuffer;
-            for (int i = pinInputBuffer.length(); i < 4; i++) msg2 += "_";
-            String msg3 = (pinInputBuffer.length() == 4) ? "Press Enter to confirm." : "";
-            drawStatusScreenFrame(msg1, msg2, msg3, !statusScreenPrimed);
+            String masked = "";
+            for (int i = 0; i < webServerPasswordInput.length(); i++) masked += "*";
+            for (int i = webServerPasswordInput.length(); i < 10; i++) masked += "_";
+            drawStatusScreenFrame("WebServer Password", "Enter 10 digits:", masked, !statusScreenPrimed);
             needUpdate = false;
         }
-
         while (Serial.available() > 0) {
-
             byte k = Serial.read();
             const char engMap[] = {'`','1','2','3','4','5','6','7','8','9','0','-','=','\b','\t','q','w','e','r','t','y','u','i','o','p','[',']','\\',0,'a','s','d','f','g','h','j','k','l',';','\'','\n',0,'z','x','c','v','b','n','m',',','.','/',0,0,0,0,0,' ',0,0,0};
             char c = (k < sizeof(engMap)) ? engMap[k] : 0;
-            if (c >= '0' && c <= '9' && pinInputBuffer.length() < 4) {
-                pinInputBuffer += c;
-                needUpdate = true;
-            }
-            if (k == 13 && pinInputBuffer.length() > 0) { 
-                pinInputBuffer.remove(pinInputBuffer.length() - 1);
-                needUpdate = true;
-            }
-            if (k == 40 && pinInputBuffer.length() == 4) {
-                otaPinCode = pinInputBuffer;
-                updateState = UPD_WIFI_WAITING;
+            if (c >= '0' && c <= '9' && webServerPasswordInput.length() < 10) { webServerPasswordInput += c; needUpdate = true; }
+            if (k == 13 && webServerPasswordInput.length() > 0) { webServerPasswordInput.remove(webServerPasswordInput.length() - 1); needUpdate = true; }
+            if (k == 40 && webServerPasswordInput.length() == 10) {
+                activeApPassword = webServerPasswordInput;
+                generateWebPin();
                 currentNetSubMode = NET_WIFI;
-                isFirmwareUpdateMode = true;
+                currentMode = TYPING_MODE;
                 setupWiFi();
-
-                drawStatusScreenFrame("Property and Update", "Wi-Fi: IZEcompose_FileServer", "Open: 192.168.4.1/  PIN: " + otaPinCode, true);
-                needUpdate = false;
-                break;
-            }
-            if (k == 246) {
-                updateState = UPD_NONE;
-                pinInputBuffer = "";
                 needUpdate = true;
                 break;
             }
+            if (k == 246 || c == '\t') { webServerPasswordInput = ""; currentMode = FILE_MENU_MODE; needUpdate = true; break; }
         }
         return;
     }
-  
   bool forceImmediateRender = false;
   while (Serial.available() > 0) {
 
@@ -3629,11 +4366,12 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         refreshFileList(); 
         rightFileIndex = 1;
         fileScrollOffset = 0;  // Always show the first 12 documents when reopening the file menu.
-        isDeletingFile = false; } 
+        isDeletingFile = false; cancelDeleteCodePrompt(); } 
       else {
         currentMode = TYPING_MODE;
         isEditingValue = false;
         isDeletingFile = false;
+        cancelDeleteCodePrompt();
         inSystemSubMenu = false;
         leftMenuOffset = 0;
       }
@@ -3650,44 +4388,53 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     
     else if (currentMode == FILE_MENU_MODE) {
       
+      if (deleteCodePromptActive) {
+        if (real >= '0' && real <= '9' && deleteConfirmInput.length() < 6) {
+          deleteConfirmInput += real;
+        } else if (real == '\b' || k == 13) {
+          if (deleteConfirmInput.length() > 0) deleteConfirmInput.remove(deleteConfirmInput.length() - 1);
+        } else if (real == '\n') {
+          if (deleteConfirmInput == deleteConfirmCode) {
+            deletePendingFileFromMenu();
+            isDeletingFile = false;
+            cancelDeleteCodePrompt();
+          } else {
+            deleteConfirmInput = "";
+          }
+        } else if (real == '\t' || k == 246 || k == 58 || k == 59 || k == 57 || k == 60) {
+          isDeletingFile = false;
+          cancelDeleteCodePrompt();
+        }
+        needUpdate = true;
+        statusBarNeedsUpdate = true;
+        continue;
+      }
       if (isDeletingFile) { 
         if (real == '\n') { 
-          SdFile root; if (root.open("/", O_RDONLY)) { 
-            SdFile f; if (f.open(&root, files[rightFileIndex].name.c_str(), O_WRONLY)) { f.remove(); refreshFileList(); if (fileCount == 0) createNewDoc(); if (rightFileIndex > fileCount) rightFileIndex = fileCount; int maxFileOffsetAfterDelete = fileCount - FILE_MENU_ITEMS_PER_PAGE; if (maxFileOffsetAfterDelete < 0) maxFileOffsetAfterDelete = 0; if (fileScrollOffset > maxFileOffsetAfterDelete) fileScrollOffset = maxFileOffsetAfterDelete; } 
-            root.close(); 
-          } 
-          isDeletingFile = false; 
-        } else if (real == '\b' || k == 58 || k == 59 || k == 57 || k == 60) isDeletingFile = false; 
+          startDeleteCodePrompt();
+        } else if (real == '\b' || k == 58 || k == 59 || k == 57 || k == 60 || real == '\t' || k == 246) {
+          isDeletingFile = false;
+          cancelDeleteCodePrompt();
+        }
+        needUpdate = true;
+        statusBarNeedsUpdate = true;
         continue; 
       }
       if (isEditingValue) {
         {
             switch (leftMenuIndex) {
-                case 3: 
-                    if (k == 57) { 
-                        if (tempNetCursor == NET_MAIN) tempNetCursor = NET_SYNC;
-                        else if (tempNetCursor == NET_SYNC) tempNetCursor = NET_WIFI_STA;
+                case 5:
+                    if (k == 57 || k == 60) {
+                        if (tempNetCursor == NET_MAIN) tempNetCursor = NET_WIFI_STA;
                         else if (tempNetCursor == NET_WIFI_STA) tempNetCursor = NET_WIFI;
                         else tempNetCursor = NET_MAIN;
-                    } 
-                    if (k == 60) { 
-                        if (tempNetCursor == NET_MAIN) tempNetCursor = NET_WIFI;
-                        else if (tempNetCursor == NET_WIFI) tempNetCursor = NET_WIFI_STA;
-                        else if (tempNetCursor == NET_WIFI_STA) tempNetCursor = NET_SYNC;
-                        else tempNetCursor = NET_MAIN;
                     }
-                    if (real == '\n') { 
+                    if (real == '\n') {
                         isEditingValue = false;
-                        if (tempNetCursor == NET_SYNC) {
-                            currentNetSubMode = NET_MAIN;
-                            currentMode = TYPING_MODE;
-                            runOnlineSyncFlow();
-                        } else {
-                            currentNetSubMode = tempNetCursor;
-                            if (currentNetSubMode == NET_WIFI) { generateWebPin(); setupWiFi(); currentMode = TYPING_MODE; }
-                            else if (currentNetSubMode == NET_WIFI_STA) { startWifiScanMode(); }
-                            else { stopNetworkServices(); currentMode = TYPING_MODE; }
-                        }
+                        currentNetSubMode = tempNetCursor;
+                        if (currentNetSubMode == NET_WIFI) { webServerPasswordInput = ""; currentMode = WEB_PASSWORD_MODE; resetStatusScreenCache(); }
+                        else if (currentNetSubMode == NET_WIFI_STA) { startWifiScanMode(); }
+                        else { stopNetworkServices(); currentMode = TYPING_MODE; }
                     }
                     break;
 
@@ -3723,30 +4470,16 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             }
             needUpdate = true;
           if (real == '\n') { 
-            if (leftMenuIndex == 0) createNewDoc();
-            else if (leftMenuIndex == 1) { saveFile(); currentMode = TYPING_MODE; }
-            else if (leftMenuIndex == 2) { countMode = (countMode + 1) % 3; saveSystemSettings(); needUpdate = true; }
-            else if (leftMenuIndex == 3) {
-                isEditingValue = true;
-            }
+            if (leftMenuIndex == 0) { currentMode = TYPING_MODE; runOnlineSyncFlow(); }
+            else if (leftMenuIndex == 1) createNewDoc();
+            else if (leftMenuIndex == 2) { saveFile(); currentMode = TYPING_MODE; }
+            else if (leftMenuIndex == 3) { countMode = (countMode + 1) % 3; saveSystemSettings(); needUpdate = true; }
             else if (leftMenuIndex == 4) { currentMode = TYPING_MODE; showInitialImage(); ESP.restart(); }
-            else if (leftMenuIndex == 5) {
-                pinInputBuffer = "";
-                otaPinCode = "";
-                isEditingValue = false;
-                updateState = UPD_PIN_INPUT;
-                currentMode = TYPING_MODE;
-                isCtrlPressed = false;
-                isShiftPressed = false;
-                isAltPressed = false;
-                needUpdate = true;
-                statusBarNeedsUpdate = false;
-                return;
-            }
+            else if (leftMenuIndex == 5) { isEditingValue = true; }
             needUpdate = true;
             statusBarNeedsUpdate = true;
             continue;
-        }
+          }
         } else {
           
           const int maxVisibleItems = FILE_MENU_ITEMS_PER_PAGE;
@@ -3955,7 +4688,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
         int infoY = statusBarBottom + 40;
         if (isFirmwareUpdateMode) {
-            printCleanText(u8g2_for_adafruit_gfx, "Property and Update (192.168.4.1/)", MARGIN_X, infoY);
+            printCleanText(u8g2_for_adafruit_gfx, "WebServer (192.168.4.1/)", MARGIN_X, infoY);
             printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 25);
         } else if (currentNetSubMode == NET_WIFI_STA) {
             printCleanText(u8g2_for_adafruit_gfx, "Wi-Fi Web Server", MARGIN_X, infoY);
@@ -3966,7 +4699,8 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         } else {
             printCleanText(u8g2_for_adafruit_gfx, "Web Server", MARGIN_X, infoY);
             printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 25);
-            printCleanText(u8g2_for_adafruit_gfx, "IZEcompose 00009888, 192.168.4.1", MARGIN_X, infoY + 50);
+            if (!apPasswordHidden) printCleanText(u8g2_for_adafruit_gfx, "IZEcompose " + activeApPassword + ", 192.168.4.1", MARGIN_X, infoY + 50);
+            else printCleanText(u8g2_for_adafruit_gfx, "IZEcompose connected, 192.168.4.1", MARGIN_X, infoY + 50);
             printCleanText(u8g2_for_adafruit_gfx, "PIN: " + otaPinCode, MARGIN_X, infoY + 75);
         }
     }
@@ -3977,7 +4711,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         printDualFont("Ize Compose", 50, 28, true);
         printDualFont(getCurrentLanguageMenuLabel(), 50, 58, true);
        
-        String m_main = "New,Save,Count,Network,Sleep,Properties";
+        String m_main = "Sync,New,Save,Count,Sleep,Network";
         int menuCount = 6;
         if (leftMenuIndex >= menuCount) leftMenuIndex = menuCount - 1;
         int maxOffset = menuCount - maxVisibleMenu;
@@ -3993,18 +4727,15 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             String lbl = getValue(targetM, ',', i);
             if (lbl == "") continue;
 
-            if (i == 2) {
+            if (i == 3) {
                 if (countMode == 0) lbl += " [Chars]";
                 else if (countMode == 1) lbl += " [Words]";
                 else lbl += " [OFF]";
             }
-            if (i == 3) {
+            if (i == 5) {
                 String netStr = getNetworkModeLabel(tempNetCursor);
                 if (isEditingValue && leftMenuIndex == i) lbl += " < " + netStr + " >";
                 else lbl += "   " + netStr + "   ";
-            }
-            if (i == 5) {
-                lbl += " " + String(FIRMWARE_VERSION);
             }
 
             printMenuEntry(lbl, 25, menuY, (menuFocusSide == 0 && leftMenuIndex == i), false);
@@ -4020,13 +4751,14 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             if (f > fileScrollOffset && f <= fileScrollOffset + maxVisibleItems) {
                 String docLabel = "";
                 if (isDeletingFile && menuFocusSide == 1 && rightFileIndex == f) {
-                    docLabel = "Delete? (Enter: Yes / Other: Cancel)";
+                    docLabel = deleteCodePromptActive ? "Delete code required" : "Delete? Enter: code / Tab: cancel";
                 } else {
                     docLabel = String(f) + ". " + files[f].name + " [" + String(files[f].sizeKB, 1) + "KB] | " + utf8Truncate(files[f].preview, 12);
                 }
                 printMenuEntry(docLabel, 225, 60 + ((f-fileScrollOffset-1)*(baseFontSize + lineSpacing + 6)), (menuFocusSide == 1 && rightFileIndex == f), true);
             }
         }
+        drawDeleteCodePopup();
     }
     else {
         int statusBarBottom = (int)(45 * displayScale);

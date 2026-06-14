@@ -1,276 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IZE Compose Property and Update</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ize Compose</title>
   <style>
-    body{font-family:Arial,sans-serif;background:#f4f4f0;color:#151515;margin:0;padding:24px}
-    main{max-width:980px;margin:0 auto}
-    h1{margin:0 0 6px;font-size:28px}
-    h2{font-size:18px;margin:0 0 14px}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .card{background:#fff;border:1px solid #bbb;padding:18px;border-radius:6px}
-    .wide{grid-column:1/-1}
-    label{display:block;margin:12px 0 6px;font-weight:bold}
-    input,select,button{width:100%;box-sizing:border-box;padding:10px;font-size:15px}
-    button{background:#111;color:#fff;border:0;border-radius:4px;margin-top:12px;cursor:pointer}
-    button:disabled{background:#777}
-    .status,.empty{color:#555;font-size:14px;min-height:20px}
-    .note{color:#555;font-size:13px;line-height:1.45;margin-top:8px}
-    .range-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
-    .range-value{min-width:90px;text-align:right;font-size:14px;color:#333}
-    .radio-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}
-    .radio-row label{display:flex;align-items:center;gap:8px;margin:0;font-weight:normal}
-    .radio-row input{width:auto}
-    .stack{display:grid;gap:18px}
-    .subgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .subgrid .full{grid-column:1/-1}
-    select[size]{min-height:220px}
-    .muted{opacity:.55}
-    @media(max-width:760px){.grid,.subgrid{grid-template-columns:1fr}}
+    :root{--ink:#161616;--muted:#666;--line:#d8d8d8;--panel:#f7f7f4;--danger:#b00020}
+    *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:#fff}
+    main{max-width:960px;margin:0 auto;padding:22px 18px 42px}h1{margin:0 0 16px;font-size:25px}h2{margin:0 0 12px;font-size:17px}
+    .card{border:1px solid var(--line);border-radius:8px;padding:16px;margin:0 0 14px;background:var(--panel)}
+    label{display:block;margin:11px 0 6px;font-size:14px;color:var(--muted)}input,select,button{width:100%;min-height:42px;font:inherit;border-radius:6px}
+    input,select{border:1px solid var(--line);padding:9px 10px;background:#fff}button{border:0;padding:10px 12px;color:#fff;background:#111;cursor:pointer}
+    button.secondary{color:var(--ink);border:1px solid var(--line);background:#fff}.tabs{display:flex;gap:8px;margin:0 0 14px}.tabs button{width:auto}
+    .hidden{display:none}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.full{grid-column:1/-1}.status,.hint{color:var(--muted);font-size:13px;line-height:1.45}.warn{color:var(--danger);font-weight:650}
+    .range-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.range-value{min-width:90px;text-align:right}
+    .radio-row{display:flex;gap:18px;flex-wrap:wrap}.radio-row label{display:flex;gap:8px;align-items:center;margin:0;color:var(--ink)}.radio-row input,.checks input{width:auto;min-height:auto}
+    table{width:100%;border-collapse:collapse}td,th{border-top:1px solid var(--line);padding:8px;text-align:left}.doc-preview{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+    .pager{display:flex;gap:8px;margin-top:12px}.pager button{width:auto;min-width:86px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <main>
-    <h1>IZE Compose Property and Update</h1>
-    <section class="grid">
-      <div class="card wide">
-        <h2>PIN</h2>
-        <label for="pin">4-digit PIN</label>
-        <input type="password" id="pin" inputmode="numeric" maxlength="4" placeholder="PIN" required>
-        <p class="note">This PIN is required before settings, firmware updates, font uploads, and image uploads are applied.</p>
-      </div>
-
-      <div class="card wide">
-        <h2>Environment Settings</h2>
-        <div class="stack">
-          <div class="subgrid">
-            <div>
-              <label for="sleepTimer">Sleep Timer</label>
-              <div class="range-row">
-                <input type="range" id="sleepTimer" min="0" max="6" step="1">
-                <span class="range-value" id="sleepTimerValue"></span>
-              </div>
-            </div>
-
-            <div>
-              <label for="fontScale">Text Size</label>
-              <div class="range-row">
-                <input type="range" id="fontScale" min="5" max="35" step="1">
-                <span class="range-value" id="fontScaleValue"></span>
-              </div>
-            </div>
-
-            <div>
-              <label for="lineSpacing">Line Space</label>
-              <div class="range-row">
-                <input type="range" id="lineSpacing" min="0" max="30" step="1">
-                <span class="range-value" id="lineSpacingValue"></span>
-              </div>
-            </div>
-
-            <div>
-              <label for="letterSpacing">Character Space</label>
-              <div class="range-row">
-                <input type="range" id="letterSpacing" min="-5" max="10" step="1">
-                <span class="range-value" id="letterSpacingValue"></span>
-              </div>
-            </div>
-
-            <div>
-              <label for="typingSpeed">Speed</label>
-              <input type="number" id="typingSpeed" min="0" max="2000" step="1">
-              <p class="note">Default: 0. Changing this value can make typing less comfortable.</p>
-            </div>
-
-            <div>
-              <label for="refreshLimit">Refresh</label>
-              <input type="number" id="refreshLimit" min="0" max="2000" step="1">
-              <p class="note">Default: 2000. Changing this value can make refresh behavior less comfortable.</p>
-            </div>
-
-            <div class="full">
-              <label>English Keyboard</label>
-              <div class="radio-row" id="englishLayoutGroup">
-                <label><input type="radio" name="englishLayout" value="1">Qwerty</label>
-                <label><input type="radio" name="englishLayout" value="0">Dvorak</label>
-              </div>
-            </div>
-
-            <div class="full">
-              <label for="language">Language</label>
-              <select id="language" size="10"></select>
-            </div>
-          </div>
-
-          <button id="settingsBtn" onclick="saveSettings()">Save</button>
-          <p class="status" id="settingsStatus">Loading...</p>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Firmware Update</h2>
-        <label for="fwFile">Firmware file</label>
-        <input type="file" id="fwFile" accept=".bin">
-        <button id="fwBtn" onclick="uploadFirmware()">Upload and Update</button>
-        <p class="status" id="fwStatus">Waiting...</p>
-      </div>
-
-      <div class="card">
-        <h2>Font / Image Upload</h2>
-        <label for="resFile">File</label>
-        <input type="file" id="resFile" accept=".bin,.png">
-        <p class="note">The filename decides the target automatically. Examples: initial.png, hwalja_hangul.bin, NanumGothic_hangul.bin, NanumGothic_jamo.bin.</p>
-        <button id="resBtn" onclick="uploadResource()">Upload to SD</button>
-        <p class="status" id="resStatus">Waiting...</p>
-      </div>
+<main>
+  <h1>Ize Compose</h1>
+  <section id="auth" class="card">
+    <h2>PIN</h2>
+    <form id="authForm">
+      <label for="pin">Enter the PIN shown on Ize Compose.</label>
+      <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+      <p class="hint">Settings, updates, uploads, and document changes require this PIN.</p>
+      <button type="submit">Open</button>
+    </form>
+    <p id="authStatus" class="status"></p>
+  </section>
+  <section id="app" class="hidden">
+    <div class="tabs"><button type="button" data-tab="docs">Documents</button><button type="button" data-tab="settings">Settings & Update</button></div>
+    <section id="tab-docs">
+      <div class="card"><h2>Upload Text File</h2><form id="uploadForm" method="POST" action="/uploadText" enctype="multipart/form-data"><label for="textFile">Text file</label><input type="file" id="textFile" name="file" accept=".txt,text/plain" required><p class="hint">Uploaded text is saved as the next docNNNN.txt file.</p><button type="submit">Upload Text</button></form></div>
+      <div class="card"><h2>Documents</h2><div id="documents"><p class="status">Loading...</p></div><div class="pager"><button id="prev" class="secondary" type="button">Previous</button><button id="next" class="secondary" type="button">Next</button></div></div>
     </section>
-  </main>
-
-  <script>
-    const sleepLabels=['30 sec','1 min','5 min','10 min','30 min','1 hr','OFF'];
-
-    function bindRange(id, render) {
-      const el = document.getElementById(id);
-      const out = document.getElementById(id + 'Value');
-      const draw = () => out.textContent = render(el.value);
-      el.addEventListener('input', draw);
-      draw();
-    }
-
-    bindRange('sleepTimer', v => sleepLabels[Number(v)] || 'OFF');
-    bindRange('fontScale', v => (Number(v) / 10).toFixed(1) + 'x');
-    bindRange('lineSpacing', v => String(v));
-    bindRange('letterSpacing', v => String(v));
-
-    function getPin() {
-      return document.getElementById('pin').value.trim();
-    }
-
-    function syncEnglishState() {
-      const isEnglish = document.getElementById('language').value === 'english';
-      const wrap = document.getElementById('englishLayoutGroup');
-      wrap.classList.toggle('muted', !isEnglish);
-      wrap.querySelectorAll('input').forEach(i => i.disabled = !isEnglish);
-    }
-
-    async function loadSettings() {
-      const status = document.getElementById('settingsStatus');
-      try {
-        const res = await fetch('/settings.json', { cache: 'no-store' });
-        const data = await res.json();
-
-        document.getElementById('sleepTimer').value = data.sleepTimer;
-        document.getElementById('fontScale').value = data.fontScale;
-        document.getElementById('lineSpacing').value = data.lineSpacing;
-        document.getElementById('letterSpacing').value = data.letterSpacing;
-        document.getElementById('typingSpeed').value = data.typingSpeed;
-        document.getElementById('refreshLimit').value = data.refreshLimit;
-        document.querySelector(`input[name="englishLayout"][value="${data.englishLayout}"]`).checked = true;
-
-        const language = document.getElementById('language');
-        language.innerHTML = '';
-        data.languages.forEach(item => {
-          const option = document.createElement('option');
-          option.value = item.value;
-          option.textContent = item.label;
-          if (item.value === data.language) option.selected = true;
-          language.appendChild(option);
-        });
-
-        ['sleepTimer', 'fontScale', 'lineSpacing', 'letterSpacing'].forEach(id => {
-          document.getElementById(id).dispatchEvent(new Event('input'));
-        });
-
-        syncEnglishState();
-        language.addEventListener('change', syncEnglishState, { once: true });
-        language.addEventListener('change', syncEnglishState);
-        status.textContent = 'Waiting...';
-      } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-      }
-    }
-
-    async function saveSettings() {
-      const pin = getPin();
-      const status = document.getElementById('settingsStatus');
-      const btn = document.getElementById('settingsBtn');
-      if (!/^\d{4}$/.test(pin)) {
-        status.textContent = 'Enter the 4-digit PIN.';
-        return;
-      }
-      const english = document.querySelector('input[name="englishLayout"]:checked').value;
-      const body = new URLSearchParams({
-        pin,
-        sleepTimer: document.getElementById('sleepTimer').value,
-        fontScale: document.getElementById('fontScale').value,
-        lineSpacing: document.getElementById('lineSpacing').value,
-        letterSpacing: document.getElementById('letterSpacing').value,
-        typingSpeed: document.getElementById('typingSpeed').value,
-        refreshLimit: document.getElementById('refreshLimit').value,
-        englishLayout: english,
-        language: document.getElementById('language').value
-      });
-      btn.disabled = true;
-      status.textContent = 'Saving...';
-      try {
-        const res = await fetch('/settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-          body: body.toString()
-        });
-        const text = await res.text();
-        status.textContent = text || 'Done.';
-      } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    async function sendUpload(inputId, statusId, buttonId, targetName) {
-      const input = document.getElementById(inputId);
-      const status = document.getElementById(statusId);
-      const btn = document.getElementById(buttonId);
-      if (!input.files.length) {
-        status.textContent = 'Select a file.';
-        return;
-      }
-      const pin = getPin();
-      if (!/^\d{4}$/.test(pin)) {
-        status.textContent = 'Enter the 4-digit PIN.';
-        return;
-      }
-      const file = input.files[0];
-      btn.disabled = true;
-      status.textContent = 'Uploading...';
-      const fd = new FormData();
-      fd.append('file', file, targetName || file.name);
-      try {
-        const res = await fetch('/update', {
-          method: 'POST',
-          headers: { 'X-OTA-PIN': pin },
-          body: fd
-        });
-        const text = await res.text();
-        status.textContent = text || 'Done.';
-      } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    function uploadFirmware() {
-      sendUpload('fwFile', 'fwStatus', 'fwBtn', 'izefirmware.bin');
-    }
-
-    function uploadResource() {
-      sendUpload('resFile', 'resStatus', 'resBtn', '');
-    }
-
-    loadSettings();
-  </script>
+    <section id="tab-settings" class="hidden">
+      <div class="card"><h2>Environment Settings</h2><div class="grid">
+        <div><label for="sleepTimer">Sleep Timer</label><div class="range-row"><input type="range" id="sleepTimer" min="0" max="6" step="1"><span class="range-value" id="sleepTimerValue"></span></div></div>
+        <div><label for="fontScale">Text Size</label><div class="range-row"><input type="range" id="fontScale" min="5" max="35" step="1"><span class="range-value" id="fontScaleValue"></span></div></div>
+        <div><label for="lineSpacing">Line Space</label><div class="range-row"><input type="range" id="lineSpacing" min="0" max="30" step="1"><span class="range-value" id="lineSpacingValue"></span></div></div>
+        <div><label for="letterSpacing">Character Space</label><div class="range-row"><input type="range" id="letterSpacing" min="-5" max="10" step="1"><span class="range-value" id="letterSpacingValue"></span></div></div>
+        <div><label for="typingSpeed">Speed</label><input type="number" id="typingSpeed" min="0" max="2000" step="1"><p class="hint">Default: 0. Changing this can make typing less comfortable.</p></div>
+        <div><label for="refreshLimit">Refresh</label><input type="number" id="refreshLimit" min="0" max="2000" step="1"><p class="hint">Default: 2000. Changing this can make refresh behavior less comfortable.</p></div>
+        <div class="full"><label>English Keyboard</label><div class="radio-row"><label><input type="radio" name="englishLayout" value="1">Qwerty</label><label><input type="radio" name="englishLayout" value="0">Dvorak</label></div></div>
+        <div class="full"><label for="language">Language</label><select id="language" size="10"></select></div>
+      </div><button id="settingsBtn" type="button">Save</button><p id="settingsStatus" class="status">Loading...</p></div>
+      <div class="grid"><div class="card"><h2>Firmware Update</h2><label for="fwFile">Firmware file</label><input type="file" id="fwFile" accept=".bin"><button id="fwBtn" type="button">Upload and Update</button><p id="fwStatus" class="status">Waiting...</p></div><div class="card"><h2>Font / Image Upload</h2><label for="resFile">File</label><input type="file" id="resFile" accept=".bin,.png"><p class="hint">The filename decides the target automatically.</p><button id="resBtn" type="button">Upload to SD</button><p id="resStatus" class="status">Waiting...</p></div></div>
+      <div class="card"><h2>GitHub Sync</h2><form id="githubForm"><label for="ghOwner">Owner</label><input id="ghOwner" name="owner" placeholder="ize-studio" required><label for="ghRepo">Repository</label><input id="ghRepo" name="repo" placeholder="private-repository" required><label for="ghBranch">Branch</label><input id="ghBranch" name="branch" placeholder="main"><label for="ghPath">Document path</label><input id="ghPath" name="path" placeholder="documents"><label for="ghToken">Token</label><input id="ghToken" name="token" type="password" autocomplete="off" placeholder="Leave blank to keep saved token"><p class="hint">Use a GitHub token with Contents write permission for this repository.</p><button type="submit">Save GitHub Settings</button></form><p id="githubStatus" class="status"></p></div>
+      <div class="card"><h2>Online Asset Backup</h2><p class="warn">After GitHub is connected, back up fonts and initial.png before testing updates or restoring SD cards.</p><div class="checks" id="assetChecks"></div><div class="grid"><button id="assetBackupBtn" type="button">Online Backup</button><button id="assetRestoreBtn" type="button">Restore from Online</button></div><p id="assetStatus" class="status">Waiting...</p></div>
+      <div class="card"><h2>Online Firmware Update</h2><p id="releaseStatus" class="status">Checking release...</p><button id="onlineUpdateBtn" type="button">Online Update</button></div>
+    </section>
+  </section>
+</main>
+<script>
+let page=1;const sleepLabels=['30 sec','1 min','5 min','10 min','30 min','1 hr','OFF'];const assets=['ize_compose_1-4-0-test.html','initial.png','hwalja_latin.bin','hwalja_hangul.bin','hwalja_jamo.bin','hwalja_jp.bin','hwalja_greek_cyrillic.bin','hwalja_arabic.bin','hwalja_indic.bin','hwalja_sea.bin','hwalja_misc.bin'];
+function pin(){return document.getElementById('pin').value.trim()}function showTab(n){tabDocs.classList.toggle('hidden',n!=='docs');tabSettings.classList.toggle('hidden',n!=='settings');if(n==='settings'){loadSettings();loadGithubSettings();checkRelease()}}
+const tabDocs=document.getElementById('tab-docs'),tabSettings=document.getElementById('tab-settings');document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+function bindRange(id,render){const el=document.getElementById(id),out=document.getElementById(id+'Value');const draw=()=>out.textContent=render(el.value);el.addEventListener('input',draw);draw()}bindRange('sleepTimer',v=>sleepLabels[Number(v)]||'OFF');bindRange('fontScale',v=>(Number(v)/10).toFixed(1)+'x');bindRange('lineSpacing',v=>String(v));bindRange('letterSpacing',v=>String(v));
+assetChecks.innerHTML=assets.map(a=>`<label><input type="checkbox" name="asset" value="${a}"> ${a}</label>`).join('');
+authForm.onsubmit=async e=>{e.preventDefault();authStatus.textContent='Checking PIN...';const r=await fetch('/auth',{method:'POST',body:new URLSearchParams({pin:pin()})});if(!r.ok){authStatus.textContent=await r.text();return}auth.classList.add('hidden');app.classList.remove('hidden');showTab('docs');loadDocuments()};
+async function loadDocuments(){documents.innerHTML='<p class="status">Loading...</p>';const r=await fetch('/documents?page='+page);documents.innerHTML=r.ok?await r.text():'<p class="status">'+await r.text()+'</p>'}prev.onclick=()=>{if(page>1){page--;loadDocuments()}};next.onclick=()=>{page++;loadDocuments()};
+async function loadSettings(){try{const r=await fetch('/settings.json',{cache:'no-store'});if(!r.ok)throw new Error(await r.text());const d=await r.json();sleepTimer.value=d.sleepTimer;fontScale.value=d.fontScale;lineSpacing.value=d.lineSpacing;letterSpacing.value=d.letterSpacing;typingSpeed.value=d.typingSpeed;refreshLimit.value=d.refreshLimit;document.querySelector(`input[name="englishLayout"][value="${d.englishLayout}"]`).checked=true;language.innerHTML='';d.languages.forEach(it=>{const o=document.createElement('option');o.value=it.value;o.textContent=it.label;if(it.value===d.language)o.selected=true;language.appendChild(o)});['sleepTimer','fontScale','lineSpacing','letterSpacing'].forEach(id=>document.getElementById(id).dispatchEvent(new Event('input')));settingsStatus.textContent='Waiting...'}catch(e){settingsStatus.textContent='Error: '+e.message}}
+settingsBtn.onclick=async()=>{if(!/^\d{4}$/.test(pin())){settingsStatus.textContent='Enter the 4-digit PIN.';return}const body=new URLSearchParams({pin:pin(),sleepTimer:sleepTimer.value,fontScale:fontScale.value,lineSpacing:lineSpacing.value,letterSpacing:letterSpacing.value,typingSpeed:typingSpeed.value,refreshLimit:refreshLimit.value,englishLayout:document.querySelector('input[name="englishLayout"]:checked').value,language:language.value});const r=await fetch('/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});settingsStatus.textContent=await r.text()};
+async function sendUpload(inputId,statusId,buttonId,targetName){const input=document.getElementById(inputId),s=document.getElementById(statusId),btn=document.getElementById(buttonId);if(!input.files.length){s.textContent='Select a file.';return}if(!/^\d{4}$/.test(pin())){s.textContent='Enter the 4-digit PIN.';return}btn.disabled=true;s.textContent='Uploading... Do not close this browser or power off the device.';const fd=new FormData();fd.append('file',input.files[0],targetName||input.files[0].name);try{const r=await fetch('/update',{method:'POST',headers:{'X-OTA-PIN':pin()},body:fd});s.textContent=await r.text()}catch(e){s.textContent='Error: '+e.message}finally{btn.disabled=false}}fwBtn.onclick=()=>sendUpload('fwFile','fwStatus','fwBtn','izefirmware.bin');resBtn.onclick=()=>sendUpload('resFile','resStatus','resBtn','');
+async function loadGithubSettings(){try{const r=await fetch('/github/settings.json',{cache:'no-store'});if(!r.ok){githubStatus.textContent=await r.text();return}const d=await r.json();ghOwner.value=d.owner||'';ghRepo.value=d.repo||'';ghBranch.value=d.branch||'main';ghPath.value=d.path||'documents';ghToken.placeholder=d.tokenSaved?'Saved token exists. Leave blank to keep it.':'Token required';githubStatus.textContent=d.syncStatus||(d.configured?'GitHub settings saved.':'No GitHub repository is connected.')}catch(e){githubStatus.textContent='GitHub settings unavailable in this mode.'}}
+githubForm.onsubmit=async e=>{e.preventDefault();const body=new URLSearchParams({owner:ghOwner.value.trim(),repo:ghRepo.value.trim(),branch:ghBranch.value.trim(),path:ghPath.value.trim(),token:ghToken.value.trim()});const r=await fetch('/github/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});githubStatus.textContent=await r.text();if(r.ok){ghToken.value='';loadGithubSettings()}};
+async function assetAction(action){const selected=[...document.querySelectorAll('input[name="asset"]:checked')].map(i=>i.value);if(!selected.length){assetStatus.textContent='Select at least one asset.';return}assetStatus.textContent=action==='backup'?'Backing up...':'Restoring...';const body=new URLSearchParams({action});selected.forEach(a=>body.append('asset',a));const r=await fetch('/github/assets',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});assetStatus.textContent=await r.text()}assetBackupBtn.onclick=()=>assetAction('backup');assetRestoreBtn.onclick=()=>assetAction('restore');
+async function checkRelease(){try{const r=await fetch('/release/status',{cache:'no-store'});const d=await r.json();releaseStatus.innerHTML=d.available?`<span class="warn">Update available: ${d.latest}</span>`:`Current firmware is latest: ${d.current}`}catch(e){releaseStatus.textContent='Online update check is available only in WiFi mode.'}}onlineUpdateBtn.onclick=async()=>{const r=await fetch('/release/update',{method:'POST'});alert(await r.text())};
+</script>
 </body>
 </html>

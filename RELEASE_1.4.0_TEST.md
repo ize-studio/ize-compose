@@ -6,47 +6,48 @@ This is a **test build**, not a verified stable release.
 
 Recommended stable version for normal writing: **v1.3.0**
 
-Use this build only if you want to test the new GitHub private repository sync path. If you only need the writing firmware, document server, Properties page, font upload, or image upload, use v1.3.0 until this release is verified on real hardware.
+Use this build only if you want to test the new GitHub private repository sync path. If you only need the stable writing firmware, document server, font upload, or image upload, use v1.3.0 until this release is verified on real hardware.
 
 ## Test Status
 
 - Firmware builds successfully with direct GitHub sync enabled.
 - Bluetooth keyboard mode has been removed to keep the firmware inside the OTA-safe size limit.
 - Browser GitHub settings UI exists in the Wi-Fi document page.
-- Real-device GitHub sync against a private repository is not yet verified.
-- Real-device repeated Wi-Fi connect/sync/disconnect behavior is not yet verified.
+- Real-device GitHub sync against a private repository is still a test path.
+- The repository-side `documents/index.html` file manager was removed. Private GitHub HTML files cannot be opened as a live web page without downloading them first, so online file management is not part of this release.
 
 ## What Changed
 
 - Added experimental direct GitHub document sync.
-- Added `Network -> Sync`.
+- Added top-level `Sync`.
   - Uses the last successful Wi-Fi network.
   - Uploads local `.txt` documents to the configured GitHub repository path.
+  - Downloads newer GitHub edits for existing local documents.
+  - Deletes remote-only `docNNNN.txt` files instead of downloading them.
+  - Restores local documents if the matching GitHub file was deleted.
   - Shows sync success/failure on the device.
   - Turns Wi-Fi off and returns to the menu after the sync flow.
 - Changed the Network menu values to:
   - `Off`
-  - `Sync`
   - `WiFi`
-  - `Server`
+  - `WebServer`
 - Removed Bluetooth keyboard mode and the `ESP32 BLE Keyboard` dependency.
 - Kept `Network -> WiFi` for Wi-Fi client document-server mode.
-- Kept `Network -> Server` for AP document-server mode at `http://192.168.4.1/`.
-- Kept `Properties` as the AP-based settings/update page.
+- Changed `Network -> WebServer` to ask for a 10-digit numeric AP password and serve the same unified browser page at `http://192.168.4.1/`.
+- Removed `Properties` as a selectable menu item; settings and update are now in the unified browser page.
 - Kept external web pages on SD card:
-  - `/ize_compose/document_server.html`
-  - `/ize_compose/property_update.html`
+  - `/ize_compose/ize_compose_1-4-0-test.html`
+
 - Kept image loading through the PNG buffer path used by the firmware.
 - Kept the reduced Inkplate image path build flag:
   - `-DIZE_INKPLATE_MINIMAL_IMAGE=1`
 
 ## Required SD Card Files
 
-These files should be on the SD card:
+Prepare these files on the SD card:
 
 ```text
-/ize_compose/property_update.html
-/ize_compose/document_server.html
+/ize_compose/ize_compose_1-4-0-test.html
 /ize_compose/initial.png
 /ize_compose/hwalja/hwalja_latin.bin
 /ize_compose/hwalja/hwalja_hangul.bin
@@ -71,7 +72,9 @@ Generated files:
 /ize_compose/upload/izefirmware.bin
 ```
 
-`settings_backup.json` and `upload/izefirmware.bin` do not need to be prepared manually.
+`settings_backup.json` is written by the firmware as a settings backup. `upload/izefirmware.bin` is an internal staged firmware file used during SD OTA update. Neither file needs to be prepared manually for a normal install.
+
+There is no repository-side `documents/index.html` file in this release.
 
 ## GitHub Private Repository Setup
 
@@ -94,29 +97,13 @@ Generated files:
    main
    ```
 
-8. If GitHub asks whether to add a README, either choice is acceptable. The device sync writes document files under the configured document path.
+8. If GitHub asks whether to add a README, either choice is acceptable.
 
-### 2. Choose a document folder
+The firmware creates the configured document path when it uploads documents. GitHub does not store empty folders, so you do not need to prepare an empty `documents` folder manually.
 
-Pick a folder path inside the repository. Recommended:
+### 2. Create a GitHub token
 
-```text
-documents
-```
-
-The device will write files like:
-
-```text
-documents/doc_1.txt
-documents/doc_2.txt
-documents/doc_3.txt
-```
-
-Use a simple folder name first. For the first test, start with plain ASCII letters, numbers, `_`, `-`, and `/` so path debugging stays simple.
-
-### 3. Create a GitHub token
-
-The device needs a token because the repository is private and the ESP32 must write files through the GitHub API.
+The device needs a token because the repository is private and GitHub requires API authentication for reading and writing repository contents.
 
 Recommended token type:
 
@@ -145,12 +132,15 @@ Steps:
 11. Generate the token.
 12. Copy the token immediately. GitHub will not show it again.
 
-Do not commit this token into a repository. The device stores it in firmware preferences. The settings backup intentionally does not need to be treated as the token source.
-
-### 4. Enter GitHub settings on Ize Compose
+### 3. Enter GitHub settings on Ize Compose
 
 1. Install this firmware.
-2. Make sure `/ize_compose/document_server.html` exists on the SD card.
+2. Make sure this SD card file exists:
+
+   ```text
+   /ize_compose/ize_compose_1-4-0-test.html
+   ```
+
 3. On the device, open:
 
    ```text
@@ -176,7 +166,7 @@ Do not commit this token into a repository. The device stores it in firmware pre
 11. Click **Save GitHub Settings**.
 12. Leave Wi-Fi mode with `Ctrl + Menu`.
 
-### 5. Run sync from the device
+### 4. Run sync from the device
 
 After GitHub settings have been saved once:
 
@@ -184,27 +174,23 @@ After GitHub settings have been saved once:
 2. Select:
 
    ```text
-   Network -> Sync
+   Sync
    ```
 
 3. The device should connect to the last successful Wi-Fi network.
-4. The device should upload local `.txt` documents to the configured repository path.
+4. The device should sync local `.txt` documents with the configured repository path.
 5. The device should show whether sync completed or failed.
 6. The device should turn Wi-Fi off and return to the menu.
 
-### 6. Check the repository
+## GitHub Sync Rules
 
-Open the private repository in GitHub and check the configured folder:
-
-```text
-documents/
-```
-
-Expected result:
-
-- Local text documents from the SD card appear as `.txt` files.
-- A new commit appears in the repository history.
-- The commit message should identify the Ize Compose sync.
+- Existing `docNNNN.txt` files may be edited directly on GitHub.
+- If the GitHub copy of an existing document is newer, the device downloads it.
+- New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as text files.
+- Files created only on GitHub are removed on the next sync.
+- Files deleted only on GitHub are restored on the next sync if the SD card still has them.
+- Device-side deletion remains available and keeps its PIN/confirmation flow. Use device-side deletion when a document should be removed from both the SD card and GitHub.
+- There is no browser-side online file manager in the private GitHub repository.
 
 ## Troubleshooting
 
@@ -214,7 +200,7 @@ The device does not have complete GitHub settings. Re-enter `Network -> WiFi`, o
 
 ### Saved Wi-Fi not found
 
-The last successful Wi-Fi network is not visible. Re-enter `Network -> WiFi`, connect to the desired network again, then try `Network -> Sync`.
+The last successful Wi-Fi network is not visible. Re-enter `Network -> WiFi`, connect to the desired network again, then try `Sync`.
 
 ### Token rejected
 
@@ -226,9 +212,13 @@ Check:
 - Contents permission is **Read and write**.
 - Owner and repository names are spelled exactly.
 
-### Sync fails after creating blobs or commits
+### Files created on GitHub disappear
 
-This is still a test build. Record the exact device message and check whether the repository branch already exists and whether the token can write to it.
+This is expected. The device owns document creation and numbering. Create new documents on the device or upload `.txt` files through the device Wi-Fi/WebServer unified page.
+
+### Files deleted on GitHub come back
+
+This is expected if the SD card still has the matching document. Delete from the device when the deletion should sync to both sides.
 
 ## Verification
 
@@ -236,23 +226,24 @@ This is still a test build. Record the exact device message and check whether th
 - Direct GitHub sync is included in the final firmware map.
 - `ESP32 BLE Keyboard` is no longer in the PlatformIO dependency graph.
 - PNG buffer image loading remains linked.
+- No repository-side `documents/index.html` file is included.
 
 Firmware:
 
 ```text
 firmware/izefirmware.bin
-Size: 1,216,800 bytes
-SHA-256: BA29F4BFEC6E73DB6BA67B2738BEC3DA375A5BABA32287C09D7D48875CBC9E0B
+Size: 1,261,376 bytes
+SHA-256: BFAED6F166C1CBD9F902027A1C3584CB85EFB1FD66CBBAB5E2D630CE7E9B40CF
 ```
 
 ## Upgrade Notes
 
 1. Upload `firmware/izefirmware.bin`.
-2. Copy the two browser pages to the SD card:
+2. Copy the unified browser page to the SD card:
 
    ```text
-   /ize_compose/property_update.html
-   /ize_compose/document_server.html
+   /ize_compose/ize_compose_1-4-0-test.html
+
    ```
 
 3. Keep or restore font files under:
@@ -262,10 +253,26 @@ SHA-256: BA29F4BFEC6E73DB6BA67B2738BEC3DA375A5BABA32287C09D7D48875CBC9E0B
    ```
 
 4. Reboot after update.
-5. Confirm that Properties shows:
+5. Confirm that the Settings & Update tab shows:
 
    ```text
    v1.4.0-test
    ```
 
 6. For stable writing use, return to **v1.3.0** if GitHub sync testing is not needed.
+## v1.4.0-test unified web change
+
+- Replaced the two separate SD browser pages with `/ize_compose/ize_compose_1-4-0-test.html`.
+- The unified page has Documents and Settings & Update tabs and is served in both WiFi mode and WebServer mode.
+- The main menu now starts with `Sync`; `Network` only selects `Off`, `WiFi`, or `WebServer`.
+- `Properties` was removed as a selectable menu item. The firmware version remains display-only at the bottom of the menu.
+- WebServer mode now asks for a 10-digit numeric access-point password before starting.
+- WebServer mode hides the password after a client connects and shuts down automatically after connected clients disappear for more than 2 seconds.
+- Online asset backup/restore and online firmware update buttons now call firmware endpoints. Online update downloads the required release firmware and versioned SD web page before OTA starts.
+## Online update and asset backup completion
+
+- Online update now checks the latest GitHub release.
+- It compares both firmware version and SD web-page asset name.
+- If the release web page differs, the device downloads the new versioned web page first.
+- Firmware OTA starts only after the firmware file and required SD web-page file downloads have both completed.
+- GitHub asset backup/restore includes the versioned web page file in addition to fonts and `initial.png`.
