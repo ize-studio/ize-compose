@@ -123,7 +123,9 @@ Top-level `Sync` is intended to keep Ize Compose SD-card documents and one priva
 - Because of ESP32 memory load, GitHub sync can run only when the upload plus download count is under 128 files.
 - Existing `docNNNN.txt` files can be edited on GitHub; if the GitHub copy is newer, the device downloads it.
 - New documents should be created on the device or uploaded through the device Wi-Fi/WebServer unified page as `.txt` files.
-- Files created only on GitHub are removed on the next sync, because the device assigns document numbers and owns document creation.
+- Only files named `doc` plus four digits plus `.txt`, such as `doc0001.txt`, are GitHub sync documents.
+- `docNNNN.txt` files created only on GitHub are removed on the next sync, because the device assigns document numbers and owns document creation.
+- Files that do not match `docNNNN.txt` are ignored by device sync and remain only on GitHub. To keep a GitHub copy while removing it from the device, rename it on GitHub first, for example by removing the first `0` from `doc0001.txt`, then delete the device copy.
 - Files deleted only on GitHub are uploaded back on the next sync if the SD card still has them.
 - Device-side deletion is kept and still requires the device confirmation flow; use that path when a document should be removed from both sides.
 
