@@ -6,6 +6,8 @@ Current release: **v1.4.1**
 
 Code repository: [github.com/ize-studio/ize-compose](https://github.com/ize-studio/ize-compose)
 
+![Initial startup image](others/initial.png)
+
 v1.3.0 adds Wi-Fi client document-server mode, splits browser support into SD-loadable files, and preserves the SD settings backup flow.
 
 v1.4.0 adds the top-level `Sync` flow for GitHub private repository sync, then turns the Wi-Fi adapter off after sync. The Bluetooth feature that acted as an external keyboard in v1.3.0 was removed because of battery-use issues. See [RELEASE_1.4.1.md](RELEASE_1.4.1.md) for the current release notes and [RELEASE_1.4.0.md](RELEASE_1.4.0.md) for the original v1.4.0 release.
@@ -98,6 +100,7 @@ When using files directly from this repository, make sure the final SD card path
 The repository `sdcard/ize_compose/` folder contains the unified browser page. Font binaries may be distributed separately or generated from the font tools; the device still expects them at the paths listed above.
 
 ---
+
 
 ## Device Menu and Web Pages
 
@@ -364,3 +367,5 @@ Online update checks the GitHub release firmware asset and the SD web-page asset
 The web page filename includes the firmware/web-page version, for example `ize_compose_1-4-1.html`, so the currently served page is not overwritten while the browser is open.
 
 Source and releases: [github.com/ize-studio/ize-compose](https://github.com/ize-studio/ize-compose)
+
+![Ize Compose Property Control](https://github.com/ize-studio/ize-compose/blob/0a66da1188055858b32229ec3c262a4b9932e7b0/others/Screenshot_20260615_065016_Samsung%20Browser(1).jpg)
