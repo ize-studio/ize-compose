@@ -45,7 +45,7 @@ const char* INITIAL_IMAGE_PATH = "/ize_compose/initial.png";
 const char* GITHUB_SYNC_STATE_PATH = "/ize_compose/github_sync_state.txt";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
-const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-0.html";
+const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-1.html";
 const char* SETTINGS_BACKUP_PATH = "/ize_compose/settings_backup.json";
 // Minimal English fallback used only before SD fonts load or when an asset is missing.
 const uint8_t* font_ptr = u8g2_font_5x7_tf;
@@ -59,8 +59,8 @@ const uint8_t* font_indic_ptr = nullptr;
 const uint8_t* font_sea_ptr = nullptr;
 const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
-#define FIRMWARE_VERSION "v1.4.0" // Direct GitHub sync and BLE removal
-#define WEB_PAGE_VERSION "1-4-0"
+#define FIRMWARE_VERSION "v1.4.1" // Sync fixes and centered sleep image
+#define WEB_PAGE_VERSION "1-4-1"
 const char* OFFICIAL_RELEASE_API = "https://api.github.com/repos/ize-studio/ize-compose/releases/latest";
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
@@ -3932,20 +3932,44 @@ char getAccentBaseFromInserted(const String& inserted) {
     return 0;
 }
 
+uint32_t readPngBigEndian32(const uint8_t* p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+bool getPngDimensions(const uint8_t* data, size_t len, int32_t& width, int32_t& height) {
+    const uint8_t pngSignature[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    if (data == nullptr || len < 24) return false;
+    if (memcmp(data, pngSignature, sizeof(pngSignature)) != 0) return false;
+    if (memcmp(data + 12, "IHDR", 4) != 0) return false;
+    width = (int32_t)readPngBigEndian32(data + 16);
+    height = (int32_t)readPngBigEndian32(data + 20);
+    return width > 0 && height > 0;
+}
+
+String githubConnectionStatusLine() {
+    if (githubOwner.length() == 0 || githubRepo.length() == 0) return "GitHub repo not set";
+    if (githubToken.length() == 0) return "GitHub token not set";
+    return "GitHub: " + githubOwner + "/" + githubRepo;
+}
+
 void showInitialImage() { 
     flushKorean(); 
     display.clearDisplay(); 
 
     if (imgBuffer) {
-        int16_t x = (display.width() - 800) / 2;
-        int16_t y = (display.height() - 600) / 2;
-        if (x < 0) x = 0;
-        if (y < 0) y = 0;
+        int32_t imageW = 0;
+        int32_t imageH = 0;
+        int16_t x = 0;
+        int16_t y = 0;
+        if (getPngDimensions(imgBuffer, imgSize, imageW, imageH)) {
+            x = (int16_t)((display.width() - imageW) / 2);
+            y = (int16_t)((display.height() - imageH) / 2);
+        }
 
         display.image.drawPngFromBuffer(imgBuffer, imgSize, x, y, true, false);
     }
 
-    display.display(); 
+    display.display();
     delay(1000); 
 
     
@@ -4596,7 +4620,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             printCleanText(u8g2_for_adafruit_gfx, "Wi-Fi Web Server", MARGIN_X, infoY);
             printCleanText(u8g2_for_adafruit_gfx, "Open: http://" + WiFi.localIP().toString() + "/", MARGIN_X, infoY + 25);
             printCleanText(u8g2_for_adafruit_gfx, "PIN: " + otaPinCode, MARGIN_X, infoY + 50);
-            printCleanText(u8g2_for_adafruit_gfx, "GitHub not connected", MARGIN_X, infoY + 75);
+            printCleanText(u8g2_for_adafruit_gfx, githubConnectionStatusLine(), MARGIN_X, infoY + 75);
             printCleanText(u8g2_for_adafruit_gfx, "EXIT: Ctrl + Menu", MARGIN_X, infoY + 100);
         } else {
             printCleanText(u8g2_for_adafruit_gfx, "Web Server", MARGIN_X, infoY);

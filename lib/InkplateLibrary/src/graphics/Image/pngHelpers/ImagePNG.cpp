@@ -25,9 +25,9 @@ extern Image *_imagePtrPng;
 
 static bool _pngInvert = 0;
 static bool _pngDither = 0;
-static int16_t lastY = -1;
-static uint16_t _pngX = 0;
-static uint16_t _pngY = 0;
+static int32_t lastY = -1;
+static int32_t _pngX = 0;
+static int32_t _pngY = 0;
 static Image::Position _pngPosition = Image::_npos;
 
 /**
@@ -50,8 +50,12 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 {
     if (_pngPosition != Image::_npos)
     {
+        uint16_t positionedX = 0;
+        uint16_t positionedY = 0;
         _imagePtrPng->getPointsForPosition(_pngPosition, pngle_get_width(pngle), pngle_get_height(pngle), E_INK_WIDTH,
-                                           E_INK_HEIGHT, &_pngX, &_pngY);
+                                           E_INK_HEIGHT, &positionedX, &positionedY);
+        _pngX = positionedX;
+        _pngY = positionedY;
         lastY = _pngY;
         _pngPosition = Image::_npos;
     }
@@ -80,7 +84,7 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
                     if (_imagePtrPng->_inkplate->getDisplayMode() == INKPLATE_1BIT)
                         px = (~px >> 2) & 1;
                 }
-                _imagePtrPng->_inkplate->drawPixel(_pngX + x + i, _pngY + y + j, px);
+                _imagePtrPng->_inkplate->drawPixel((int16_t)(_pngX + (int32_t)x + i), (int16_t)(_pngY + (int32_t)y + j), px);
             }
     if (lastY != y)
     {
