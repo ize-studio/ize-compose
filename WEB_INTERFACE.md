@@ -158,6 +158,12 @@ During update, the firmware stages the file at:
 
 After a successful update, the staged file is removed to avoid repeated update attempts.
 
+### Online update
+
+In WiFi mode, the Settings & Update tab also checks the latest GitHub Release. When a newer release is available on GitHub, the web page shows that an update is available.
+
+Press **Online Update** to download the release firmware and, when needed, the matching versioned SD web page from the GitHub Release assets. The device shows download progress and starts OTA only after the required release files have been downloaded.
+
 ### Font and image upload
 
 Font and image uploads no longer require a separate target selector. The filename decides the target.
