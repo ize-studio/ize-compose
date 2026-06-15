@@ -58,7 +58,7 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 **Display**
 - Partial screen update for fast typing feedback
 - Configurable full-refresh threshold
-- Boot/sleep image loaded from `/ize_compose/initial.png` on SD card
+- Boot/sleep image loaded from `/ize_compose/initial.png` on SD card; recommended image size is 1280x720 PNG under 500 KB
 - Sleep mode: Ctrl+L or sleep button; wake with wake button
 
 **Settings and updates**
@@ -92,6 +92,8 @@ The firmware expects support files on the SD card under `/ize_compose/`.
 | `/ize_compose/upload/izefirmware.bin` | Temporary | Staged firmware file used internally during SD OTA update |
 
 When using files directly from this repository, make sure the final SD card paths match the table above. Font files must end up inside `/ize_compose/hwalja/`.
+
+`initial.png` must be a PNG file, should be prepared at 1280x720, and must stay under 500 KB. The firmware loads it into memory before display; files larger than 500 KB are skipped. The image is centered on the active display canvas and is not automatically scaled down, so oversized images are clipped from the center rather than resized.
 
 The repository `sdcard/ize_compose/` folder contains the unified browser page. Font binaries may be distributed separately or generated from the font tools; the device still expects them at the paths listed above.
 
@@ -240,7 +242,7 @@ pio run --target upload
 ### SD card setup
 1. Format SD card as FAT32.
 2. Create `/ize_compose/` and `/ize_compose/hwalja/` on the SD card if they are not already present.
-3. Copy `initial.png` to `/ize_compose/`.
+3. Copy `initial.png` to `/ize_compose/`. Use a 1280x720 PNG under 500 KB.
 4. Copy `ize_compose_1-4-1.html` to `/ize_compose/`.
 5. Copy `hwalja_*.bin` font files into `/ize_compose/hwalja/`.
 6. Keep `settings_backup.json` if it exists and you want to preserve settings across reset/reinstall.
