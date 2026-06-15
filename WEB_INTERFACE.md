@@ -9,6 +9,7 @@ http://192.168.4.1/
 ```
 
 The device screen shows the Wi-Fi name or local IP address, PIN when needed, GitHub sync status, and the exit hint. Use `Ctrl + Menu` to leave the web mode.
+![Ize Compose web settings](others/20260615_065039(1).jpg)
 
 For `v1.4.1`, the browser setup page can save repository settings for the top-level `Sync` path.
 
@@ -101,6 +102,8 @@ The external web page is loaded from:
 If that file is missing, the firmware returns an error. Keep this file on the SD card.
 
 ### PIN
+
+![Ize Compose wifi PIN](https://github.com/ize-studio/ize-compose/blob/c39df9fdff4c6269cf6d3a110dd5470989590c87/others/Screenshot_20260615_065055_Samsung%20Browser(1).jpg)
 
 The PIN field is at the top of the web page. The same PIN is required for:
 
