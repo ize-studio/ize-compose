@@ -45,7 +45,7 @@ const char* INITIAL_IMAGE_PATH = "/ize_compose/initial.png";
 const char* GITHUB_SYNC_STATE_PATH = "/ize_compose/github_sync_state.txt";
 const char* FIRMWARE_UPDATE_PATH = "/ize_compose/upload/izefirmware.bin";
 const char* LATIN_FONT_PATH = "/ize_compose/hwalja/hwalja_latin.bin";
-const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-1.html";
+const char* WEB_DOCUMENT_PAGE_PATH = "/ize_compose/ize_compose_1-4-2.html";
 const char* SETTINGS_BACKUP_PATH = "/ize_compose/settings_backup.json";
 // Minimal English fallback used only before SD fonts load or when an asset is missing.
 const uint8_t* font_ptr = u8g2_font_5x7_tf;
@@ -59,8 +59,8 @@ const uint8_t* font_indic_ptr = nullptr;
 const uint8_t* font_sea_ptr = nullptr;
 const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
-#define FIRMWARE_VERSION "v1.4.1" // Sync fixes and centered sleep image
-#define WEB_PAGE_VERSION "1-4-1"
+#define FIRMWARE_VERSION "v1.4.2" // Web sync button and AP-mode external action guards
+#define WEB_PAGE_VERSION "1-4-2"
 const char* OFFICIAL_RELEASE_API = "https://api.github.com/repos/ize-studio/ize-compose/releases/latest";
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
 const gpio_num_t WAKE_BUTTON_PIN = GPIO_NUM_36;
@@ -91,6 +91,9 @@ void handleWebAuth();
 void handleDocumentsList();
 void handleGithubSettingsJson();
 void handleGithubSettingsSave();
+void handleGithubSyncNow();
+void sendGithubSyncLogLine(const String& line);
+bool runGithubDocumentSync(String& resultMessage);
 void resetStatusScreenCache();
 void drawStatusScreenFrame(const String& title, const String& line1, const String& line2, bool forceFullRefresh = false);
 
@@ -372,6 +375,10 @@ String githubBranch = "main";
 String githubPath = "documents";
 String githubToken = "";
 String githubSyncStatusMessage = "GitHub not connected";
+bool githubSyncHttpStreaming = false;
+String lastGithubSyncHttpLine = "";
+bool releaseUpdateAvailable = false;
+String releaseUpdateNotice = "";
 String lastStatusScreenTitle = "";
 String lastStatusScreenLine1 = "";
 String lastStatusScreenLine2 = "";
@@ -1769,20 +1776,12 @@ String buildGithubSettingsJson() {
 }
 
 void handleGithubSettingsJson() {
-    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
-        if (!server.client().connected()) return;
-        if (currentNetSubMode != NET_WIFI_STA) server.send(403, "application/json", "{\"available\":false}");
-        return;
-    }
+    if (!documentAccessAllowed()) return;
     server.send(200, "application/json; charset=utf-8", buildGithubSettingsJson());
 }
 
 void handleGithubSettingsSave() {
-    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
-        if (!server.client().connected()) return;
-        if (currentNetSubMode != NET_WIFI_STA) server.send(403, "text/plain", "GitHub settings are available only in Wi-Fi mode.");
-        return;
-    }
+    if (!documentAccessAllowed()) return;
 
     String newOwner = server.arg("owner"); newOwner.trim();
     String newRepo = server.arg("repo"); newRepo.trim();
@@ -1814,6 +1813,36 @@ void handleGithubSettingsSave() {
     githubSyncStatusMessage = "GitHub settings saved";
     saveSystemSettings();
     server.send(200, "text/plain", "GitHub settings saved.");
+}
+
+void handleGithubSyncNow() {
+    if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
+        server.send(403, "text/plain", "GitHub sync is available only in WiFi mode.");
+        return;
+    }
+    if (!githubConfigComplete()) {
+        server.send(400, "text/plain", "GitHub settings missing.");
+        return;
+    }
+
+    flushKorean();
+    saveFile();
+
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "text/plain; charset=utf-8", "");
+    githubSyncHttpStreaming = true;
+    lastGithubSyncHttpLine = "";
+
+    githubSyncStatusMessage = "GitHub syncing";
+    drawOnlineSyncScreen("GitHub Sync", "Syncing documents...", wifiStaIp.toString());
+    String message;
+    bool ok = runGithubDocumentSync(message);
+    githubSyncStatusMessage = ok ? "GitHub sync complete" : "GitHub sync failed";
+    drawOnlineSyncScreen("GitHub Sync", ok ? "Sync complete" : "Sync failed", message);
+    sendGithubSyncLogLine(ok ? "RESULT: OK" : "RESULT: FAILED");
+    githubSyncHttpStreaming = false;
+    needUpdate = true;
+    statusBarNeedsUpdate = true;
 }
 SdFile sdBackupFile;
 String uploadTargetPath = "";
@@ -2517,6 +2546,10 @@ void handleReleaseStatus() {
     }
     bool firmwareAvailable = latest.length() > 0 && !releaseMatchesFirmware(latest);
     bool webAvailable = webName.length() > 0 && webName != String("ize_compose_") + String(WEB_PAGE_VERSION) + ".html";
+    releaseUpdateAvailable = firmwareAvailable || webAvailable;
+    if (firmwareAvailable) releaseUpdateNotice = "Update available: " + latest;
+    else if (webAvailable) releaseUpdateNotice = "Web update available";
+    else releaseUpdateNotice = "";
     String json = "{\"current\":\"" + String(FIRMWARE_VERSION) + "\",\"latest\":\"" + jsonEscape(latest) + "\",\"available\":" + String((firmwareAvailable || webAvailable) ? "true" : "false") + ",\"webAsset\":\"" + jsonEscape(webName) + "\",\"webUpdate\":" + String(webAvailable ? "true" : "false") + "}";
     server.send(200, "application/json; charset=utf-8", json);
 }
@@ -2533,6 +2566,10 @@ void handleReleaseUpdate() {
     }
     bool firmwareAvailable = latest.length() > 0 && !releaseMatchesFirmware(latest);
     bool webAvailable = webName.length() > 0 && webName != String("ize_compose_") + String(WEB_PAGE_VERSION) + ".html";
+    releaseUpdateAvailable = firmwareAvailable || webAvailable;
+    if (firmwareAvailable) releaseUpdateNotice = "Update available: " + latest;
+    else if (webAvailable) releaseUpdateNotice = "Web update available";
+    else releaseUpdateNotice = "";
     if (!firmwareAvailable && !webAvailable) {
         server.send(200, "text/plain", "Current firmware and SD web page are latest.");
         return;
@@ -2568,6 +2605,8 @@ void handleReleaseUpdate() {
     } else {
         isUpdating = false;
         if (CalcTaskHandle != NULL) vTaskResume(CalcTaskHandle);
+        releaseUpdateAvailable = false;
+        releaseUpdateNotice = "";
     }
 }
 void registerWebRoutes() {
@@ -2583,6 +2622,7 @@ void registerWebRoutes() {
     server.on("/uploadText", HTTP_POST, handleTextUploadComplete, handleTextUpload);
     server.on("/github/settings.json", HTTP_GET, handleGithubSettingsJson);
     server.on("/github/settings", HTTP_POST, handleGithubSettingsSave);
+    server.on("/github/sync", HTTP_POST, handleGithubSyncNow);
     server.on("/release/status", HTTP_GET, handleReleaseStatus);
     server.on("/release/update", HTTP_POST, handleReleaseUpdate);
 
@@ -3737,7 +3777,19 @@ void drawStatusScreenFrame(const String& title, const String& line1, const Strin
     statusScreenPrimed = true;
 }
 
+void sendGithubSyncLogLine(const String& line) {
+    if (!githubSyncHttpStreaming || line.length() == 0 || line == lastGithubSyncHttpLine) return;
+    server.sendContent("> " + line + "\n");
+    lastGithubSyncHttpLine = line;
+    yield();
+}
+
 void drawOnlineSyncScreen(const String& title, const String& line1, const String& line2) {
+    if (title.indexOf("GitHub Sync") >= 0) {
+        String line = line1;
+        if (line2.length() > 0) line += " | " + line2;
+        sendGithubSyncLogLine(line);
+    }
     drawStatusScreenFrame(title, line1, line2);
 }
 
@@ -4671,7 +4723,11 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
         u8g2_for_adafruit_gfx.setForegroundColor(BLACK);
         u8g2_for_adafruit_gfx.setBackgroundColor(WHITE);
         u8g2_for_adafruit_gfx.setFont(Typewriter_16px);
-        printCleanText(u8g2_for_adafruit_gfx, String(FIRMWARE_VERSION), 25, (display.height() / displayScale) - 20);
+        int versionY = (display.height() / displayScale) - 20;
+        if (releaseUpdateAvailable && releaseUpdateNotice.length() > 0) {
+            printCleanText(u8g2_for_adafruit_gfx, releaseUpdateNotice, 25, versionY - 24);
+        }
+        printCleanText(u8g2_for_adafruit_gfx, String(FIRMWARE_VERSION), 25, versionY);
 
 
         printDualFont("=== DOCUMENTS ===", 245, 30, true);
