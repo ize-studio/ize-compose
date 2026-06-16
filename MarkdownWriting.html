@@ -501,7 +501,7 @@
           if ((!active || rowIndex === rows.length - 1) && top !== null) {
             const segment = document.createElement("div");
             segment.className = "outline-segment";
-            segment.style.left = `calc(6px + ${rail * 0.85}ch)`;
+            segment.style.left = `calc(6px + ${(rail + 0.5) * 0.85}ch)`;
             segment.style.top = `${top}px`;
             segment.style.height = `${bottom - top}px`;
             layer.append(segment);
