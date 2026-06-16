@@ -17,6 +17,7 @@
       --row-height: calc(1.55em + 4px);
       --outline-width: 34%;
       --marker-width: 2ch;
+      --rail-step: 0.85ch;
     }
 
     * { box-sizing: border-box; }
@@ -101,21 +102,20 @@
       flex: 1 1 auto;
       overflow: auto;
       min-width: 560px;
-      background: linear-gradient(90deg, var(--panel) 0 var(--outline-width), var(--paper) var(--outline-width) 100%);
+      background:
+        linear-gradient(90deg, var(--panel) 0 var(--outline-width), var(--paper) var(--outline-width) 100%);
     }
 
     .row {
       display: grid;
       grid-template-columns: var(--outline-width) var(--marker-width) minmax(0, 1fr);
       align-items: start;
-      border-bottom: 1px solid rgba(215,208,194,.45);
-      height: var(--row-height);
       min-height: var(--row-height);
       overflow: visible;
     }
 
     .row.active .left {
-      background: #e4dccb;
+      background-color: #e4dccb;
     }
 
     .row.active textarea.cell {
@@ -131,35 +131,36 @@
     .left {
       position: relative;
       z-index: 2;
-      align-self: start;
+      align-self: stretch;
+      height: 100%;
       min-height: var(--row-height);
+      padding-left: 6px;
+      padding-right: 8px;
       background: transparent;
       border-right: 1px solid var(--line);
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
       overflow: visible;
     }
 
-    .outline-heading {
-      font-weight: 700;
+    .outline-layer {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: var(--outline-width);
+      pointer-events: none;
+      z-index: 3;
     }
 
-    .outline-h1 {
-      font-size: 1.18em;
+    .outline-segment {
+      position: absolute;
+      width: 1px;
+      background: rgba(31,31,31,.34);
     }
 
-    .outline-h2 {
-      font-size: 1.1em;
-    }
-
-    .outline-h3 {
-      font-size: 1.04em;
-    }
-
-    .outline-h4,
-    .outline-h5,
-    .outline-h6 {
-      font-size: 1em;
+    .outline-text {
+      display: block;
+      min-width: 0;
+      padding-left: var(--outline-indent);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     .marker {
@@ -168,6 +169,7 @@
       min-height: var(--row-height);
       background: var(--paper);
       border-right: 1px solid rgba(215,208,194,.55);
+      border-bottom: 1px solid rgba(215,208,194,.45);
       overflow: hidden;
     }
 
@@ -177,6 +179,7 @@
       min-width: 0;
       min-height: var(--row-height);
       background: transparent;
+      border-bottom: 1px solid rgba(215,208,194,.45);
       overflow: hidden;
     }
 
@@ -184,7 +187,6 @@
       width: 100%;
       max-width: 100%;
       min-width: 0;
-      height: var(--row-height);
       min-height: var(--row-height);
       border: 0;
       outline: 0;
@@ -199,6 +201,7 @@
     }
 
     textarea.cell.marker-cell {
+      height: var(--row-height);
       padding-right: 0;
       padding-left: 0;
       text-align: center;
@@ -270,7 +273,8 @@
       }
 
       .sheet {
-        background: linear-gradient(90deg, var(--panel) 0 42%, var(--paper) 42% 100%);
+        background:
+          linear-gradient(90deg, var(--panel) 0 42%, var(--paper) 42% 100%);
       }
     }
   </style>
@@ -349,26 +353,24 @@
       return parseProjection(line) ? "#" : "";
     }
 
-    function getOutline(line) {
-      const projection = parseProjection(line);
-      return projection ? `${projection.marks} ${projection.outline}` : " ";
+    function getOutlineViews() {
+      let activeLevel = 0;
+
+      return lines.map((line) => {
+        const projection = parseProjection(line);
+        if (projection) activeLevel = projection.level;
+
+        return {
+          text: projection ? projection.outline : " ",
+          level: activeLevel
+        };
+      });
     }
 
-    function getOutlineView(line) {
-      const outline = getOutline(line);
-      const heading = outline.match(/^(#{1,6})\s+(.+)$/);
-
-      if (heading) {
-        return {
-          text: heading[2],
-          className: `outline-heading outline-h${heading[1].length}`
-        };
-      }
-
-      return {
-        text: outline,
-        className: ""
-      };
+    function renderOutline(outline) {
+      return outline.text.trim()
+        ? `<span class="outline-text">${escapeHtml(outline.text)}</span>`
+        : "<span class=\"outline-text blank\">.</span>";
     }
 
     function makeRawNewLine(value) {
@@ -425,28 +427,40 @@
       editor.selectionStart = editor.selectionEnd = position;
     }
 
-    function refreshOutlines() {
+    function resizeEditor(editor) {
+      if (!editor || editor.dataset.role !== "body") return;
+      editor.style.height = "var(--row-height)";
+      editor.style.height = `${Math.max(editor.scrollHeight, editor.clientHeight)}px`;
+    }
+
+    function resizeEditors() {
+      sheet.querySelectorAll('textarea[data-role="body"]').forEach(resizeEditor);
+    }
+
+    function refreshOutlines(outlineViews = getOutlineViews()) {
       sheet.querySelectorAll(".left").forEach((cell, index) => {
-        const outline = getOutlineView(lines[index] || "");
-        cell.className = `cell left${outline.className ? ` ${outline.className}` : ""}`;
-        cell.innerHTML = outline.text.trim() ? escapeHtml(outline.text) : "<span class=\"blank\">.</span>";
+        const outline = outlineViews[index] || { text: " ", level: 0 };
+        cell.className = "cell left";
+        cell.style.setProperty("--outline-indent", `${outline.level * 0.85}ch`);
+        cell.innerHTML = renderOutline(outline);
       });
       lineCount.textContent = `${lines.length} ${lines.length === 1 ? "line" : "lines"}`;
       fileName.textContent = openedName || "Untitled";
     }
 
     function render(shouldFocus = false) {
-      sheet.innerHTML = lines.map((line, index) => {
+      const outlineViews = getOutlineViews();
+      const rows = lines.map((line, index) => {
         const active = index === activeLine ? " active" : "";
-        const outline = getOutlineView(line);
+        const outline = outlineViews[index] || { text: " ", level: 0 };
         const marker = getMarker(line);
         const rightLine = getRightLine(line);
-        const safeOutline = outline.text.trim() ? escapeHtml(outline.text) : "<span class=\"blank\">.</span>";
-        const outlineClass = outline.className ? ` ${outline.className}` : "";
+        const safeOutline = renderOutline(outline);
+        const outlineIndent = `${outline.level * 0.85}ch`;
 
         return `
           <div class="row${active}" data-index="${index}">
-            <div class="cell left${outlineClass}">${safeOutline}</div>
+            <div class="cell left" style="--outline-indent: ${outlineIndent};">${safeOutline}</div>
             <div class="marker">
               <textarea class="cell marker-cell" rows="1" spellcheck="false" data-role="marker" data-index="${index}">${escapeHtml(marker)}</textarea>
             </div>
@@ -457,8 +471,45 @@
         `;
       }).join("");
 
-      refreshOutlines();
+      sheet.innerHTML = `<div class="outline-layer" aria-hidden="true"></div>${rows}`;
+
+      refreshOutlines(outlineViews);
       setActiveLine(activeLine, shouldFocus);
+      resizeEditors();
+      updateOutlineLayer(outlineViews);
+    }
+
+    function updateOutlineLayer(outlineViews = getOutlineViews()) {
+      const layer = sheet.querySelector(".outline-layer");
+      if (!layer) return;
+
+      layer.innerHTML = "";
+      const rows = Array.from(sheet.querySelectorAll(".row"));
+      const maxLevel = Math.max(0, ...outlineViews.map((outline) => outline.level || 0));
+
+      for (let rail = 0; rail < maxLevel; rail += 1) {
+        let top = null;
+        let bottom = null;
+
+        rows.forEach((row, rowIndex) => {
+          const outline = outlineViews[Number(row.dataset.index)] || { level: 0 };
+          const active = outline.level > rail;
+
+          if (active && top === null) top = row.offsetTop;
+          if (active) bottom = row.offsetTop + row.offsetHeight;
+
+          if ((!active || rowIndex === rows.length - 1) && top !== null) {
+            const segment = document.createElement("div");
+            segment.className = "outline-segment";
+            segment.style.left = `calc(6px + ${rail * 0.85}ch)`;
+            segment.style.top = `${top}px`;
+            segment.style.height = `${bottom - top}px`;
+            layer.append(segment);
+            top = null;
+            bottom = null;
+          }
+        });
+      }
     }
 
     function replaceLine(index, value) {
@@ -472,7 +523,10 @@
       }
 
       setActiveLine(index, false);
-      refreshOutlines();
+      const outlineViews = getOutlineViews();
+      refreshOutlines(outlineViews);
+      resizeEditor(sheet.querySelector(`textarea[data-role="body"][data-index="${index}"]`));
+      updateOutlineLayer(outlineViews);
     }
 
     function replaceMarker(index, value) {
@@ -486,7 +540,9 @@
       }
 
       setActiveLine(index, false);
-      refreshOutlines();
+      const outlineViews = getOutlineViews();
+      refreshOutlines(outlineViews);
+      updateOutlineLayer(outlineViews);
     }
 
     function insertLine(index, offset) {
@@ -537,6 +593,8 @@
       }
 
       replaceLine(index, editor.value);
+      resizeEditor(editor);
+      updateOutlineLayer();
     });
 
     sheet.addEventListener("keydown", (event) => {
@@ -661,6 +719,8 @@
       link.click();
       URL.revokeObjectURL(url);
     });
+
+    window.addEventListener("resize", () => updateOutlineLayer());
 
     render();
   </script>
