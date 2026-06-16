@@ -1,0 +1,1703 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ize Compose Inkplate Emulator</title>
+  <style>
+    :root {
+      --paper: #f3f1e7;
+      --ink: #151515;
+      --panel: #20242a;
+      --panel-2: #2d333b;
+      --line: #9a978b;
+      --accent: #0f766e;
+      --warn: #b45309;
+      --bg: #d8d2c3;
+      --key: #f8f7f1;
+      --eink-shadow: rgba(20, 20, 20, 0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .device-area {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .device-shell {
+      width: min(100%, 1060px);
+      padding: 22px 24px 28px;
+      border-radius: 14px 14px 22px 22px;
+      background:
+        radial-gradient(circle at 20% 12%, rgba(255,255,255,0.08) 0 1px, transparent 1px 8px),
+        linear-gradient(135deg, #17191b, #08090a 58%, #1c1f21);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+    }
+
+    .top-lid {
+      padding: 28px 42px 34px;
+      border-radius: 12px;
+      background:
+        repeating-linear-gradient(35deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 6px),
+        linear-gradient(145deg, #202326, #08090a);
+      border: 1px solid #30343a;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.03);
+    }
+
+    .brand-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 6px 12px;
+      color: #c9c7bc;
+      font-size: 12px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .screen-frame {
+      position: relative;
+      border: 2px solid #070808;
+      background: #0d0e0f;
+      padding: 14px;
+      border-radius: 8px;
+      box-shadow:
+        inset 0 0 18px rgba(0, 0, 0, 0.85),
+        0 8px 16px rgba(0, 0, 0, 0.35);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      image-rendering: pixelated;
+      background: #ecebe2;
+    }
+
+    .screen-frame::after {
+      content: "";
+      pointer-events: none;
+      position: absolute;
+      inset: 14px;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(0,0,0,0.06), transparent 34%),
+        linear-gradient(90deg, rgba(255,255,255,0.08), rgba(0,0,0,0.05));
+      mix-blend-mode: multiply;
+      opacity: 0.45;
+    }
+
+    .hinge {
+      width: 74%;
+      height: 22px;
+      margin: 0 auto;
+      border-radius: 0 0 18px 18px;
+      background: linear-gradient(#070809, #24272a 48%, #090a0b);
+      box-shadow: inset 0 -5px 10px rgba(255,255,255,0.05);
+    }
+
+    .keyboard-deck {
+      margin-top: 0;
+      padding: 24px 18px 12px;
+      border-radius: 12px 12px 18px 18px;
+      background: linear-gradient(180deg, #111315, #060708);
+      border: 1px solid #25282d;
+    }
+
+    .keyboard {
+      display: grid;
+      gap: 8px;
+    }
+
+    .key-row {
+      display: grid;
+      grid-template-columns: repeat(15, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    .key-row.offset-half {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .key {
+      min-width: 0;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #bdb7a7;
+      background: linear-gradient(180deg, #fffdf5, #ded8c9);
+      border-radius: 6px;
+      box-shadow:
+        inset 0 4px 4px rgba(255,255,255,0.8),
+        inset 0 -5px 6px rgba(120,110,90,0.22),
+        0 4px 0 #7f7768,
+        0 6px 8px rgba(0,0,0,0.4);
+      font-size: 12px;
+      color: #151515;
+      line-height: 1;
+      user-select: none;
+    }
+
+    .key.black {
+      background: linear-gradient(180deg, #25282d, #070809);
+      border-color: #2b3036;
+      color: #d9dde2;
+      box-shadow:
+        inset 0 3px 4px rgba(255,255,255,0.08),
+        inset 0 -4px 6px rgba(0,0,0,0.65),
+        0 4px 0 #020303,
+        0 6px 8px rgba(0,0,0,0.5);
+    }
+
+    .key:hover {
+      background: linear-gradient(180deg, #ffffff, #e8e1d3);
+    }
+
+    .key:active,
+    .key.active {
+      transform: translateY(3px);
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,0.55),
+        inset 0 -2px 5px rgba(120,110,90,0.25),
+        0 1px 0 #7f7768,
+        0 2px 4px rgba(0,0,0,0.35);
+    }
+
+    .key.wide {
+      grid-column: span 2;
+    }
+
+    .key.three-wide {
+      grid-column: span 3;
+    }
+
+    .key.extra-wide {
+      grid-column: span 5;
+    }
+
+    .key.spacebar {
+      grid-column: span 6;
+    }
+
+    .key.dark {
+      background: linear-gradient(180deg, #34383d, #17191c);
+      border-color: #555b63;
+      color: #f3f1e7;
+      box-shadow:
+        inset 0 3px 4px rgba(255,255,255,0.12),
+        inset 0 -4px 6px rgba(0,0,0,0.45),
+        0 4px 0 #050607,
+        0 6px 8px rgba(0,0,0,0.45);
+    }
+
+    .deck-label {
+      margin-top: 12px;
+      color: #9d9b91;
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .side {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--panel);
+      color: #f4f4f4;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    h1, h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 13px;
+      color: #d7e1df;
+      margin-bottom: 10px;
+    }
+
+    .meta {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .metric {
+      padding: 8px;
+      background: var(--panel-2);
+      border-radius: 6px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 15px;
+      margin-top: 3px;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    button {
+      min-height: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: #f6f3e7;
+      color: #111;
+      border-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #fffaf0;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    button.warn {
+      background: var(--warn);
+      color: white;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    label {
+      font-size: 12px;
+      color: #d7e1df;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: #12161a;
+      color: #fff;
+      border-radius: 6px;
+      padding: 8px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .docs {
+      display: grid;
+      gap: 6px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .doc {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      background: var(--panel-2);
+      border-radius: 6px;
+      border: 1px solid transparent;
+    }
+
+    .doc.active {
+      border-color: var(--accent);
+    }
+
+    .doc-name {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .doc-preview {
+      font-size: 11px;
+      color: #c8c8c8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hint {
+      margin: 8px 0 0;
+      color: #d8d8d8;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .status {
+      min-height: 20px;
+      color: #e8e3d8;
+      font-size: 12px;
+    }
+
+    .web-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 10;
+    }
+
+    .web-modal.open {
+      display: flex;
+    }
+
+    .web-page {
+      width: min(960px, 100%);
+      max-height: 88vh;
+      overflow: auto;
+      background: #f7f5ed;
+      color: #151515;
+      border-radius: 8px;
+      box-shadow: 0 24px 90px rgba(0,0,0,0.42);
+      border: 1px solid #c7c1b3;
+    }
+
+    .web-header {
+      position: sticky;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #1f2428;
+      color: #fff;
+      z-index: 1;
+    }
+
+    .web-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px 0;
+    }
+
+    .web-tabs button {
+      background: #e9e5d8;
+      border-color: #cfc8b8;
+    }
+
+    .web-tabs button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .web-section {
+      display: none;
+      padding: 16px;
+    }
+
+    .web-section.active {
+      display: block;
+    }
+
+    .web-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .web-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 10px;
+      align-items: center;
+      margin: 10px 0;
+    }
+
+    .web-doc-row {
+      display: grid;
+      grid-template-columns: 150px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #ddd6c6;
+    }
+
+    .web-page input,
+    .web-page textarea,
+    .web-page select {
+      background: #fffdf7;
+      color: #151515;
+      border: 1px solid #bdb6a8;
+    }
+
+    @media (max-width: 980px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .side {
+        order: -1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="device-area" aria-label="Inkplate emulator">
+      <div class="device-shell">
+        <div class="top-lid">
+          <div class="brand-strip">
+            <span>Zerowriter Ink</span>
+            <span>Inkplate 5V2</span>
+          </div>
+          <div class="screen-frame">
+            <canvas id="screen" width="800" height="600" tabindex="0" aria-label="Inkplate 5V2 screen"></canvas>
+          </div>
+        </div>
+        <div class="hinge"></div>
+        <div class="keyboard-deck">
+          <div class="keyboard" aria-label="Clickable Zerowriter keyboard">
+            <div class="key-row">
+              <button class="key" data-key="`">~<br>`</button>
+              <button class="key" data-key="1">!<br>1</button>
+              <button class="key" data-key="2">@<br>2</button>
+              <button class="key" data-key="3">#<br>3</button>
+              <button class="key" data-key="4">$<br>4</button>
+              <button class="key" data-key="5">%<br>5</button>
+              <button class="key" data-key="6">^<br>6</button>
+              <button class="key" data-key="7">&amp;<br>7</button>
+              <button class="key" data-key="8">*<br>8</button>
+              <button class="key" data-key="9">(<br>9</button>
+              <button class="key" data-key="0">)<br>0</button>
+              <button class="key" data-key="-">_<br>-</button>
+              <button class="key" data-key="=">+<br>=</button>
+              <button class="key wide" data-key="Backspace">BACKSPACE</button>
+            </div>
+            <div class="key-row offset-half">
+              <button class="key wide" data-key="Tab">TAB</button>
+              <button class="key black" data-key="q">Q</button>
+              <button class="key black" data-key="w">W</button>
+              <button class="key black" data-key="e">E</button>
+              <button class="key black" data-key="r">R</button>
+              <button class="key black" data-key="t">T</button>
+              <button class="key black" data-key="y">Y</button>
+              <button class="key black" data-key="u">U</button>
+              <button class="key black" data-key="i">I</button>
+              <button class="key black" data-key="o">O</button>
+              <button class="key black" data-key="p">P</button>
+              <button class="key" data-key="[">[</button>
+              <button class="key" data-key="]">]</button>
+              <button class="key wide" data-key="Backslash">|<br>\</button>
+            </div>
+            <div class="key-row offset-half">
+              <button class="key wide" data-modifier="caps">CAPS LOCK</button>
+              <button class="key black" data-key="a">A</button>
+              <button class="key black" data-key="s">S</button>
+              <button class="key black" data-key="d">D</button>
+              <button class="key black" data-key="f">F</button>
+              <button class="key black" data-key="g">G</button>
+              <button class="key black" data-key="h">H</button>
+              <button class="key black" data-key="j">J</button>
+              <button class="key black" data-key="k">K</button>
+              <button class="key black" data-key="l">L</button>
+              <button class="key" data-key=";">;</button>
+              <button class="key" data-key="'">'</button>
+              <button class="key wide" data-key="Enter">RETURN</button>
+            </div>
+            <div class="key-row">
+              <button class="key wide" data-modifier="shift">SHIFT</button>
+              <button class="key black" data-key="z">Z</button>
+              <button class="key black" data-key="x">X</button>
+              <button class="key black" data-key="c">C</button>
+              <button class="key black" data-key="v">V</button>
+              <button class="key black" data-key="b">B</button>
+              <button class="key black" data-key="n">N</button>
+              <button class="key black" data-key="m">M</button>
+              <button class="key" data-key=",">,</button>
+              <button class="key" data-key=".">.</button>
+              <button class="key" data-key="/">/</button>
+              <button class="key three-wide" data-modifier="shift">SHIFT</button>
+            </div>
+            <div class="key-row">
+              <button class="key" data-modifier="ctrl">CTRL</button>
+              <button class="key" data-modifier="alt">ALT</button>
+              <button class="key" data-key="Escape">MENU</button>
+              <button class="key spacebar" data-key=" "> </button>
+              <button class="key" data-key="ArrowLeft">LEFT</button>
+              <button class="key" data-key="ArrowUp">UP</button>
+              <button class="key" data-key="ArrowDown">DOWN</button>
+              <button class="key" data-key="ArrowRight">RIGHT</button>
+            </div>
+          </div>
+          <div class="deck-label">Click keys to drive the same menu and typing paths as the physical keyboard.</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <h1>Ize Compose Emulator</h1>
+        <p class="hint">Click the Inkplate screen, then type. Use Esc for Menu, Enter to choose, arrows to move, Ctrl+F for search, Ctrl+L for sleep.</p>
+        <div class="meta">
+          <div class="metric">Mode<strong id="modeMetric">Typing</strong></div>
+          <div class="metric">Document<strong id="docMetric">doc0001.txt</strong></div>
+          <div class="metric">Chars<strong id="charMetric">0</strong></div>
+          <div class="metric">Words<strong id="wordMetric">0</strong></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Actions</h2>
+        <div class="toolbar">
+          <button id="menuBtn">Menu</button>
+          <button id="saveBtn" class="primary">Save</button>
+          <button id="sleepBtn">Sleep</button>
+          <button id="newBtn">New</button>
+          <button id="searchBtn">Search</button>
+          <button id="resetBtn" class="warn">Reset</button>
+          <button id="openWebBtn">Web</button>
+        </div>
+        <p class="hint" id="message">Ready.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Settings</h2>
+        <div class="field">
+          <label for="fontSize">Text size</label>
+          <input id="fontSize" type="range" min="12" max="26" value="16">
+        </div>
+        <div class="field">
+          <label for="lineSpace">Line space</label>
+          <input id="lineSpace" type="range" min="0" max="12" value="2">
+        </div>
+        <div class="field">
+          <label for="language">Language</label>
+          <select id="language">
+          </select>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Documents</h2>
+        <div id="docs" class="docs"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Import Text</h2>
+        <textarea id="importText" placeholder="Paste text here, then load it into the emulator."></textarea>
+        <div class="toolbar" style="grid-template-columns: 1fr 1fr; margin-top: 8px;">
+          <button id="loadTextBtn">Load</button>
+          <button id="appendTextBtn">Append</button>
+        </div>
+        <div class="status" id="statusLine"></div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="webModal" class="web-modal" aria-hidden="true">
+    <div class="web-page" role="dialog" aria-label="Ize Compose simulated web interface">
+      <div class="web-header">
+        <strong>Ize Compose Web Interface</strong>
+        <button id="closeWebBtn">Close</button>
+      </div>
+      <div class="web-tabs">
+        <button id="webDocsTab" class="active">Documents</button>
+        <button id="webSettingsTab">Settings & Update</button>
+        <button id="webGithubTab">GitHub Sync</button>
+      </div>
+      <section id="webDocs" class="web-section active">
+        <div class="web-row">
+          <label for="webPin">PIN</label>
+          <input id="webPin" inputmode="numeric" placeholder="Shown on device screen">
+        </div>
+        <div id="webDocList"></div>
+        <div class="web-row">
+          <label for="webUploadText">Upload text</label>
+          <textarea id="webUploadText" placeholder="Text saved as next docNNNN.txt"></textarea>
+        </div>
+        <button id="webUploadBtn" class="primary">Upload Text File</button>
+      </section>
+      <section id="webSettings" class="web-section">
+        <div class="web-grid">
+          <div class="web-row">
+            <label for="webSleep">Sleep Timer</label>
+            <select id="webSleep">
+              <option>30s</option><option>1m</option><option selected>5m</option><option>10m</option><option>30m</option><option>1h</option><option>OFF</option>
+            </select>
+          </div>
+          <div class="web-row">
+            <label for="webTextSize">Text Size</label>
+            <input id="webTextSize" type="range" min="12" max="26">
+          </div>
+          <div class="web-row">
+            <label for="webLineSpace">Line Space</label>
+            <input id="webLineSpace" type="range" min="0" max="12">
+          </div>
+          <div class="web-row">
+            <label for="webRefresh">Refresh</label>
+            <input id="webRefresh" type="number" value="2000">
+          </div>
+        </div>
+        <button id="webSaveSettingsBtn" class="primary">Save</button>
+        <button id="webOnlineUpdateBtn">Online Update</button>
+      </section>
+      <section id="webGithub" class="web-section">
+        <div class="web-grid">
+          <div class="web-row"><label for="ghOwner">Owner</label><input id="ghOwner" placeholder="ize-studio"></div>
+          <div class="web-row"><label for="ghRepo">Repository</label><input id="ghRepo" placeholder="private-writing-backup"></div>
+          <div class="web-row"><label for="ghBranch">Branch</label><input id="ghBranch" value="main"></div>
+          <div class="web-row"><label for="ghPath">Document path</label><input id="ghPath" value="documents"></div>
+        </div>
+        <div class="web-row"><label for="ghToken">Token</label><input id="ghToken" type="password" placeholder="github_pat_..."></div>
+        <button id="webSaveGithubBtn" class="primary">Save GitHub Settings</button>
+      </section>
+    </div>
+  </div>
+
+  <script src="keyboard-layouts.js"></script>
+  <script src="key-engine.js"></script>
+  <script>
+    const STORAGE_KEY = "ize-compose-emulator-state-v1";
+    const screen = document.getElementById("screen");
+    const ctx = screen.getContext("2d");
+
+    const ui = {
+      modeMetric: document.getElementById("modeMetric"),
+      docMetric: document.getElementById("docMetric"),
+      charMetric: document.getElementById("charMetric"),
+      wordMetric: document.getElementById("wordMetric"),
+      docs: document.getElementById("docs"),
+      message: document.getElementById("message"),
+      statusLine: document.getElementById("statusLine"),
+      fontSize: document.getElementById("fontSize"),
+      lineSpace: document.getElementById("lineSpace"),
+      language: document.getElementById("language"),
+      importText: document.getElementById("importText"),
+      webModal: document.getElementById("webModal"),
+      webDocList: document.getElementById("webDocList"),
+      webTextSize: document.getElementById("webTextSize"),
+      webLineSpace: document.getElementById("webLineSpace")
+    };
+
+    const menuItems = ["Sync", "New", "Save", "Count", "Sleep", "Network"];
+
+    let state = loadState();
+    let blink = true;
+    let hangulEngine = null;
+    let typingTimer = null;
+    const virtualModifiers = {
+      ctrl: false,
+      shift: false,
+      alt: false,
+      caps: false
+    };
+
+    function defaultState() {
+      return {
+        mode: "typing",
+        text: "",
+        cursor: 0,
+        currentFileName: "doc0001.txt",
+        docs: [{ name: "doc0001.txt", text: "" }],
+        menuIndex: 0,
+        countMode: 2,
+        language: "KB_QWERTY",
+        fontSize: 16,
+        lineSpace: 2,
+        searchQuery: "",
+        searchMatchStart: -1,
+        networkMode: "Off",
+        webPin: "0000",
+        wifiSsid: "Ize Studio",
+        wifiIp: "10.232.205.14",
+        apPassword: "0000000000",
+        githubOwner: "",
+        githubRepo: "",
+        githubBranch: "main",
+        githubPath: "documents",
+        githubTokenSet: false,
+        pendingText: "",
+        typingDelayMs: 45,
+        status: "Ready."
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaultState();
+        return { ...defaultState(), ...JSON.parse(raw) };
+      } catch {
+        return defaultState();
+      }
+    }
+
+    function persist() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function setStatus(text) {
+      state.status = text;
+      ui.message.textContent = text;
+      ui.statusLine.textContent = text;
+      persist();
+    }
+
+    function ensureEngines() {
+      if (!hangulEngine && window.IZE_KEY_ENGINE) {
+        hangulEngine = window.IZE_KEY_ENGINE.createHangulEngine({ insertText });
+      }
+    }
+
+    function keyboardData() {
+      return window.IZE_KEYBOARD_DATA || { layouts: [], maps: {} };
+    }
+
+    function activeLayout() {
+      const data = keyboardData();
+      return data.layouts.find((layout) => layout.id === state.language) ||
+        data.layouts.find((layout) => layout.id === "KB_QWERTY") ||
+        { id: "KB_QWERTY", name: "Qwerty" };
+    }
+
+    function activeLayoutName() {
+      return activeLayout().name || activeLayout().id;
+    }
+
+    function isKoreanLayout() {
+      return state.language === "KB_KOREAN";
+    }
+
+    function isRtlLayout() {
+      return window.IZE_RTL_LAYOUTS && window.IZE_RTL_LAYOUTS.has(state.language);
+    }
+
+    function activeLayoutMap() {
+      const data = keyboardData();
+      return data.maps[state.language] || data.maps.KB_QWERTY || [];
+    }
+
+    function fillLanguageSelect() {
+      const data = keyboardData();
+      ui.language.innerHTML = "";
+      for (const layout of data.layouts) {
+        const option = document.createElement("option");
+        option.value = layout.id;
+        option.textContent = layout.name || layout.id;
+        ui.language.append(option);
+      }
+      if (!data.layouts.some((layout) => layout.id === state.language)) state.language = "KB_QWERTY";
+      ui.language.value = state.language;
+    }
+
+    function mapKeyboardText(key) {
+      if (key.length !== 1) return key;
+      const baseKey = key.length === 1 ? key.toLowerCase() : key;
+      const entry = activeLayoutMap().find((item) => item.key === baseKey);
+      if (!entry) return key;
+      const useShift = virtualModifiers.shift || (virtualModifiers.caps && /[a-z]/.test(baseKey));
+      const value = virtualModifiers.alt
+        ? (useShift ? entry.altShift : entry.alt)
+        : (useShift ? entry.shift : entry.normal);
+      return value == null ? "" : value;
+    }
+
+    function processMappedText(text) {
+      if (!window.IZE_KEY_ENGINE || !window.IZE_KEY_ENGINE.processMappedText) return text;
+      return window.IZE_KEY_ENGINE.processMappedText(state.language, text);
+    }
+
+    function insertMappedText(text) {
+      if (!text) return;
+      if (window.IZE_KEY_ENGINE && state.language === "KB_ETHIOPIC") {
+        const changed = window.IZE_KEY_ENGINE.applyEthiopicVowel(state.text, text);
+        if (changed != null) {
+          state.text = changed;
+          state.cursor = state.text.length;
+          persist();
+          render();
+          return;
+        }
+      }
+      const processed = processMappedText(text);
+      if (window.IZE_KEY_ENGINE && window.IZE_KEY_ENGINE.needsDotted(state.language, state.text.slice(0, state.cursor), processed)) {
+        insertText("◌" + processed);
+      } else {
+        insertText(processed);
+      }
+    }
+
+    function activeDoc() {
+      let doc = state.docs.find((entry) => entry.name === state.currentFileName);
+      if (!doc) {
+        doc = { name: state.currentFileName, text: state.text };
+        state.docs.push(doc);
+      }
+      return doc;
+    }
+
+    function saveDoc() {
+      activeDoc().text = state.text;
+      setStatus("Saved " + state.currentFileName + ".");
+      renderDocs();
+      render();
+    }
+
+    function generatePin() {
+      state.webPin = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+      return state.webPin;
+    }
+
+    function openWebInterface(mode) {
+      if (mode) state.networkMode = mode;
+      if (state.networkMode === "Off") state.networkMode = "WebServer";
+      generatePin();
+      renderWebInterface();
+      ui.webModal.classList.add("open");
+      ui.webModal.setAttribute("aria-hidden", "false");
+      setStatus(state.networkMode + " web interface ready.");
+      render();
+    }
+
+    function closeWebInterface() {
+      ui.webModal.classList.remove("open");
+      ui.webModal.setAttribute("aria-hidden", "true");
+      screen.focus();
+    }
+
+    function renderWebInterface() {
+      ui.webTextSize.value = state.fontSize;
+      ui.webLineSpace.value = state.lineSpace;
+      document.getElementById("webPin").value = "";
+      document.getElementById("ghOwner").value = state.githubOwner;
+      document.getElementById("ghRepo").value = state.githubRepo;
+      document.getElementById("ghBranch").value = state.githubBranch;
+      document.getElementById("ghPath").value = state.githubPath;
+      ui.webDocList.innerHTML = "";
+      for (const doc of state.docs.slice(0, 12)) {
+        const row = document.createElement("div");
+        row.className = "web-doc-row";
+        const name = document.createElement("strong");
+        name.textContent = doc.name;
+        const preview = document.createElement("span");
+        preview.textContent = doc.text.replace(/\s+/g, " ").slice(0, 90) || "Empty document";
+        const open = document.createElement("button");
+        open.textContent = "Open";
+        open.addEventListener("click", () => loadDoc(doc.name));
+        row.append(name, preview, open);
+        ui.webDocList.append(row);
+      }
+    }
+
+    function showWebTab(id) {
+      for (const section of ["webDocs", "webSettings", "webGithub"]) {
+        document.getElementById(section).classList.toggle("active", section === id);
+      }
+      document.getElementById("webDocsTab").classList.toggle("active", id === "webDocs");
+      document.getElementById("webSettingsTab").classList.toggle("active", id === "webSettings");
+      document.getElementById("webGithubTab").classList.toggle("active", id === "webGithub");
+    }
+
+    function nextDocName() {
+      let max = 0;
+      for (const doc of state.docs) {
+        const match = /^doc(\d{4})\.txt$/.exec(doc.name);
+        if (match) max = Math.max(max, Number(match[1]));
+      }
+      return "doc" + String(max + 1).padStart(4, "0") + ".txt";
+    }
+
+    function newDoc() {
+      saveDoc();
+      state.currentFileName = nextDocName();
+      state.text = "";
+      state.cursor = 0;
+      state.docs.unshift({ name: state.currentFileName, text: "" });
+      state.mode = "typing";
+      setStatus("Created " + state.currentFileName + ".");
+      renderDocs();
+      render();
+    }
+
+    function loadDoc(name) {
+      saveDoc();
+      const doc = state.docs.find((entry) => entry.name === name);
+      if (!doc) return;
+      state.currentFileName = doc.name;
+      state.text = doc.text;
+      state.cursor = state.text.length;
+      state.mode = "typing";
+      setStatus("Loaded " + doc.name + ".");
+      renderDocs();
+      render();
+      screen.focus();
+    }
+
+    function deleteDoc(name) {
+      if (state.docs.length <= 1) {
+        setStatus("Cannot delete the last document.");
+        return;
+      }
+      state.docs = state.docs.filter((entry) => entry.name !== name);
+      if (state.currentFileName === name) {
+        const doc = state.docs[0];
+        state.currentFileName = doc.name;
+        state.text = doc.text;
+        state.cursor = Math.min(state.cursor, state.text.length);
+      }
+      setStatus("Deleted " + name + ".");
+      renderDocs();
+      render();
+    }
+
+    function insertText(text) {
+      state.text = state.text.slice(0, state.cursor) + text + state.text.slice(state.cursor);
+      state.cursor += text.length;
+      state.searchMatchStart = -1;
+      persist();
+      render();
+    }
+
+    function queueText(text) {
+      if (!text) return;
+      state.pendingText += text;
+      persist();
+      render();
+      if (typingTimer) return;
+      typingTimer = setInterval(() => {
+        if (!state.pendingText) {
+          clearInterval(typingTimer);
+          typingTimer = null;
+          return;
+        }
+        const chars = Array.from(state.pendingText);
+        const next = chars.shift();
+        state.pendingText = chars.join("");
+        insertText(next);
+      }, state.typingDelayMs);
+    }
+
+    function commitComposition() {
+      if (hangulEngine) hangulEngine.flush();
+    }
+
+    function backspace() {
+      if (isKoreanLayout() && hangulEngine && hangulEngine.backspace()) {
+        persist();
+        render();
+        return;
+      }
+      if (state.cursor <= 0) return;
+      const before = Array.from(state.text.slice(0, state.cursor));
+      const removed = before.pop() || "";
+      const newStart = before.join("");
+      state.text = newStart + state.text.slice(state.cursor);
+      state.cursor -= removed.length;
+      state.searchMatchStart = -1;
+      persist();
+      render();
+    }
+
+    function moveCursor(delta) {
+      const chars = Array.from(state.text);
+      let charIndex = Array.from(state.text.slice(0, state.cursor)).length;
+      charIndex = Math.max(0, Math.min(chars.length, charIndex + delta));
+      state.cursor = chars.slice(0, charIndex).join("").length;
+      persist();
+      render();
+    }
+
+    function toggleMenu() {
+      state.mode = state.mode === "menu" ? "typing" : "menu";
+      persist();
+      render();
+      screen.focus();
+    }
+
+    function enterSleep() {
+      saveDoc();
+      state.mode = "sleep";
+      setStatus("Sleep screen.");
+      render();
+    }
+
+    function wake() {
+      state.mode = "typing";
+      setStatus("Awake.");
+      render();
+    }
+
+    function startSearch() {
+      state.mode = "search";
+      state.searchQuery = "";
+      state.searchMatchStart = -1;
+      setStatus("Search mode.");
+      render();
+      screen.focus();
+    }
+
+    function searchNext() {
+      if (!state.searchQuery) return;
+      const from = state.searchMatchStart >= 0 ? state.searchMatchStart + state.searchQuery.length : state.cursor;
+      let idx = state.text.toLowerCase().indexOf(state.searchQuery.toLowerCase(), from);
+      if (idx < 0) idx = state.text.toLowerCase().indexOf(state.searchQuery.toLowerCase(), 0);
+      state.searchMatchStart = idx;
+      if (idx >= 0) {
+        state.cursor = idx + state.searchQuery.length;
+        setStatus("Found: " + state.searchQuery + ".");
+      } else {
+        setStatus("No match: " + state.searchQuery + ".");
+      }
+      render();
+    }
+
+    function runMenuAction() {
+      const item = menuItems[state.menuIndex];
+      if (item === "Sync") {
+        setStatus("Sync simulated. No network call was made.");
+      } else if (item === "New") {
+        newDoc();
+        return;
+      } else if (item === "Save") {
+        saveDoc();
+      } else if (item === "Count") {
+        state.countMode = (state.countMode + 1) % 3;
+        setStatus("Count mode: " + ["Chars", "Words", "Off"][state.countMode] + ".");
+      } else if (item === "Sleep") {
+        enterSleep();
+        return;
+      } else if (item === "Network") {
+        const modes = ["Off", "WiFi", "WebServer"];
+        const next = (modes.indexOf(state.networkMode) + 1) % modes.length;
+        state.networkMode = modes[next];
+        setStatus("Network mode: " + state.networkMode + ".");
+        if (state.networkMode !== "Off") openWebInterface(state.networkMode);
+      }
+      persist();
+      render();
+    }
+
+    function wordCount(text) {
+      return text.trim() ? text.trim().split(/\s+/).length : 0;
+    }
+
+    function wrapText(text, maxWidth) {
+      const logicalLines = text.split("\n");
+      const lines = [];
+      for (const logical of logicalLines) {
+        let line = "";
+        for (const ch of Array.from(logical)) {
+          const next = line + ch;
+          if (ctx.measureText(next).width > maxWidth && line) {
+            lines.push(line);
+            line = ch;
+          } else {
+            line = next;
+          }
+        }
+        lines.push(line);
+      }
+      return lines;
+    }
+
+    function cursorLayoutFor(text, cursor, maxWidth) {
+      const before = text.slice(0, cursor);
+      const beforeLines = wrapText(before, maxWidth);
+      const row = Math.max(0, beforeLines.length - 1);
+      const colText = beforeLines[row] || "";
+      return { row, x: ctx.measureText(colText).width };
+    }
+
+    function cursorLayout(lines, maxWidth) {
+      return cursorLayoutFor(state.text, state.cursor, maxWidth);
+    }
+
+    function clearPaper() {
+      ctx.fillStyle = "#ecebe2";
+      ctx.fillRect(0, 0, 800, 600);
+      ctx.strokeStyle = "rgba(0,0,0,0.055)";
+      for (let y = 0; y < 600; y += 3) {
+        ctx.beginPath();
+        ctx.moveTo(0, y + 0.5);
+        ctx.lineTo(800, y + 0.5);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(0,0,0,0.035)";
+      for (let x = 0; x < 800; x += 19) ctx.fillRect(x, 0, 1, 600);
+    }
+
+    function drawStatusBar() {
+      ctx.fillStyle = "#f3f1e7";
+      ctx.fillRect(0, 0, 800, 78);
+      ctx.fillStyle = "#151515";
+      ctx.font = "24px Arial, Helvetica, sans-serif";
+      const mode = activeLayoutName();
+      const countText = state.countMode === 0 ? "Count: " + Array.from(state.text).length :
+        state.countMode === 1 ? "Words: " + wordCount(state.text) : "";
+      ctx.fillText(mode, 30, 42);
+      if (countText) ctx.fillText(countText, 220, 42);
+      ctx.textAlign = "center";
+      ctx.fillText(state.currentFileName, 400, 42);
+      ctx.textAlign = "right";
+      ctx.fillText("86%", 760, 42);
+      ctx.textAlign = "left";
+      ctx.beginPath();
+      ctx.moveTo(0, 78);
+      ctx.lineTo(800, 78);
+      ctx.strokeStyle = "#151515";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+
+    function drawTyping() {
+      clearPaper();
+      drawStatusBar();
+      ctx.fillStyle = "#151515";
+      ctx.font = state.fontSize * 2 + "px Arial, Helvetica, sans-serif";
+      const marginX = 30;
+      const lineHeight = (state.fontSize + state.lineSpace) * 2;
+      const top = 126;
+      const maxWidth = 740;
+      const composing = isKoreanLayout() && hangulEngine ? hangulEngine.composingText() : "";
+      const renderText = state.text.slice(0, state.cursor) + composing + state.text.slice(state.cursor);
+      const lines = wrapText(renderText, maxWidth);
+      const visibleLines = Math.floor((560 - top) / lineHeight);
+      const cursorInfo = cursorLayoutFor(renderText, state.cursor + composing.length, maxWidth);
+      const firstLine = Math.max(0, cursorInfo.row - visibleLines + 1);
+      const visible = lines.slice(firstLine, firstLine + visibleLines);
+
+      for (let i = 0; i < visible.length; i++) {
+        const line = visible[i] || " ";
+        ctx.fillStyle = "rgba(0,0,0,0.10)";
+        ctx.fillText(line, isRtlLayout() ? marginX + maxWidth - 1 : marginX + 1, top + i * lineHeight + 1);
+        ctx.fillStyle = "#151515";
+        if (isRtlLayout()) {
+          ctx.textAlign = "right";
+          ctx.direction = "rtl";
+          ctx.fillText(line, marginX + maxWidth, top + i * lineHeight);
+          ctx.direction = "ltr";
+          ctx.textAlign = "left";
+        } else {
+          ctx.fillText(line, marginX, top + i * lineHeight);
+        }
+      }
+
+      if (state.pendingText) {
+        ctx.fillStyle = "rgba(20,20,20,0.28)";
+        ctx.font = "18px Arial, Helvetica, sans-serif";
+        ctx.fillText("buffering " + Math.min(Array.from(state.pendingText).length, 99) + " chars", 30, 580);
+      }
+
+      if (state.networkMode !== "Off") {
+        ctx.fillStyle = "rgba(0,0,0,0.72)";
+        ctx.fillRect(54, 180, 692, 176);
+        ctx.fillStyle = "#ecebe2";
+        ctx.font = "30px Arial, Helvetica, sans-serif";
+        ctx.fillText(state.networkMode === "WiFi" ? "Wi-Fi Web Server" : "Web Server", 86, 228);
+        ctx.font = "22px Arial, Helvetica, sans-serif";
+        const address = state.networkMode === "WiFi" ? "http://" + state.wifiIp + "/" : "http://192.168.4.1/";
+        ctx.fillText("Open: " + address, 86, 270);
+        ctx.fillText("PIN: " + state.webPin, 86, 304);
+        ctx.fillText(state.githubOwner && state.githubRepo ? "GitHub: " + state.githubOwner + "/" + state.githubRepo : "GitHub repo not set", 86, 338);
+      }
+
+      if (state.searchMatchStart >= 0) {
+        drawSearchHighlight(firstLine, lineHeight, top, marginX, maxWidth);
+      }
+
+      if (blink) {
+        const row = cursorInfo.row - firstLine;
+        if (row >= 0 && row < visibleLines) {
+          const lineText = visible[row] || "";
+          const lineWidth = ctx.measureText(lineText).width;
+          const x = isRtlLayout()
+            ? marginX + maxWidth - lineWidth + cursorInfo.x
+            : marginX + cursorInfo.x;
+          const y = top + row * lineHeight + 8;
+          ctx.fillRect(x, y, 22, 6);
+        }
+      }
+    }
+
+    function drawSearchHighlight(firstLine, lineHeight, top, marginX, maxWidth) {
+      const before = state.text.slice(0, state.searchMatchStart);
+      const match = state.text.slice(state.searchMatchStart, state.searchMatchStart + state.searchQuery.length);
+      const beforeLines = wrapText(before, maxWidth);
+      const row = beforeLines.length - 1;
+      const linePrefix = beforeLines[row] || "";
+      const screenRow = row - firstLine;
+      if (screenRow < 0) return;
+      const x = marginX + ctx.measureText(linePrefix).width;
+      const y = top + screenRow * lineHeight - lineHeight + 10;
+      const w = Math.max(14, ctx.measureText(match).width);
+      ctx.fillStyle = "#151515";
+      ctx.fillRect(x, y, w, lineHeight);
+      ctx.fillStyle = "#f3f1e7";
+      ctx.fillText(match, x, top + screenRow * lineHeight);
+      ctx.fillStyle = "#151515";
+    }
+
+    function drawMenu() {
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      ctx.font = "32px Arial, Helvetica, sans-serif";
+      ctx.fillText("Ize Compose", 50, 58);
+      ctx.font = "24px Arial, Helvetica, sans-serif";
+      ctx.fillText(activeLayoutName(), 50, 96);
+      ctx.font = "28px Arial, Helvetica, sans-serif";
+      for (let i = 0; i < menuItems.length; i++) {
+        const y = 154 + i * 46;
+        if (i === state.menuIndex) {
+          ctx.fillStyle = "#151515";
+          ctx.fillRect(42, y - 31, 238, 38);
+          ctx.fillStyle = "#f3f1e7";
+        } else {
+          ctx.fillStyle = "#151515";
+        }
+        const suffix = menuItems[i] === "Count" ? " < " + ["Chars", "Words", "Off"][state.countMode] + " >" :
+          menuItems[i] === "Network" ? " < " + state.networkMode + " >" : "";
+        ctx.fillText(menuItems[i] + suffix, 58, y);
+      }
+      ctx.fillStyle = "#151515";
+      ctx.font = "22px Arial, Helvetica, sans-serif";
+      ctx.fillText("=== DOCUMENTS ===", 330, 58);
+      const docs = state.docs.slice(0, 12);
+      for (let i = 0; i < docs.length; i++) {
+        const doc = docs[i];
+        const y = 96 + i * 34;
+        if (doc.name === state.currentFileName) {
+          ctx.fillRect(322, y - 22, 430, 28);
+          ctx.fillStyle = "#f3f1e7";
+        }
+        const preview = doc.text.replace(/\s+/g, " ").slice(0, 32);
+        ctx.fillText(doc.name + "  " + preview, 334, y);
+        ctx.fillStyle = "#151515";
+      }
+      ctx.font = "18px Arial, Helvetica, sans-serif";
+      ctx.fillText("Esc: close  Enter: select  Arrows: move", 50, 568);
+    }
+
+    function drawSearch() {
+      drawTyping();
+      ctx.fillStyle = "#151515";
+      ctx.fillRect(160, 252, 480, 96);
+      ctx.fillStyle = "#f3f1e7";
+      ctx.fillRect(168, 260, 464, 80);
+      ctx.strokeStyle = "#151515";
+      ctx.strokeRect(168, 260, 464, 80);
+      ctx.fillStyle = "#151515";
+      ctx.font = "28px Arial, Helvetica, sans-serif";
+      ctx.fillText("Search: " + state.searchQuery + "_", 188, 312);
+    }
+
+    function drawSleep() {
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      ctx.font = "44px Georgia, Times New Roman, serif";
+      ctx.fillText("Ize Compose", 248, 260);
+      ctx.font = "24px Arial, Helvetica, sans-serif";
+      ctx.fillText("Sleep", 368, 308);
+      ctx.font = "18px Arial, Helvetica, sans-serif";
+      ctx.fillText("Press any key to wake", 318, 352);
+    }
+
+    function render() {
+      if (state.mode === "menu") drawMenu();
+      else if (state.mode === "search") drawSearch();
+      else if (state.mode === "sleep") drawSleep();
+      else drawTyping();
+
+      ui.modeMetric.textContent = state.mode[0].toUpperCase() + state.mode.slice(1);
+      ui.docMetric.textContent = state.currentFileName;
+      ui.charMetric.textContent = Array.from(state.text).length;
+      ui.wordMetric.textContent = wordCount(state.text);
+      ui.fontSize.value = state.fontSize;
+      ui.lineSpace.value = state.lineSpace;
+      ui.language.value = state.language;
+      ui.message.textContent = state.status;
+      ui.statusLine.textContent = state.status;
+      persist();
+    }
+
+    function renderDocs() {
+      ui.docs.innerHTML = "";
+      for (const doc of state.docs) {
+        const row = document.createElement("div");
+        row.className = "doc" + (doc.name === state.currentFileName ? " active" : "");
+        const text = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "doc-name";
+        name.textContent = doc.name;
+        const preview = document.createElement("div");
+        preview.className = "doc-preview";
+        preview.textContent = doc.text.replace(/\s+/g, " ").slice(0, 80) || "Empty document";
+        text.append(name, preview);
+        const actions = document.createElement("div");
+        const open = document.createElement("button");
+        open.textContent = "Open";
+        open.addEventListener("click", () => loadDoc(doc.name));
+        const del = document.createElement("button");
+        del.textContent = "Del";
+        del.className = "warn";
+        del.addEventListener("click", () => deleteDoc(doc.name));
+        actions.append(open, del);
+        row.append(text, actions);
+        ui.docs.append(row);
+      }
+    }
+
+    function updateVirtualModifierKeys() {
+      document.querySelectorAll("[data-modifier]").forEach((button) => {
+        const modifier = button.dataset.modifier;
+        button.classList.toggle("active", Boolean(virtualModifiers[modifier]));
+      });
+    }
+
+    function clearMomentaryModifiers() {
+      virtualModifiers.ctrl = false;
+      virtualModifiers.shift = false;
+      virtualModifiers.alt = false;
+      updateVirtualModifierKeys();
+    }
+
+    function virtualEvent(key, options = {}) {
+      return {
+        key,
+        ctrlKey: Boolean(options.ctrlKey),
+        altKey: Boolean(options.altKey),
+        metaKey: false,
+        preventDefault() {}
+      };
+    }
+
+    function applyShiftToKey(key) {
+      if (key.length !== 1) return key;
+      const shifted = {
+        "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
+        "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+        "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|",
+        ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?"
+      };
+      if (/[a-z]/.test(key)) return key.toUpperCase();
+      return shifted[key] || key;
+    }
+
+    function routeKey(key, options = {}) {
+      const event = virtualEvent(key, options);
+      if (state.mode === "sleep") {
+        wake();
+      } else if (state.mode === "menu") {
+        handleMenuKey(event);
+      } else if (state.mode === "search") {
+        handleSearchKey(event);
+      } else {
+        handleTypingKey(event);
+      }
+    }
+
+    function pressVirtualKey(button) {
+      if (button.dataset.modifier) {
+        const modifier = button.dataset.modifier;
+        virtualModifiers[modifier] = !virtualModifiers[modifier];
+        if (modifier === "caps") {
+          setStatus("Caps Lock " + (virtualModifiers.caps ? "on" : "off") + ".");
+        }
+        updateVirtualModifierKeys();
+        screen.focus();
+        return;
+      }
+
+      if (button.dataset.combo) {
+        const combo = button.dataset.combo;
+        if (combo === "ctrl+f") routeKey("f", { ctrlKey: true });
+        else if (combo === "ctrl+l") routeKey("l", { ctrlKey: true });
+        else if (combo === "ctrl+space") routeKey(" ", { ctrlKey: true });
+        clearMomentaryModifiers();
+        screen.focus();
+        return;
+      }
+
+      let key = button.dataset.key || "";
+      if (key === "Backslash") key = "\\";
+      if (key === "Tab") key = "\t";
+      if (!(isKoreanLayout() && key.length === 1) && key.length === 1) key = mapKeyboardText(key);
+      routeKey(key, { ctrlKey: virtualModifiers.ctrl, altKey: virtualModifiers.alt });
+      clearMomentaryModifiers();
+      screen.focus();
+    }
+
+    function handleTypingKey(event) {
+      if (event.ctrlKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        commitComposition();
+        startSearch();
+        return;
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === "l") {
+        event.preventDefault();
+        commitComposition();
+        enterSleep();
+        return;
+      }
+      if (event.ctrlKey && event.key === " ") {
+        event.preventDefault();
+        state.language = state.language === "KB_QWERTY" ? "KB_KOREAN" : "KB_QWERTY";
+        setStatus("Language: " + activeLayoutName() + ".");
+        render();
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        insertText("    ");
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        commitComposition();
+        toggleMenu();
+        return;
+      }
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        backspace();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitComposition();
+        insertText("\n");
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveCursor(-1);
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveCursor(1);
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        state.cursor = 0;
+        render();
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        state.cursor = state.text.length;
+        render();
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && event.key.length === 1) {
+        event.preventDefault();
+        if (isKoreanLayout() && hangulEngine) hangulEngine.process(event.key);
+        else insertMappedText(event.key);
+      }
+    }
+
+    function handleMenuKey(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        state.mode = "typing";
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        state.menuIndex = Math.max(0, state.menuIndex - 1);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        state.menuIndex = Math.min(menuItems.length - 1, state.menuIndex + 1);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        runMenuAction();
+        return;
+      }
+      render();
+    }
+
+    function handleSearchKey(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        state.mode = "typing";
+        render();
+        return;
+      }
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        state.searchQuery = state.searchQuery.slice(0, -1);
+        state.searchMatchStart = -1;
+        render();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        searchNext();
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && event.key.length === 1) {
+        event.preventDefault();
+        state.searchQuery += event.key;
+        state.searchMatchStart = -1;
+        render();
+      }
+    }
+
+    screen.addEventListener("keydown", (event) => {
+      if (state.mode === "sleep") {
+        event.preventDefault();
+        wake();
+        return;
+      }
+      if (state.mode === "menu") handleMenuKey(event);
+      else if (state.mode === "search") handleSearchKey(event);
+      else handleTypingKey(event);
+    });
+
+    document.querySelectorAll(".keyboard .key").forEach((button) => {
+      button.addEventListener("click", () => pressVirtualKey(button));
+    });
+
+    screen.addEventListener("paste", (event) => {
+      const text = event.clipboardData.getData("text");
+      if (text) {
+        event.preventDefault();
+        queueText(text);
+      }
+    });
+
+    document.getElementById("menuBtn").addEventListener("click", toggleMenu);
+    document.getElementById("saveBtn").addEventListener("click", saveDoc);
+    document.getElementById("sleepBtn").addEventListener("click", enterSleep);
+    document.getElementById("newBtn").addEventListener("click", newDoc);
+    document.getElementById("searchBtn").addEventListener("click", startSearch);
+    document.getElementById("openWebBtn").addEventListener("click", () => openWebInterface(state.networkMode === "Off" ? "WebServer" : state.networkMode));
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      state = defaultState();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      renderDocs();
+      render();
+      screen.focus();
+    });
+
+    document.getElementById("closeWebBtn").addEventListener("click", closeWebInterface);
+    document.getElementById("webDocsTab").addEventListener("click", () => showWebTab("webDocs"));
+    document.getElementById("webSettingsTab").addEventListener("click", () => showWebTab("webSettings"));
+    document.getElementById("webGithubTab").addEventListener("click", () => showWebTab("webGithub"));
+    document.getElementById("webUploadBtn").addEventListener("click", () => {
+      const pin = document.getElementById("webPin").value.trim();
+      if (pin !== state.webPin) {
+        setStatus("Wrong PIN.");
+        return;
+      }
+      const text = document.getElementById("webUploadText").value;
+      if (!text) return;
+      const name = nextDocName();
+      state.docs.unshift({ name, text });
+      document.getElementById("webUploadText").value = "";
+      setStatus("Uploaded " + name + ".");
+      renderDocs();
+      renderWebInterface();
+    });
+    document.getElementById("webSaveSettingsBtn").addEventListener("click", () => {
+      state.fontSize = Number(ui.webTextSize.value);
+      state.lineSpace = Number(ui.webLineSpace.value);
+      setStatus("Settings saved from web interface.");
+      render();
+    });
+    document.getElementById("webOnlineUpdateBtn").addEventListener("click", () => {
+      setStatus("Online update simulated. Firmware is unchanged.");
+      render();
+    });
+    document.getElementById("webSaveGithubBtn").addEventListener("click", () => {
+      state.githubOwner = document.getElementById("ghOwner").value.trim();
+      state.githubRepo = document.getElementById("ghRepo").value.trim();
+      state.githubBranch = document.getElementById("ghBranch").value.trim() || "main";
+      state.githubPath = document.getElementById("ghPath").value.trim() || "documents";
+      state.githubTokenSet = document.getElementById("ghToken").value.length > 0 || state.githubTokenSet;
+      document.getElementById("ghToken").value = "";
+      setStatus("GitHub settings saved.");
+      render();
+    });
+
+    document.getElementById("loadTextBtn").addEventListener("click", () => {
+      state.text = ui.importText.value;
+      state.cursor = state.text.length;
+      setStatus("Loaded text into screen.");
+      render();
+      screen.focus();
+    });
+
+    document.getElementById("appendTextBtn").addEventListener("click", () => {
+      queueText(ui.importText.value);
+      setStatus("Appended text.");
+      screen.focus();
+    });
+
+    ui.fontSize.addEventListener("input", () => {
+      state.fontSize = Number(ui.fontSize.value);
+      render();
+    });
+
+    ui.lineSpace.addEventListener("input", () => {
+      state.lineSpace = Number(ui.lineSpace.value);
+      render();
+    });
+
+    ui.language.addEventListener("change", () => {
+      commitComposition();
+      state.language = ui.language.value;
+      if (hangulEngine) hangulEngine.clear();
+      setStatus("Language: " + activeLayoutName() + ".");
+      render();
+      screen.focus();
+    });
+
+    setInterval(() => {
+      blink = !blink;
+      render();
+    }, 600);
+
+    fillLanguageSelect();
+    ensureEngines();
+    renderDocs();
+    render();
+    screen.focus();
+  </script>
+</body>
+</html>
