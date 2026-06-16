@@ -194,7 +194,8 @@
       background: var(--paper);
       display: block;
       overflow: hidden;
-      white-space: pre;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     textarea.cell.marker-cell {
@@ -209,12 +210,40 @@
     }
 
     .footer {
-      position: fixed;
-      right: 10px;
-      bottom: 8px;
+      border-top: 1px solid var(--line);
+      background: #ebe5d8;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 8px 16px 10px;
+    }
+
+    .status {
       display: flex;
       gap: 8px;
       align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .help {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+    }
+
+    .help span {
+      white-space: nowrap;
+    }
+
+    .help code {
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .float-status {
+      position: fixed;
+      right: 10px;
+      bottom: 8px;
       font-size: 12px;
       color: var(--muted);
       background: rgba(251,246,234,.94);
@@ -251,7 +280,6 @@
     <div class="topbar">
       <div>
         <h1>Ize One-Line Projection</h1>
-        <div class="desc">Edit the body on the right. Bracketed Markdown projections appear in the outline on the left.</div>
       </div>
       <div class="actions">
         <label class="file-button" for="fileInput">Open</label>
@@ -264,8 +292,16 @@
   <main id="sheet" class="sheet" aria-label="Document editor"></main>
 
   <div class="footer">
-    <span id="fileName">Untitled</span>
-    <span id="lineCount">1 line</span>
+    <div class="status">
+      <span id="fileName">Untitled</span>
+      <span id="lineCount">1 line</span>
+    </div>
+    <div class="help">
+      <span>Write body text on the right.</span>
+      <span>Use <code>#[Title]#</code>, <code>##[Section]#</code>, or <code>###[Subsection]#</code> at the start of a line.</span>
+      <span>Only line-start projection syntax appears in the left outline.</span>
+      <span>Plain Markdown such as <code># Title</code> stays in the body.</span>
+    </div>
   </div>
 
   <script>
@@ -292,23 +328,21 @@
     }
 
     function parseProjection(line) {
-      const match = line.match(/^(\s*)(#{1,6})\[([^\]]+)\]#(.*)$/);
+      const match = line.match(/^(#{1,6})\[([^\]]+)\]#(.*)$/);
       if (!match) return null;
 
       return {
-        before: match[1],
-        marks: match[2],
-        outline: match[3],
-        after: match[4],
-        markerIndex: match[1].length,
-        level: match[2].length
+        marks: match[1],
+        outline: match[2],
+        after: match[3],
+        level: match[1].length
       };
     }
 
     function getRightLine(line) {
       const projection = parseProjection(line);
       if (!projection) return line;
-      return `${projection.before}${projection.after}`;
+      return projection.after;
     }
 
     function getMarker(line) {
@@ -349,10 +383,7 @@
 
       if (!projection) return makeRawNewLine(visible);
 
-      const splitAt = Math.min(projection.markerIndex, visible.length);
-      const before = visible.slice(0, splitAt);
-      const after = visible.slice(splitAt);
-      return `${before}${projection.marks}[${projection.outline}]#${after}`;
+      return `${projection.marks}[${projection.outline}]#${visible}`;
     }
 
     function makeRawFromMarker(index, markerValue) {
@@ -361,10 +392,10 @@
       if (!projection) return oldLine;
 
       if (markerValue.includes("#")) {
-        return `${projection.before}${projection.marks}[${projection.outline}]#${projection.after}`;
+        return `${projection.marks}[${projection.outline}]#${projection.after}`;
       }
 
-      return `${projection.before}${projection.marks}[${projection.outline}]${projection.after}`;
+      return `${projection.marks}[${projection.outline}]${projection.after}`;
     }
 
     function setActiveLine(index, shouldFocus = true) {
