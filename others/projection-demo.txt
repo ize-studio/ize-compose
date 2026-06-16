@@ -1,0 +1,7 @@
+#[Project Notes]#
+This plain line stays in the body column.
+##[A Long Section Title That Wraps In The Outline Column]#The body starts here and remains on one visual row.
+###[Implementation Details]#The center marker keeps the projection active.
+### Regular Markdown Without Brackets
+This regular Markdown heading is not projected because it has no brackets.
+####[Small Heading]#Delete the center marker to reveal the raw Markdown projection.

@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ize One-Line Projection</title>
+  <style>
+    :root {
+      --bg: #f4f1e9;
+      --paper: #fffdf7;
+      --panel: #eee7d8;
+      --ink: #1f1f1f;
+      --muted: #6b6b6b;
+      --line: #d7d0c2;
+      --focus: rgba(0,0,0,.08);
+      --control: #fbf6ea;
+      --row-height: calc(1.55em + 4px);
+      --outline-width: 34%;
+      --marker-width: 2ch;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "D2Coding", "Noto Sans Mono CJK KR", monospace;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #ebe5d8;
+    }
+
+    .topbar {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+
+    button,
+    .file-button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--control);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      padding: 7px 9px;
+      white-space: nowrap;
+    }
+
+    button:hover,
+    .file-button:hover {
+      background: #fffaf0;
+    }
+
+    input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      clip-path: inset(50%);
+    }
+
+    .sheet {
+      position: relative;
+      flex: 1 1 auto;
+      overflow: auto;
+      min-width: 560px;
+      background: linear-gradient(90deg, var(--panel) 0 var(--outline-width), var(--paper) var(--outline-width) 100%);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: var(--outline-width) var(--marker-width) minmax(0, 1fr);
+      align-items: start;
+      border-bottom: 1px solid rgba(215,208,194,.45);
+      height: var(--row-height);
+      min-height: var(--row-height);
+      overflow: visible;
+    }
+
+    .row.active .left {
+      background: #e4dccb;
+    }
+
+    .row.active textarea.cell {
+      background: #fbf4e7;
+    }
+
+    .cell {
+      padding: 2px 12px;
+      line-height: 1.55;
+      min-height: var(--row-height);
+    }
+
+    .left {
+      position: relative;
+      z-index: 2;
+      align-self: start;
+      min-height: var(--row-height);
+      background: transparent;
+      border-right: 1px solid var(--line);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      overflow: visible;
+    }
+
+    .outline-heading {
+      font-weight: 700;
+    }
+
+    .outline-h1 {
+      font-size: 1.18em;
+    }
+
+    .outline-h2 {
+      font-size: 1.1em;
+    }
+
+    .outline-h3 {
+      font-size: 1.04em;
+    }
+
+    .outline-h4,
+    .outline-h5,
+    .outline-h6 {
+      font-size: 1em;
+    }
+
+    .marker {
+      position: relative;
+      z-index: 1;
+      min-height: var(--row-height);
+      background: var(--paper);
+      border-right: 1px solid rgba(215,208,194,.55);
+      overflow: hidden;
+    }
+
+    .right {
+      position: relative;
+      z-index: 1;
+      min-height: var(--row-height);
+      background: transparent;
+      overflow: hidden;
+    }
+
+    textarea.cell {
+      width: 100%;
+      height: var(--row-height);
+      min-height: var(--row-height);
+      border: 0;
+      outline: 0;
+      resize: none;
+      color: var(--ink);
+      font: inherit;
+      background: var(--paper);
+      display: block;
+      overflow: hidden;
+      white-space: pre;
+    }
+
+    textarea.cell.marker-cell {
+      padding-right: 0;
+      padding-left: 0;
+      text-align: center;
+    }
+
+    .blank {
+      color: transparent;
+      user-select: none;
+    }
+
+    .footer {
+      position: fixed;
+      right: 10px;
+      bottom: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(251,246,234,.94);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+
+    @media (max-width: 680px) {
+      .topbar {
+        display: block;
+      }
+
+      .actions {
+        margin-top: 10px;
+      }
+
+      .sheet {
+        min-width: 0;
+      }
+
+      .row {
+        grid-template-columns: minmax(128px, 42%) var(--marker-width) minmax(0, 1fr);
+      }
+
+      .sheet {
+        background: linear-gradient(90deg, var(--panel) 0 42%, var(--paper) 42% 100%);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>Ize One-Line Projection</h1>
+        <div class="desc">Edit the body on the right. Bracketed Markdown projections appear in the outline on the left.</div>
+      </div>
+      <div class="actions">
+        <label class="file-button" for="fileInput">Open</label>
+        <input id="fileInput" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown">
+        <button id="downloadButton" type="button">Export</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="sheet" class="sheet" aria-label="Document editor"></main>
+
+  <div class="footer">
+    <span id="fileName">Untitled</span>
+    <span id="lineCount">1 line</span>
+  </div>
+
+  <script>
+    const sheet = document.querySelector("#sheet");
+    const fileInput = document.querySelector("#fileInput");
+    const downloadButton = document.querySelector("#downloadButton");
+    const fileName = document.querySelector("#fileName");
+    const lineCount = document.querySelector("#lineCount");
+
+    let lines = [""];
+    let activeLine = 0;
+    let openedName = "Untitled";
+
+    function escapeHtml(value) {
+      return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function getText() {
+      return lines.join("\n");
+    }
+
+    function parseProjection(line) {
+      const match = line.match(/^(\s*)(#{1,6})\[([^\]]+)\]#(.*)$/);
+      if (!match) return null;
+
+      return {
+        before: match[1],
+        marks: match[2],
+        outline: match[3],
+        after: match[4],
+        markerIndex: match[1].length,
+        level: match[2].length
+      };
+    }
+
+    function getRightLine(line) {
+      const projection = parseProjection(line);
+      if (!projection) return line;
+      return `${projection.before}${projection.after}`;
+    }
+
+    function getMarker(line) {
+      return parseProjection(line) ? "#" : "";
+    }
+
+    function getOutline(line) {
+      const projection = parseProjection(line);
+      return projection ? `${projection.marks} ${projection.outline}` : " ";
+    }
+
+    function getOutlineView(line) {
+      const outline = getOutline(line);
+      const heading = outline.match(/^(#{1,6})\s+(.+)$/);
+
+      if (heading) {
+        return {
+          text: heading[2],
+          className: `outline-heading outline-h${heading[1].length}`
+        };
+      }
+
+      return {
+        text: outline,
+        className: ""
+      };
+    }
+
+    function makeRawNewLine(value) {
+      const line = value.replaceAll("\r", "");
+      return line;
+    }
+
+    function makeRawLine(index, rightValue) {
+      const oldLine = lines[index] || "";
+      const projection = parseProjection(oldLine);
+      const visible = rightValue.replaceAll("\r", "");
+
+      if (!projection) return makeRawNewLine(visible);
+
+      const splitAt = Math.min(projection.markerIndex, visible.length);
+      const before = visible.slice(0, splitAt);
+      const after = visible.slice(splitAt);
+      return `${before}${projection.marks}[${projection.outline}]#${after}`;
+    }
+
+    function makeRawFromMarker(index, markerValue) {
+      const oldLine = lines[index] || "";
+      const projection = parseProjection(oldLine);
+      if (!projection) return oldLine;
+
+      if (markerValue.includes("#")) {
+        return `${projection.before}${projection.marks}[${projection.outline}]#${projection.after}`;
+      }
+
+      return `${projection.before}${projection.marks}[${projection.outline}]${projection.after}`;
+    }
+
+    function setActiveLine(index, shouldFocus = true) {
+      activeLine = Math.max(0, Math.min(index, lines.length - 1));
+      sheet.querySelectorAll(".row").forEach((row) => {
+        row.classList.toggle("active", Number(row.dataset.index) === activeLine);
+      });
+
+      if (shouldFocus) {
+        const editor = sheet.querySelector(`textarea.editor[data-index="${activeLine}"]`);
+        if (editor) {
+          editor.focus();
+          editor.selectionStart = editor.selectionEnd = editor.value.length;
+        }
+      }
+    }
+
+    function focusCell(index, role, atEnd = false) {
+      activeLine = Math.max(0, Math.min(index, lines.length - 1));
+      setActiveLine(activeLine, false);
+
+      const editor = sheet.querySelector(`textarea[data-role="${role}"][data-index="${activeLine}"]`);
+      if (!editor) return;
+
+      editor.focus();
+      const position = atEnd ? editor.value.length : 0;
+      editor.selectionStart = editor.selectionEnd = position;
+    }
+
+    function refreshOutlines() {
+      sheet.querySelectorAll(".left").forEach((cell, index) => {
+        const outline = getOutlineView(lines[index] || "");
+        cell.className = `cell left${outline.className ? ` ${outline.className}` : ""}`;
+        cell.innerHTML = outline.text.trim() ? escapeHtml(outline.text) : "<span class=\"blank\">.</span>";
+      });
+      lineCount.textContent = `${lines.length} ${lines.length === 1 ? "line" : "lines"}`;
+      fileName.textContent = openedName || "Untitled";
+    }
+
+    function render(shouldFocus = false) {
+      sheet.innerHTML = lines.map((line, index) => {
+        const active = index === activeLine ? " active" : "";
+        const outline = getOutlineView(line);
+        const marker = getMarker(line);
+        const rightLine = getRightLine(line);
+        const safeOutline = outline.text.trim() ? escapeHtml(outline.text) : "<span class=\"blank\">.</span>";
+        const outlineClass = outline.className ? ` ${outline.className}` : "";
+
+        return `
+          <div class="row${active}" data-index="${index}">
+            <div class="cell left${outlineClass}">${safeOutline}</div>
+            <div class="marker">
+              <textarea class="cell marker-cell" rows="1" spellcheck="false" data-role="marker" data-index="${index}">${escapeHtml(marker)}</textarea>
+            </div>
+            <div class="right">
+              <textarea class="cell editor" rows="1" spellcheck="false" data-role="body" data-index="${index}">${escapeHtml(rightLine)}</textarea>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      refreshOutlines();
+      setActiveLine(activeLine, shouldFocus);
+    }
+
+    function replaceLine(index, value) {
+      const wasProjected = Boolean(parseProjection(lines[index] || ""));
+      lines[index] = makeRawLine(index, value);
+      const isProjected = Boolean(parseProjection(lines[index] || ""));
+
+      if (wasProjected !== isProjected) {
+        render(true);
+        return;
+      }
+
+      setActiveLine(index, false);
+      refreshOutlines();
+    }
+
+    function replaceMarker(index, value) {
+      const wasProjected = Boolean(parseProjection(lines[index] || ""));
+      lines[index] = makeRawFromMarker(index, value);
+      const isProjected = Boolean(parseProjection(lines[index] || ""));
+
+      if (wasProjected !== isProjected) {
+        render(true);
+        return;
+      }
+
+      setActiveLine(index, false);
+      refreshOutlines();
+    }
+
+    function insertLine(index, offset) {
+      lines.splice(index + offset, 0, "");
+      activeLine = index + offset;
+      render(true);
+    }
+
+    function removeLine(index) {
+      if (lines.length === 1) {
+        lines = [""];
+        activeLine = 0;
+      } else {
+        lines.splice(index, 1);
+        activeLine = Math.max(0, index - 1);
+      }
+      render(true);
+    }
+
+    sheet.addEventListener("focusin", (event) => {
+      const editor = event.target.closest("textarea");
+      if (!editor) return;
+      setActiveLine(Number(editor.dataset.index), false);
+    });
+
+    sheet.addEventListener("input", (event) => {
+      const editor = event.target.closest("textarea");
+      if (!editor) return;
+      const index = Number(editor.dataset.index);
+
+      if (editor.dataset.role === "marker") {
+        if (editor.value.includes("\n")) editor.value = editor.value.replaceAll("\n", "");
+        if (editor.value.includes("#")) editor.value = "#";
+        replaceMarker(index, editor.value);
+        return;
+      }
+
+      if (editor.value.includes("\n")) {
+        const insertedLines = editor.value.replaceAll("\r", "").split("\n");
+        insertedLines[0] = makeRawLine(index, insertedLines[0]);
+        for (let i = 1; i < insertedLines.length; i += 1) {
+          insertedLines[i] = makeRawNewLine(insertedLines[i]);
+        }
+        lines.splice(index, 1, ...insertedLines);
+        activeLine = index + insertedLines.length - 1;
+        render(true);
+        return;
+      }
+
+      replaceLine(index, editor.value);
+    });
+
+    sheet.addEventListener("keydown", (event) => {
+      const editor = event.target.closest("textarea");
+      if (!editor) return;
+
+      const index = Number(editor.dataset.index);
+      const role = editor.dataset.role;
+      const projection = parseProjection(lines[index] || "");
+
+      if (role === "marker") {
+        if (
+          event.key.length === 1 &&
+          event.key !== "#" &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault();
+          return;
+        }
+
+        if (event.key === "Backspace" || event.key === "Delete") {
+          event.preventDefault();
+          replaceMarker(index, "");
+          return;
+        }
+
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          focusCell(index, "body", false);
+          return;
+        }
+
+        if (event.key === "ArrowLeft" && index > 0) {
+          event.preventDefault();
+          focusCell(index - 1, "body", true);
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          insertLine(index, 1);
+          return;
+        }
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const before = editor.value.slice(0, editor.selectionStart);
+        const after = editor.value.slice(editor.selectionEnd);
+        lines[index] = makeRawLine(index, before);
+        lines.splice(index + 1, 0, after);
+        activeLine = index + 1;
+        render(true);
+      }
+
+      if (
+        role === "body" &&
+        event.key === "Backspace" &&
+        projection &&
+        editor.selectionStart === 0 &&
+        editor.selectionEnd === 0
+      ) {
+        event.preventDefault();
+        replaceMarker(index, "");
+        return;
+      }
+
+      if (role === "body" && event.key === "Backspace" && editor.value === "" && lines.length > 1) {
+        event.preventDefault();
+        removeLine(index);
+      }
+
+      if (
+        role === "body" &&
+        event.key === "ArrowLeft" &&
+        projection &&
+        editor.selectionStart === 0 &&
+        editor.selectionEnd === 0
+      ) {
+        event.preventDefault();
+        focusCell(index, "marker", true);
+        return;
+      }
+
+      if (event.key === "ArrowUp" && index > 0) {
+        event.preventDefault();
+        activeLine = index - 1;
+        focusCell(activeLine, role, true);
+      }
+
+      if (event.key === "ArrowDown" && index < lines.length - 1) {
+        event.preventDefault();
+        activeLine = index + 1;
+        focusCell(activeLine, role, true);
+      }
+
+      if (event.key === "o" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        insertLine(index, 1);
+      }
+    });
+
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      lines = (await file.text()).split("\n").map((line) => line.replace(/\r$/, ""));
+      openedName = file.name;
+      activeLine = 0;
+      fileInput.value = "";
+      render(true);
+    });
+
+    downloadButton.addEventListener("click", () => {
+      const blob = new Blob([getText()], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = openedName || "document.md";
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    render();
+  </script>
+</body>
+</html>
