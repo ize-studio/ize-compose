@@ -1316,7 +1316,7 @@
     const SCREEN_H = screen.height;
     const LOGICAL_SCREEN_H = SCREEN_H;
     const initialImage = new Image();
-    initialImage.src = "initial.png";
+    initialImage.src = "../others/initial.png";
 
     const ui = {
       modeMetric: document.getElementById("modeMetric"),
@@ -3401,7 +3401,7 @@
       ui.wordMetric.textContent = wordCount(state.text);
       ui.fontSize.value = state.fontSize;
       ui.lineSpace.value = state.lineSpace;
-      ui.language.value = selectedLanguageValue();
+      ui.language.value = selectedLanguageValue(state.settingsLanguage);
       ui.message.textContent = state.status;
       ui.statusLine.textContent = state.status;
       ui.powerSwitch.classList.toggle("on", state.powerOn);
