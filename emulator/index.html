@@ -1228,12 +1228,14 @@
     const menuItems = ["Sync", "New", "Save", "Count", "Sleep", "Network"];
     const networkModes = ["Off", "WiFi", "WebServer"];
     const UI_SCALE = 2;
-    const MARGIN_X = 24;
-    const MARGIN_Y = 24;
+    const MARGIN_X = 35;
+    const MARGIN_Y = 65;
     const STATUS_Y = 30;
-    const RIGHT_EDGE_MARGIN = 24;
-    const CANVAS_FONT_FAMILY = '"Noto Sans KR", "Noto Sans", Arial, sans-serif';
+    const RIGHT_EDGE_MARGIN = 35;
+    const CANVAS_FONT_FAMILY = '"Noto Sans Mono", "D2Coding", "Consolas", "Noto Sans KR", monospace';
+    const BASE_FONT_SIZE = 16;
     const DEFAULT_SCREEN_FONT_PX = 22;
+    const SCREEN_FONT = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
 
     let state = loadState();
     let githubSessionToken = "";
@@ -1597,6 +1599,10 @@
       return configuredLayout().name || configuredLayout().id;
     }
 
+    function configuredLanguageMenuLabel() {
+      return isEnglishLayout(state.settingsLanguage) ? "English" : configuredLayoutName();
+    }
+
     function isEnglishLayout(id = state.language) {
       return id === "KB_QWERTY" || id === "KB_DVORAK";
     }
@@ -1633,8 +1639,9 @@
 
     function statusLanguageLabel() {
       let label = activeLayoutName();
-      if (!isKoreanLayout() && isEnglishLayout()) {
-        label = virtualModifiers.caps ? "EN" : "en";
+      if (isEnglishLayout()) {
+        label = state.language === "KB_DVORAK" ? "Dvorak" : "Qwerty";
+        label = virtualModifiers.caps ? label.toUpperCase() : label.toLowerCase();
       }
       if (Array.from(label).length > 6) label = utf8LimitLabel(label, 4);
       return "[" + label + "]";
@@ -1758,10 +1765,8 @@
           throw error;
         }
       }
-      if (state.powerOn) {
-        setStatus("Saved " + state.currentFileName + ".");
-        if (showNotice) showSaveNotice();
-      }
+      setStatus("Saved " + state.currentFileName + ".");
+      if (showNotice) showSaveNotice();
       renderDocs();
       render();
     }
@@ -2519,7 +2524,7 @@
         let line = "";
         for (const ch of Array.from(logical)) {
           const next = line + ch;
-          if (ctx.measureText(next).width > maxWidth && line) {
+          if (firmwareTextWidth(next) > maxWidth && line) {
             lines.push(line);
             line = ch;
           } else {
@@ -2536,7 +2541,7 @@
       const beforeLines = wrapText(before, maxWidth);
       const row = Math.max(0, beforeLines.length - 1);
       const colText = beforeLines[row] || "";
-      return { row, x: ctx.measureText(colText).width };
+      return { row, x: firmwareTextWidth(colText) };
     }
 
     function cursorLayout(lines, maxWidth) {
@@ -2551,70 +2556,105 @@
     function drawStatusScreenFrame(title, line1, line2) {
       clearPaper();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px " + CANVAS_FONT_FAMILY;
-      ctx.fillText(title, 46, 86);
-      ctx.font = "24px " + CANVAS_FONT_FAMILY;
-      if (line1) ctx.fillText(line1, 46, 130);
-      if (line2) ctx.fillText(line2, 46, 166);
+      screenFont();
+      drawFirmwareText(title, MARGIN_X * UI_SCALE, (MARGIN_Y + 10) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
+      if (line1) drawFirmwareText(line1, MARGIN_X * UI_SCALE, (MARGIN_Y + 55) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
+      if (line2) drawFirmwareText(line2, MARGIN_X * UI_SCALE, (MARGIN_Y + 95) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
     }
 
-    const FIRMWARE_FONT_SCALE = DEFAULT_SCREEN_FONT_PX / 16;
-    const STATUS_FONT_PX = DEFAULT_SCREEN_FONT_PX;
-
-    function firmwareFontPx(size = state.fontSize) {
-      return Math.max(14, Math.min(34, Math.round(size * FIRMWARE_FONT_SCALE)));
+    function firmwareFontPx() {
+      return DEFAULT_SCREEN_FONT_PX;
     }
 
-    function firmwareFont(size = state.fontSize) {
-      ctx.font = firmwareFontPx(size) + "px " + CANVAS_FONT_FAMILY;
+    function screenFont() {
+      ctx.font = SCREEN_FONT;
       ctx.textAlign = "left";
       ctx.direction = "ltr";
+    }
+
+    function firmwareFont() {
+      screenFont();
     }
 
     function statusFont() {
-      ctx.font = STATUS_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-      ctx.textAlign = "left";
-      ctx.direction = "ltr";
+      screenFont();
+    }
+
+    function isZeroAdvanceCodePoint(cp) {
+      return cp === 0x200B || cp === 0x200C || cp === 0x200D || cp === 0xFEFF ||
+        (cp >= 0x0300 && cp <= 0x036F) ||
+        (cp >= 0x0591 && cp <= 0x05BD) || cp === 0x05BF ||
+        (cp >= 0x05C1 && cp <= 0x05C2) || (cp >= 0x05C4 && cp <= 0x05C5) || cp === 0x05C7 ||
+        (cp >= 0x064B && cp <= 0x065F) || cp === 0x0670 || (cp >= 0x06D6 && cp <= 0x06ED) ||
+        cp === 0x0E31 || (cp >= 0x0E34 && cp <= 0x0E3A) || (cp >= 0x0E47 && cp <= 0x0E4E);
+    }
+
+    function firmwareCharAdvance(ch, isMenu = false) {
+      const cp = ch.codePointAt(0) || 0;
+      if (isZeroAdvanceCodePoint(cp)) return 0;
+      const logicalWidth = cp < 0x3000 ? 8 : 16;
+      return (logicalWidth + (isMenu ? 1 : 0)) * UI_SCALE;
+    }
+
+    function firmwareTextWidth(text, isMenu = false) {
+      return Array.from(String(text || "")).reduce((sum, ch) => sum + firmwareCharAdvance(ch, isMenu), 0);
+    }
+
+    function drawFirmwareText(text, x, y, maxWidth = SCREEN_W, isMenu = false) {
+      screenFont();
+      let cx = x;
+      for (const ch of Array.from(String(text || ""))) {
+        const adv = firmwareCharAdvance(ch, isMenu);
+        if (cx + adv > x + maxWidth) break;
+        if (adv > 0) ctx.fillText(ch, cx, y);
+        cx += adv;
+      }
     }
 
     function fitTextToWidth(text, maxWidth) {
       const value = String(text || "");
-      if (ctx.measureText(value).width <= maxWidth) return value;
+      if (firmwareTextWidth(value, true) <= maxWidth) return value;
       const suffix = "..";
       let fitted = value;
-      while (fitted.length > 0 && ctx.measureText(fitted + suffix).width > maxWidth) {
-        fitted = fitted.slice(0, -1);
+      while (Array.from(fitted).length > 0 && firmwareTextWidth(fitted + suffix, true) > maxWidth) {
+        fitted = Array.from(fitted).slice(0, -1).join("");
       }
       return fitted ? fitted + suffix : suffix;
     }
 
     function drawFittedText(text, x, y, maxWidth) {
-      ctx.fillText(fitTextToWidth(text, maxWidth), x, y);
+      drawFirmwareText(fitTextToWidth(text, maxWidth), x, y, maxWidth, true);
     }
 
     function drawStatusBar() {
-      const hY = 30;
-      const barBottom = 40;
-      const modeX = 15 * 2;
-      const countX = 110 * 2;
-      const batteryX = 345 * 2;
-      const savedX = 267 * 2;
+      const hY = STATUS_Y * UI_SCALE;
+      const barBottom = 39 * UI_SCALE;
+      const logicalWidth = SCREEN_W / UI_SCALE;
+      const modeX = 15 * UI_SCALE;
+      const countX = 110 * UI_SCALE;
+      const batteryX = (logicalWidth - 55) * UI_SCALE;
+      const savedX = batteryX - 78 * UI_SCALE;
       const saveVisible = Date.now() < saveNoticeUntil;
       const countText = state.countMode === 0 ? "Count: " + Array.from(state.text).length :
         state.countMode === 1 ? "Words: " + wordCount(state.text) : "";
-      const titleLeft = countText ? 205 * 2 : 110 * 2;
-      const titleRight = (saveVisible ? savedX : batteryX) - 14;
-      const titleMax = Math.max(48, titleRight - titleLeft);
+      let titleText = state.currentFileName;
+      if (Array.from(titleText).length > 14) titleText = Array.from(titleText).slice(0, 12).join("") + "..";
+      const titleWidth = firmwareTextWidth(titleText, true);
+      const minTitleX = (110 + 95) * UI_SCALE;
+      const maxTitleX = savedX - titleWidth - 8 * UI_SCALE;
+      let titleX = (SCREEN_W - titleWidth) / 2;
+      if (titleX < minTitleX) titleX = minTitleX;
+      if (titleX > maxTitleX) titleX = maxTitleX;
 
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, SCREEN_W, barBottom + 1);
       ctx.fillStyle = "#151515";
       statusFont();
-      drawFittedText(statusLanguageLabel(), modeX, hY, countX - modeX - 14);
-      if (countText) drawFittedText(countText, countX, hY, titleLeft - countX - 14);
-      drawFittedText(state.currentFileName, titleLeft, hY, titleMax);
-      if (saveVisible) drawFittedText("[Saved!]", savedX, hY, batteryX - savedX - 14);
-      drawFittedText("86%", batteryX, hY, SCREEN_W - batteryX - 16);
+      drawFittedText(statusLanguageLabel() + "  ", modeX, hY, countX - modeX - 8 * UI_SCALE);
+      if (countText) drawFittedText(countText, countX, hY, minTitleX - countX - 8 * UI_SCALE);
+      drawFittedText(titleText, titleX, hY, Math.max(48, maxTitleX - titleX));
+      if (saveVisible) drawFittedText("[Saved!]", savedX, hY, batteryX - savedX - 8 * UI_SCALE);
+      drawFittedText("86%   ", batteryX, hY, SCREEN_W - batteryX);
       ctx.beginPath();
       ctx.moveTo(0, barBottom);
       ctx.lineTo(SCREEN_W, barBottom);
@@ -2629,10 +2669,11 @@
       ctx.fillStyle = "#151515";
       firmwareFont(state.fontSize);
       const marginX = MARGIN_X * 2;
-      const lineHeight = (state.fontSize + state.lineSpace) * 2;
-      const textTopLimit = 58;
-      const textBottom = SCREEN_H - 32;
-      const maxWidth = SCREEN_W - marginX - RIGHT_EDGE_MARGIN * 2;
+      const lineHeight = (BASE_FONT_SIZE + state.lineSpace) * UI_SCALE;
+      const textTopLimit = (STATUS_Y + 20) * UI_SCALE;
+      const textBottom = (SCREEN_H / UI_SCALE - 25) * UI_SCALE;
+      const contentRight = (SCREEN_W / UI_SCALE - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      const maxWidth = contentRight - marginX;
       const composing = isKoreanLayout() && hangulEngine ? hangulEngine.composingText() : "";
       const renderText = state.text.slice(0, state.cursor) + composing + state.text.slice(state.cursor);
       const lines = wrapText(renderText, maxWidth);
@@ -2650,18 +2691,18 @@
         if (isRtlLayout()) {
           ctx.textAlign = "right";
           ctx.direction = "rtl";
-          ctx.fillText(line, marginX + maxWidth, y);
+          ctx.fillText(line, contentRight, y);
           ctx.direction = "ltr";
           ctx.textAlign = "left";
         } else {
-          ctx.fillText(line, marginX, y);
+          drawFirmwareText(line, marginX, y, maxWidth);
         }
       }
 
       if (state.pendingText) {
         ctx.fillStyle = "#151515";
-        ctx.font = "18px " + CANVAS_FONT_FAMILY;
-        ctx.fillText("buffering " + Math.min(Array.from(state.pendingText).length, 99) + " chars", marginX, textBottom + 38);
+        screenFont();
+        drawFirmwareText("buffering " + Math.min(Array.from(state.pendingText).length, 99) + " chars", marginX, textBottom + 38, maxWidth);
       }
 
       firmwareFont(state.fontSize);
@@ -2672,12 +2713,12 @@
       const row = cursorInfo.row - firstLine;
       if (row >= 0 && row < visibleLines) {
         const lineText = visible[row] || "";
-        const lineWidth = ctx.measureText(lineText).width;
+        const lineWidth = firmwareTextWidth(lineText);
         const x = isRtlLayout()
-          ? marginX + maxWidth - lineWidth + cursorInfo.x
+          ? contentRight - lineWidth + cursorInfo.x
           : marginX + cursorInfo.x;
-        const y = textTop + row * lineHeight + 2;
-        ctx.fillRect(x, y, Math.max(10, Math.round(firmwareFontPx(state.fontSize) * 0.55)), 4);
+        const y = textTop + row * lineHeight + 2 * UI_SCALE;
+        ctx.fillRect(x, y, 12 * UI_SCALE, 4 * UI_SCALE);
       }
     }
     function drawSearchHighlight(firstLine, lineHeight, top, marginX, maxWidth) {
@@ -2689,28 +2730,27 @@
       const linePrefix = beforeLines[row] || "";
       const screenRow = row - firstLine;
       if (screenRow < 0) return;
-      const x = marginX + ctx.measureText(linePrefix).width;
+      const x = marginX + firmwareTextWidth(linePrefix);
       const y = top + screenRow * lineHeight - lineHeight + 10;
-      const w = Math.max(14, ctx.measureText(match).width);
+      const w = Math.max(14, firmwareTextWidth(match));
       ctx.fillStyle = "#151515";
       ctx.fillRect(x, y, w, lineHeight);
         ctx.fillStyle = "#ffffff";
-      ctx.fillText(match, x, top + screenRow * lineHeight);
+      drawFirmwareText(match, x, top + screenRow * lineHeight, w);
       ctx.fillStyle = "#151515";
     }
 
     function drawMenu() {
       clearPaper();
       ctx.fillStyle = "#151515";
-      const leftX = 36;
-      const docsX = 292;
-      const rowH = 34;
-      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("Ize Compose", leftX, 32);
-      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-      drawFittedText(configuredLayoutName(), leftX, 58, 220);
-      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-      let menuY = 96;
+      screenFont();
+      const titleX = 50 * UI_SCALE;
+      const leftX = 25 * UI_SCALE;
+      const docsX = 245 * UI_SCALE;
+      const rowH = (BASE_FONT_SIZE + state.lineSpace + 8) * UI_SCALE;
+      drawFirmwareText("Ize Compose", titleX, 28 * UI_SCALE, 185 * UI_SCALE, true);
+      drawFirmwareText(configuredLanguageMenuLabel(), titleX, 58 * UI_SCALE, 185 * UI_SCALE, true);
+      let menuY = 100 * UI_SCALE;
       for (let i = 0; i < menuItems.length; i++) {
         let label = menuItems[i];
         if (i === 3) {
@@ -2722,46 +2762,46 @@
         }
         if (i === state.menuIndex) {
           ctx.fillStyle = "#151515";
-          ctx.fillRect(leftX - 10, menuY - 25, 220, 30);
+          ctx.fillRect(leftX - 4 * UI_SCALE, menuY - (BASE_FONT_SIZE + 2) * UI_SCALE, 190 * UI_SCALE, rowH);
           ctx.fillStyle = "#ffffff";
         } else {
           ctx.fillStyle = "#151515";
         }
-        drawFittedText(label, leftX, menuY, 205);
+        drawFittedText(label, leftX, menuY, 185 * UI_SCALE);
         menuY += rowH;
       }
       ctx.fillStyle = "#151515";
-      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("v" + APP_VERSION, leftX, menuY + 8);
+      drawFirmwareText("v" + APP_VERSION, leftX, (SCREEN_H / UI_SCALE - 20) * UI_SCALE, 185 * UI_SCALE, true);
 
       ctx.fillStyle = "#151515";
-      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("=== DOCUMENTS ===", docsX, 32);
-      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
+      drawFirmwareText("=== DOCUMENTS ===", docsX, 30 * UI_SCALE, SCREEN_W - docsX - 12 * UI_SCALE, true);
       clampDocumentSelection();
       const docs = state.docs.slice(state.fileScrollOffset, state.fileScrollOffset + 12);
       for (let i = 0; i < docs.length; i++) {
         const doc = docs[i];
         const docIndex = state.fileScrollOffset + i;
-        const y = 62 + i * 34;
+        const y = (60 + i * (BASE_FONT_SIZE + state.lineSpace + 6)) * UI_SCALE;
         const selected = state.menuFocusSide === 1 && docIndex === state.docIndex;
-        const current = doc.name === state.currentFileName;
-        if (selected || current) {
-          ctx.fillRect(docsX - 10, y - 24, 470, 30);
+        if (selected) {
+          ctx.fillRect(docsX - 4 * UI_SCALE, y - (BASE_FONT_SIZE + 2) * UI_SCALE, SCREEN_W - docsX - 8 * UI_SCALE, rowH);
           ctx.fillStyle = "#ffffff";
         }
-        const preview = doc.text.replace(/\s+/g, " ").slice(0, 18);
-        drawFittedText(String(docIndex + 1) + ". " + doc.name + " " + preview, docsX, y, 450);
+        const preview = Array.from(doc.text.replace(/\s+/g, " ")).slice(0, 12).join("");
+        const sizeKb = Math.max(0.1, new Blob([doc.text || ""]).size / 1024).toFixed(1);
+        drawFittedText(String(docIndex + 1) + ". " + doc.name + " [" + sizeKb + "KB] | " + preview, docsX, y, SCREEN_W - docsX - 12 * UI_SCALE);
         ctx.fillStyle = "#151515";
       }
       if (state.deletePromptActive) {
+        const boxX = 220 * UI_SCALE;
+        const boxY = 165 * UI_SCALE;
+        const boxW = Math.min(360 * UI_SCALE, SCREEN_W - boxX - 8);
+        const boxH = Math.min(185 * UI_SCALE, SCREEN_H - boxY - 8);
         ctx.fillStyle = "#151515";
-        ctx.fillRect(84, 360, 632, 126);
+        ctx.fillRect(boxX, boxY, boxW, boxH);
         ctx.fillStyle = "#ffffff";
-        ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-        ctx.fillText("Delete " + state.pendingDeleteName, 116, 402);
-        ctx.fillText("Code: " + state.deleteConfirmCode, 116, 438);
-        ctx.fillText("Input: " + state.deleteConfirmInput + "_", 116, 474);
+        drawFirmwareText("Delete " + state.pendingDeleteName, boxX + 18 * UI_SCALE, boxY + 30 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        drawFirmwareText("Code: " + state.deleteConfirmCode, boxX + 18 * UI_SCALE, boxY + 62 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        drawFirmwareText("Input: " + state.deleteConfirmInput + "_", boxX + 18 * UI_SCALE, boxY + 96 * UI_SCALE, boxW - 36 * UI_SCALE, true);
       }
     }
     function drawSearch() {
@@ -2773,7 +2813,7 @@
       ctx.strokeStyle = "#151515";
       ctx.strokeRect(118, 84, 564, 66);
       ctx.fillStyle = "#151515";
-      ctx.font = "24px " + CANVAS_FONT_FAMILY;
+      screenFont();
       drawFittedText("Search: " + state.searchQuery + "_", 142, 126, 516);
     }
 
@@ -2781,19 +2821,18 @@
       clearPaper();
       drawStatusBar();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("Online Sync", 48, 82);
-      ctx.font = "22px " + CANVAS_FONT_FAMILY;
-      drawFittedText(githubConnectionStatusLine(), 48, 120, 704);
-      drawFittedText("Network: " + state.networkMode, 48, 152, 704);
-      drawFittedText("Status: " + state.syncStatus, 48, 184, 704);
-      ctx.font = "18px " + CANVAS_FONT_FAMILY;
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      drawFirmwareText("Online Sync", x, (MARGIN_Y + 10) * UI_SCALE, maxW, true);
+      drawFittedText(githubConnectionStatusLine(), x, (MARGIN_Y + 55) * UI_SCALE, maxW);
+      drawFittedText("Network: " + state.networkMode, x, (MARGIN_Y + 85) * UI_SCALE, maxW);
+      drawFittedText("Status: " + state.syncStatus, x, (MARGIN_Y + 115) * UI_SCALE, maxW);
       const logLines = String(state.syncLog || "Waiting...").split("\n").slice(-12);
       for (let i = 0; i < logLines.length; i++) {
-        drawFittedText(logLines[i], 56, 232 + i * 24, 688);
+        drawFittedText(logLines[i], x, (MARGIN_Y + 155 + i * (BASE_FONT_SIZE + state.lineSpace + 2)) * UI_SCALE, maxW);
       }
-      ctx.font = "16px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("Enter: sync  G: GitHub settings  W: WiFi  Esc: close", 48, SCREEN_H - 32);
+      drawFittedText("Enter: sync  G: GitHub settings  W: WiFi  Esc: close", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
     }
 
 
@@ -2808,40 +2847,40 @@
     function drawWifiScan() {
       clearPaper();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("=== WIFI SCAN ===", 48, 52);
-      ctx.font = "22px " + CANVAS_FONT_FAMILY;
-      drawFittedText(state.wifiStatusMessage, 48, 88, 704);
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      drawFirmwareText("=== WIFI SCAN ===", x, MARGIN_Y * UI_SCALE, maxW, true);
+      drawFittedText(state.wifiStatusMessage, x, (MARGIN_Y + 30) * UI_SCALE, maxW);
       const list = fakeWifiList();
-      const startY = 134;
+      const startY = MARGIN_Y + 65;
       for (let i = 0; i < list.length; i++) {
-        const y = startY + i * 42;
+        const y = (startY + i * 26) * UI_SCALE;
         const row = (i + 1) + ". " + list[i].ssid + " (" + list[i].rssi + "dBm)";
         if (state.wifiScanSelected === i) {
-          ctx.fillRect(38, y - 25, 684, 31);
+          ctx.fillRect(x - 4 * UI_SCALE, y - (BASE_FONT_SIZE + 2) * UI_SCALE, 190 * UI_SCALE, (BASE_FONT_SIZE + state.lineSpace + 8) * UI_SCALE);
           ctx.fillStyle = "#ffffff";
-          drawFittedText(row, 48, y, 664);
+          drawFittedText(row, x, y, maxW);
           ctx.fillStyle = "#151515";
         } else {
-          drawFittedText(row, 48, y, 664);
+          drawFittedText(row, x, y, maxW);
         }
       }
-      ctx.font = "18px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("Enter: connect / Tab or Menu: cancel", 48, SCREEN_H - 34);
+      drawFittedText("Enter: connect / Tab or Menu: cancel", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
     }
 
     function drawWifiPassword() {
       clearPaper();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px " + CANVAS_FONT_FAMILY;
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
       const selected = fakeWifiList()[state.wifiScanSelected] || fakeWifiList()[0];
-      ctx.fillText("=== WIFI PASSWORD ===", 48, 52);
-      ctx.font = "22px " + CANVAS_FONT_FAMILY;
-      drawFittedText("SSID: " + selected.ssid, 48, 96, 704);
-      drawFittedText(state.wifiStatusMessage, 48, 132, 704);
-      drawFittedText("Password: " + "*".repeat(state.wifiPasswordBuffer.length) + "_", 48, 176, 704);
-      ctx.font = "18px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("Enter: connect / Tab or Menu: cancel", 48, SCREEN_H - 34);
+      drawFirmwareText("=== WIFI PASSWORD ===", x, MARGIN_Y * UI_SCALE, maxW, true);
+      drawFittedText("SSID: " + selected.ssid, x, (MARGIN_Y + 35) * UI_SCALE, maxW);
+      drawFittedText(state.wifiStatusMessage, x, (MARGIN_Y + 65) * UI_SCALE, maxW);
+      drawFittedText("Password: " + "*".repeat(state.wifiPasswordBuffer.length) + "_", x, (MARGIN_Y + 105) * UI_SCALE, maxW);
+      drawFittedText("Enter: connect / Tab or Menu: cancel", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
     }
 
     function drawWebPassword() {
@@ -2855,24 +2894,26 @@
     function drawNetworkStatus() {
       clearPaper();
       drawStatusBar();
-      const statusBarBottom = 44;
+      const statusBarBottom = 45 * UI_SCALE;
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, statusBarBottom, SCREEN_W, SCREEN_H - statusBarBottom);
       ctx.fillStyle = "#151515";
-      ctx.font = "24px " + CANVAS_FONT_FAMILY;
-      const infoY = statusBarBottom + 42;
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      const infoY = (45 + 25) * UI_SCALE;
       if (state.networkMode === "WiFi") {
-        ctx.fillText("Wi-Fi Web Server", 48, infoY);
-        drawFittedText("Open: emulator web popup", 48, infoY + 36, 704);
-        ctx.fillText("PIN: " + state.webPin, 48, infoY + 72);
-        drawFittedText(githubConnectionStatusLine(), 48, infoY + 108, 704);
-        ctx.fillText("EXIT: Ctrl + Menu", 48, infoY + 144);
+        drawFirmwareText("Wi-Fi Web Server", x, infoY, maxW, true);
+        drawFittedText("Open: emulator web popup", x, infoY + 25 * UI_SCALE, maxW);
+        drawFirmwareText("PIN: " + state.webPin, x, infoY + 50 * UI_SCALE, maxW, true);
+        drawFittedText(githubConnectionStatusLine(), x, infoY + 75 * UI_SCALE, maxW);
+        drawFirmwareText("EXIT: Ctrl + Menu", x, infoY + 100 * UI_SCALE, maxW, true);
       } else {
-        ctx.fillText("Web Server", 48, infoY);
-        ctx.fillText("EXIT: Ctrl + Menu", 48, infoY + 36);
+        drawFirmwareText("Web Server", x, infoY, maxW, true);
+        drawFirmwareText("EXIT: Ctrl + Menu", x, infoY + 25 * UI_SCALE, maxW, true);
         const line = state.apPasswordHidden ? "IZEcompose connected" : "IZEcompose " + state.apPassword;
-        drawFittedText(line, 48, infoY + 72, 704);
-        ctx.fillText("PIN: " + state.webPin, 48, infoY + 108);
+        drawFittedText(line, x, infoY + 50 * UI_SCALE, maxW);
+        drawFirmwareText("PIN: " + state.webPin, x, infoY + 75 * UI_SCALE, maxW, true);
       }
     }
     function drawSleep() {
@@ -2890,8 +2931,8 @@
         ctx.drawImage(initialImage, 0, 0, SCREEN_W, SCREEN_H);
       } else {
         ctx.fillStyle = "#151515";
-        ctx.font = "44px " + CANVAS_FONT_FAMILY;
-        ctx.fillText("Ize Compose", 248, 220);
+        screenFont();
+        drawFirmwareText("Ize Compose", 124 * UI_SCALE, 110 * UI_SCALE, 152 * UI_SCALE, true);
       }
     }
 
