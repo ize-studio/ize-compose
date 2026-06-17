@@ -1031,7 +1031,7 @@
         <h2>Settings</h2>
         <div class="field">
           <label for="fontSize">Text size</label>
-          <input id="fontSize" type="range" min="12" max="26" value="16">
+          <input id="fontSize" type="range" min="12" max="26" value="20">
         </div>
         <div class="field">
           <label for="lineSpace">Line space</label>
@@ -1254,7 +1254,7 @@
     const RIGHT_EDGE_MARGIN = 35;
     const CANVAS_FONT_FAMILY = '"Noto Sans Mono", "D2Coding", "Consolas", "Noto Sans KR", monospace';
     const BASE_FONT_SIZE = 16;
-    const DEFAULT_SCREEN_FONT_PX = 30;
+    const DEFAULT_SCREEN_FONT_PX = 23;
     const SCREEN_FONT = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
 
     let state = loadState();
@@ -1326,7 +1326,7 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 24,
+        typingDelayMs: 180,
         previousEnglishLanguage: "KB_QWERTY",
         status: "Power off."
       };
@@ -1345,6 +1345,7 @@
         if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
         if (typeof next.fontSize !== "number") next.fontSize = 20;
         if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
+        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24) next.typingDelayMs = 180;
         if (!Array.isArray(next.githubSyncState)) next.githubSyncState = [];
         return next;
       } catch {
@@ -2592,7 +2593,7 @@
 
     function firmwareFontPx() {
       const scaleTenths = Number(state.fontSize) || 20;
-      return Math.max(10, Math.round(DEFAULT_SCREEN_FONT_PX * scaleTenths / 16));
+      return Math.max(10, Math.round(DEFAULT_SCREEN_FONT_PX * scaleTenths / 20));
     }
 
     function screenFont() {
