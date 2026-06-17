@@ -1219,6 +1219,7 @@
       webDocList: document.getElementById("webDocList"),
       webTextSize: document.getElementById("webTextSize"),
       webLineSpace: document.getElementById("webLineSpace"),
+      webLetterSpacing: document.getElementById("webLetterSpacing"),
       powerSwitch: document.getElementById("powerSwitch"),
       powerState: document.getElementById("powerState"),
       localRootModal: document.getElementById("localRootModal"),
@@ -1273,8 +1274,9 @@
         countMode: 2,
         language: "KB_QWERTY",
         settingsLanguage: "KB_QWERTY",
-        fontSize: 16,
+        fontSize: 20,
         lineSpace: 2,
+        letterSpacing: 0,
         searchQuery: "",
         searchMatchStart: -1,
         powerOn: false,
@@ -1321,6 +1323,8 @@
         next.tempNetworkMode = "Off";
         next.githubPath = "documents";
         if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
+        if (typeof next.fontSize !== "number") next.fontSize = 20;
+        if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
         if (!Array.isArray(next.githubSyncState)) next.githubSyncState = [];
         return next;
       } catch {
@@ -1788,6 +1792,7 @@
       if (mode) state.networkMode = mode;
       if (state.networkMode === "Off") state.networkMode = "WebServer";
       generatePin();
+      state.webUnlocked = false;
       renderWebInterface();
       ui.webModal.classList.add("open");
       ui.webModal.setAttribute("aria-hidden", "false");
@@ -1805,10 +1810,13 @@
       state.githubTokenSet = state.githubToken.length > 0;
       ui.webTextSize.value = state.fontSize;
       ui.webLineSpace.value = state.lineSpace;
+      if (ui.webLetterSpacing) ui.webLetterSpacing.value = state.letterSpacing || 0;
       const textSizeValue = document.getElementById("webTextSizeValue");
       const lineSpaceValue = document.getElementById("webLineSpaceValue");
+      const letterSpacingValue = ui.webLetterSpacing ? ui.webLetterSpacing.nextElementSibling : null;
       if (textSizeValue) textSizeValue.textContent = (Number(state.fontSize) / 10).toFixed(1) + "x";
       if (lineSpaceValue) lineSpaceValue.textContent = String(state.lineSpace);
+      if (letterSpacingValue) letterSpacingValue.textContent = String(state.letterSpacing || 0);
 
       const webLanguage = document.getElementById("webLanguage");
       if (webLanguage) {
@@ -2563,11 +2571,12 @@
     }
 
     function firmwareFontPx() {
-      return DEFAULT_SCREEN_FONT_PX;
+      const scaleTenths = Number(state.fontSize) || 20;
+      return Math.max(8, Math.round(DEFAULT_SCREEN_FONT_PX * scaleTenths / 20));
     }
 
     function screenFont() {
-      ctx.font = SCREEN_FONT;
+      ctx.font = firmwareFontPx() + "px " + CANVAS_FONT_FAMILY;
       ctx.textAlign = "left";
       ctx.direction = "ltr";
     }
@@ -2593,7 +2602,8 @@
       const cp = ch.codePointAt(0) || 0;
       if (isZeroAdvanceCodePoint(cp)) return 0;
       const logicalWidth = cp < 0x3000 ? 8 : 16;
-      return (logicalWidth + (isMenu ? 1 : 0)) * UI_SCALE;
+      const spacing = isMenu ? 1 : (Number(state.letterSpacing) || 0);
+      return (logicalWidth + spacing) * UI_SCALE;
     }
 
     function firmwareTextWidth(text, isMenu = false) {
@@ -2626,23 +2636,55 @@
       drawFirmwareText(fitTextToWidth(text, maxWidth), x, y, maxWidth, true);
     }
 
+    function firmwareTrueLength(text) {
+      return Array.from(String(text || "")).reduce((sum, ch) => {
+        const cp = ch.codePointAt(0) || 0;
+        return sum + (cp < 0x3000 ? 1 : 2);
+      }, 0);
+    }
+
+    function truncateChars(text, maxChars) {
+      const chars = Array.from(String(text || ""));
+      if (chars.length <= maxChars) return chars.join("");
+      return chars.slice(0, Math.max(0, maxChars - 2)).join("") + "..";
+    }
+
+    function drawStatusText(text, x, y) {
+      drawFirmwareText(text, x * UI_SCALE, y * UI_SCALE, SCREEN_W, true);
+    }
+
+    function drawMenuEntry(text, x, y, isSelected, isRightSide) {
+      const maxTextWidth = (isRightSide ? 520 : 185) * UI_SCALE;
+      const boxW = (isRightSide ? 540 : 190) * UI_SCALE;
+      const rowH = (BASE_FONT_SIZE + state.lineSpace + 8) * UI_SCALE;
+      const drawX = x * UI_SCALE;
+      const drawY = y * UI_SCALE;
+      if (isSelected) {
+        ctx.fillStyle = "#151515";
+        ctx.fillRect(drawX - 4 * UI_SCALE, drawY - (BASE_FONT_SIZE + 2) * UI_SCALE, boxW, rowH);
+        ctx.fillStyle = "#ffffff";
+      } else {
+        ctx.fillStyle = "#151515";
+      }
+      drawFittedText(text, drawX, drawY, maxTextWidth);
+      ctx.fillStyle = "#151515";
+    }
+
     function drawStatusBar() {
-      const hY = STATUS_Y * UI_SCALE;
+      const hY = STATUS_Y;
       const barBottom = 39 * UI_SCALE;
       const logicalWidth = SCREEN_W / UI_SCALE;
-      const modeX = 15 * UI_SCALE;
-      const countX = 110 * UI_SCALE;
-      const batteryX = (logicalWidth - 55) * UI_SCALE;
-      const savedX = batteryX - 78 * UI_SCALE;
+      const countX = 110;
+      const batteryX = logicalWidth - 55;
+      const savedX = batteryX - 78;
       const saveVisible = Date.now() < saveNoticeUntil;
       const countText = state.countMode === 0 ? "Count: " + Array.from(state.text).length :
         state.countMode === 1 ? "Words: " + wordCount(state.text) : "";
-      let titleText = state.currentFileName;
-      if (Array.from(titleText).length > 14) titleText = Array.from(titleText).slice(0, 12).join("") + "..";
-      const titleWidth = firmwareTextWidth(titleText, true);
-      const minTitleX = (110 + 95) * UI_SCALE;
-      const maxTitleX = savedX - titleWidth - 8 * UI_SCALE;
-      let titleX = (SCREEN_W - titleWidth) / 2;
+      const titleText = truncateChars(state.currentFileName, 14);
+      const titleWidth = firmwareTrueLength(titleText) * 8;
+      const minTitleX = countX + 95;
+      const maxTitleX = savedX - titleWidth - 8;
+      let titleX = (logicalWidth - titleWidth) / 2;
       if (titleX < minTitleX) titleX = minTitleX;
       if (titleX > maxTitleX) titleX = maxTitleX;
 
@@ -2650,11 +2692,11 @@
       ctx.fillRect(0, 0, SCREEN_W, barBottom + 1);
       ctx.fillStyle = "#151515";
       statusFont();
-      drawFittedText(statusLanguageLabel() + "  ", modeX, hY, countX - modeX - 8 * UI_SCALE);
-      if (countText) drawFittedText(countText, countX, hY, minTitleX - countX - 8 * UI_SCALE);
-      drawFittedText(titleText, titleX, hY, Math.max(48, maxTitleX - titleX));
-      if (saveVisible) drawFittedText("[Saved!]", savedX, hY, batteryX - savedX - 8 * UI_SCALE);
-      drawFittedText("86%   ", batteryX, hY, SCREEN_W - batteryX);
+      drawStatusText(statusLanguageLabel() + "  ", 15, hY);
+      if (countText) drawStatusText(countText, countX, hY);
+      drawStatusText(titleText, titleX, hY);
+      if (saveVisible) drawStatusText("[Saved!]", savedX, hY);
+      drawStatusText("86%   ", batteryX, hY);
       ctx.beginPath();
       ctx.moveTo(0, barBottom);
       ctx.lineTo(SCREEN_W, barBottom);
@@ -2745,12 +2787,11 @@
       ctx.fillStyle = "#151515";
       screenFont();
       const titleX = 50 * UI_SCALE;
-      const leftX = 25 * UI_SCALE;
-      const docsX = 245 * UI_SCALE;
-      const rowH = (BASE_FONT_SIZE + state.lineSpace + 8) * UI_SCALE;
+      const leftX = 25;
+      const docsX = 245;
       drawFirmwareText("Ize Compose", titleX, 28 * UI_SCALE, 185 * UI_SCALE, true);
       drawFirmwareText(configuredLanguageMenuLabel(), titleX, 58 * UI_SCALE, 185 * UI_SCALE, true);
-      let menuY = 100 * UI_SCALE;
+      let menuY = 100;
       for (let i = 0; i < menuItems.length; i++) {
         let label = menuItems[i];
         if (i === 3) {
@@ -2760,48 +2801,44 @@
           const netStr = state.menuEditingValue && state.menuIndex === i ? (state.tempNetworkMode || state.networkMode || "Off") : (state.tempNetworkMode || state.networkMode || "Off");
           label += state.menuEditingValue && state.menuIndex === i ? " < " + netStr + " >" : "   " + netStr + "   ";
         }
-        if (i === state.menuIndex) {
-          ctx.fillStyle = "#151515";
-          ctx.fillRect(leftX - 4 * UI_SCALE, menuY - (BASE_FONT_SIZE + 2) * UI_SCALE, 190 * UI_SCALE, rowH);
-          ctx.fillStyle = "#ffffff";
-        } else {
-          ctx.fillStyle = "#151515";
-        }
-        drawFittedText(label, leftX, menuY, 185 * UI_SCALE);
-        menuY += rowH;
+        drawMenuEntry(label, leftX, menuY, i === state.menuIndex && state.menuFocusSide === 0, false);
+        menuY += BASE_FONT_SIZE + state.lineSpace + 8;
       }
       ctx.fillStyle = "#151515";
-      drawFirmwareText("v" + APP_VERSION, leftX, (SCREEN_H / UI_SCALE - 20) * UI_SCALE, 185 * UI_SCALE, true);
+      drawFirmwareText("v" + APP_VERSION, leftX * UI_SCALE, (SCREEN_H / UI_SCALE - 20) * UI_SCALE, 185 * UI_SCALE, true);
 
       ctx.fillStyle = "#151515";
-      drawFirmwareText("=== DOCUMENTS ===", docsX, 30 * UI_SCALE, SCREEN_W - docsX - 12 * UI_SCALE, true);
+      drawFirmwareText("=== DOCUMENTS ===", docsX * UI_SCALE, 30 * UI_SCALE, SCREEN_W - docsX * UI_SCALE - 12 * UI_SCALE, true);
       clampDocumentSelection();
       const docs = state.docs.slice(state.fileScrollOffset, state.fileScrollOffset + 12);
       for (let i = 0; i < docs.length; i++) {
         const doc = docs[i];
         const docIndex = state.fileScrollOffset + i;
-        const y = (60 + i * (BASE_FONT_SIZE + state.lineSpace + 6)) * UI_SCALE;
+        const y = 60 + i * (BASE_FONT_SIZE + state.lineSpace + 6);
         const selected = state.menuFocusSide === 1 && docIndex === state.docIndex;
-        if (selected) {
-          ctx.fillRect(docsX - 4 * UI_SCALE, y - (BASE_FONT_SIZE + 2) * UI_SCALE, SCREEN_W - docsX - 8 * UI_SCALE, rowH);
-          ctx.fillStyle = "#ffffff";
-        }
         const preview = Array.from(doc.text.replace(/\s+/g, " ")).slice(0, 12).join("");
         const sizeKb = Math.max(0.1, new Blob([doc.text || ""]).size / 1024).toFixed(1);
-        drawFittedText(String(docIndex + 1) + ". " + doc.name + " [" + sizeKb + "KB] | " + preview, docsX, y, SCREEN_W - docsX - 12 * UI_SCALE);
-        ctx.fillStyle = "#151515";
+        const label = state.deletePromptActive && selected
+          ? "Delete code required"
+          : String(docIndex + 1) + ". " + doc.name + " [" + sizeKb + "KB] | " + preview;
+        drawMenuEntry(label, docsX, y, selected, true);
       }
       if (state.deletePromptActive) {
         const boxX = 220 * UI_SCALE;
         const boxY = 165 * UI_SCALE;
-        const boxW = Math.min(360 * UI_SCALE, SCREEN_W - boxX - 8);
-        const boxH = Math.min(185 * UI_SCALE, SCREEN_H - boxY - 8);
-        ctx.fillStyle = "#151515";
-        ctx.fillRect(boxX, boxY, boxW, boxH);
+        const boxW = 360 * UI_SCALE;
+        const boxH = 185 * UI_SCALE;
         ctx.fillStyle = "#ffffff";
-        drawFirmwareText("Delete " + state.pendingDeleteName, boxX + 18 * UI_SCALE, boxY + 30 * UI_SCALE, boxW - 36 * UI_SCALE, true);
-        drawFirmwareText("Code: " + state.deleteConfirmCode, boxX + 18 * UI_SCALE, boxY + 62 * UI_SCALE, boxW - 36 * UI_SCALE, true);
-        drawFirmwareText("Input: " + state.deleteConfirmInput + "_", boxX + 18 * UI_SCALE, boxY + 96 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.strokeStyle = "#151515";
+        ctx.strokeRect(boxX, boxY, boxW, boxH);
+        ctx.strokeRect(boxX + 3 * UI_SCALE, boxY + 3 * UI_SCALE, boxW - 6 * UI_SCALE, boxH - 6 * UI_SCALE);
+        ctx.fillStyle = "#151515";
+        drawFirmwareText("DELETE FILE", boxX + 18 * UI_SCALE, boxY + 30 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        drawFirmwareText(truncateChars(state.pendingDeleteName, 28), boxX + 18 * UI_SCALE, boxY + 62 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        drawFirmwareText("Code: " + state.deleteConfirmCode, boxX + 18 * UI_SCALE, boxY + 96 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        drawFirmwareText("Input: " + state.deleteConfirmInput + "_", boxX + 18 * UI_SCALE, boxY + 126 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        drawFirmwareText("Enter: delete / Tab: cancel", boxX + 18 * UI_SCALE, boxY + 158 * UI_SCALE, boxW - 36 * UI_SCALE, true);
       }
     }
     function drawSearch() {
@@ -3491,6 +3528,7 @@
       if (!requireWebPin()) return;
       state.fontSize = Number(ui.webTextSize.value);
       state.lineSpace = Number(ui.webLineSpace.value);
+      state.letterSpacing = Number(ui.webLetterSpacing ? ui.webLetterSpacing.value : state.letterSpacing || 0);
       const chosenLanguage = document.getElementById("webLanguage").value;
       const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
       state.settingsLanguage = resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : "");
@@ -3585,6 +3623,13 @@
       state.lineSpace = Number(ui.lineSpace.value);
       render();
     });
+
+    if (ui.webLetterSpacing) {
+      ui.webLetterSpacing.addEventListener("input", () => {
+        const value = ui.webLetterSpacing.nextElementSibling;
+        if (value) value.textContent = ui.webLetterSpacing.value;
+      });
+    }
 
     ui.language.addEventListener("change", () => {
       commitComposition();
