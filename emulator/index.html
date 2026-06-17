@@ -1300,7 +1300,8 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 28,
+        typingDelayMs: 12,
+        previousEnglishLanguage: "KB_QWERTY",
         status: "Power off."
       };
     }
@@ -1605,6 +1606,11 @@
       return value || state.language;
     }
 
+    function setLanguage(nextLanguage) {
+      if (isEnglishLayout(nextLanguage)) state.previousEnglishLanguage = nextLanguage;
+      state.language = nextLanguage;
+    }
+
     function utf8LimitLabel(label, maxChars) {
       const chars = Array.from(label);
       return chars.length <= maxChars ? label : chars.slice(0, maxChars).join("") + "..";
@@ -1651,7 +1657,7 @@
         option.textContent = layout.name;
         ui.language.append(option);
       }
-      if (!keyboardData().layouts.some((layout) => layout.id === state.language)) state.language = "KB_QWERTY";
+      if (!keyboardData().layouts.some((layout) => layout.id === state.language)) setLanguage("KB_QWERTY");
       ui.language.value = selectedLanguageValue();
     }
 
@@ -2943,6 +2949,68 @@
       return shifted[key] || key;
     }
 
+    function physicalQwertyKey(event) {
+      if (event.code && /^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase();
+      if (event.code && /^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+      const punctuation = {
+        Backquote: "`",
+        Minus: "-",
+        Equal: "=",
+        BracketLeft: "[",
+        BracketRight: "]",
+        Backslash: "\\",
+        Semicolon: ";",
+        Quote: "'",
+        Comma: ",",
+        Period: ".",
+        Slash: "/"
+      };
+      return punctuation[event.code] || event.key;
+    }
+
+    function isCtrlSpace(event) {
+      return event.ctrlKey && (event.key === " " || event.key === "Spacebar" || event.code === "Space");
+    }
+
+    function isCtrlArrow(event) {
+      return event.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
+    }
+
+    function moveCursorWord(direction) {
+      const chars = Array.from(state.text);
+      let index = Array.from(state.text.slice(0, state.cursor)).length;
+      if (direction < 0) {
+        while (index > 0 && /\s/.test(chars[index - 1])) index--;
+        while (index > 0 && !/\s/.test(chars[index - 1])) index--;
+      } else {
+        while (index < chars.length && !/\s/.test(chars[index])) index++;
+        while (index < chars.length && /\s/.test(chars[index])) index++;
+      }
+      state.cursor = chars.slice(0, index).join("").length;
+      render();
+    }
+
+    function moveCursorVerticalBoundary(direction) {
+      state.cursor = direction < 0 ? 0 : state.text.length;
+      render();
+    }
+
+    function deletePreviousWord() {
+      if (state.cursor <= 0) return;
+      if (isKoreanLayout() && hangulEngine) hangulEngine.clear();
+      const chars = Array.from(state.text);
+      const cursorIndex = Array.from(state.text.slice(0, state.cursor)).length;
+      let start = cursorIndex;
+      while (start > 0 && /\s/.test(chars[start - 1])) start--;
+      while (start > 0 && !/\s/.test(chars[start - 1])) start--;
+      state.text = chars.slice(0, start).join("") + chars.slice(cursorIndex).join("");
+      state.cursor = chars.slice(0, start).join("").length;
+      state.searchMatchStart = -1;
+      syncActiveDoc();
+      persist();
+      render();
+    }
+
     function routeKey(key, options = {}) {
       if (!state.powerOn) return;
       const event = virtualEvent(key, options);
@@ -3024,9 +3092,9 @@
         enterSleep();
         return;
       }
-      if (event.ctrlKey && event.key === " ") {
+      if (isCtrlSpace(event)) {
         event.preventDefault();
-        state.language = state.language === "KB_QWERTY" ? "KB_KOREAN" : "KB_QWERTY";
+        setLanguage(isKoreanLayout() ? (state.previousEnglishLanguage || "KB_QWERTY") : "KB_KOREAN");
         setStatus("Language: " + activeLayoutName() + ".");
         render();
         return;
@@ -3042,6 +3110,12 @@
         toggleMenu();
         return;
       }
+      if (event.ctrlKey && event.key === "Backspace") {
+        event.preventDefault();
+        commitComposition();
+        deletePreviousWord();
+        return;
+      }
       if (event.key === "Backspace") {
         event.preventDefault();
         backspace();
@@ -3051,6 +3125,15 @@
         event.preventDefault();
         commitComposition();
         insertText("\n");
+        return;
+      }
+      if (isCtrlArrow(event)) {
+        event.preventDefault();
+        commitComposition();
+        if (event.key === "ArrowLeft") moveCursorWord(-1);
+        else if (event.key === "ArrowRight") moveCursorWord(1);
+        else if (event.key === "ArrowUp") moveCursorVerticalBoundary(-1);
+        else if (event.key === "ArrowDown") moveCursorVerticalBoundary(1);
         return;
       }
       if (event.key === "ArrowLeft") {
@@ -3078,7 +3161,9 @@
       if (!event.ctrlKey && !event.metaKey && event.key.length === 1) {
         event.preventDefault();
         if (isKoreanLayout() && hangulEngine) {
-          const koreanKey = event.shiftKey ? applyShiftToKey(event.key.toLowerCase()) : event.key;
+          const baseKey = physicalQwertyKey(event);
+          if (!baseKey || baseKey.length !== 1) return;
+          const koreanKey = event.shiftKey ? applyShiftToKey(baseKey.toLowerCase()) : baseKey;
           hangulEngine.process(koreanKey);
         } else {
           insertMappedText(mapKeyboardEventText(event));
@@ -3331,7 +3416,7 @@
       state.lineSpace = Number(ui.webLineSpace.value);
       const chosenLanguage = document.getElementById("webLanguage").value;
       const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
-      state.language = resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : "");
+      setLanguage(resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : ""));
       if (hangulEngine) hangulEngine.clear();
       setStatus("Settings saved from web interface.");
       renderWebInterface();
@@ -3425,7 +3510,7 @@
 
     ui.language.addEventListener("change", () => {
       commitComposition();
-      state.language = resolveSelectedLanguage(ui.language.value);
+      setLanguage(resolveSelectedLanguage(ui.language.value));
       if (hangulEngine) hangulEngine.clear();
       setStatus("Language: " + activeLayoutName() + ".");
       render();
