@@ -1270,6 +1270,7 @@
         pendingDeleteName: "",
         countMode: 2,
         language: "KB_QWERTY",
+        settingsLanguage: "KB_QWERTY",
         fontSize: 16,
         lineSpace: 2,
         searchQuery: "",
@@ -1301,7 +1302,7 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 12,
+        typingDelayMs: 24,
         previousEnglishLanguage: "KB_QWERTY",
         status: "Power off."
       };
@@ -1317,6 +1318,7 @@
         next.networkMode = "Off";
         next.tempNetworkMode = "Off";
         next.githubPath = "documents";
+        if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
         if (!Array.isArray(next.githubSyncState)) next.githubSyncState = [];
         return next;
       } catch {
@@ -1583,6 +1585,18 @@
       return activeLayout().name || activeLayout().id;
     }
 
+    function configuredLayout() {
+      const data = keyboardData();
+      return data.layouts.find((layout) => layout.id === state.settingsLanguage) ||
+        data.layouts.find((layout) => layout.id === state.language) ||
+        data.layouts.find((layout) => layout.id === "KB_QWERTY") ||
+        { id: "KB_QWERTY", name: "Qwerty" };
+    }
+
+    function configuredLayoutName() {
+      return configuredLayout().name || configuredLayout().id;
+    }
+
     function isEnglishLayout(id = state.language) {
       return id === "KB_QWERTY" || id === "KB_DVORAK";
     }
@@ -1620,7 +1634,7 @@
     function statusLanguageLabel() {
       let label = activeLayoutName();
       if (!isKoreanLayout() && isEnglishLayout()) {
-        label = virtualModifiers.caps ? "ENGLISH" : "english";
+        label = virtualModifiers.caps ? "EN" : "en";
       }
       if (Array.from(label).length > 6) label = utf8LimitLabel(label, 4);
       return "[" + label + "]";
@@ -1658,8 +1672,8 @@
         option.textContent = layout.name;
         ui.language.append(option);
       }
-      if (!keyboardData().layouts.some((layout) => layout.id === state.language)) setLanguage("KB_QWERTY");
-      ui.language.value = selectedLanguageValue();
+      if (!keyboardData().layouts.some((layout) => layout.id === state.settingsLanguage)) state.settingsLanguage = state.language || "KB_QWERTY";
+      ui.language.value = selectedLanguageValue(state.settingsLanguage);
     }
 
     function mappedKeyValue(key, { shift = false, alt = false, caps = false } = {}) {
@@ -1798,12 +1812,12 @@
           const option = document.createElement("option");
           option.value = layout.id;
           option.textContent = layout.name;
-          option.selected = layout.id === selectedLanguageValue();
+          option.selected = layout.id === selectedLanguageValue(state.settingsLanguage);
           webLanguage.append(option);
         }
       }
       document.querySelectorAll('input[name="webEnglishLayout"]').forEach((radio) => {
-        radio.checked = radio.value === (state.language === "KB_DVORAK" ? "KB_DVORAK" : "KB_QWERTY");
+        radio.checked = radio.value === (state.settingsLanguage === "KB_DVORAK" ? "KB_DVORAK" : "KB_QWERTY");
       });
 
       document.getElementById("webPin").value = "";
@@ -2694,7 +2708,7 @@
       ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
       ctx.fillText("Ize Compose", leftX, 32);
       ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
-      drawFittedText(activeLayoutName(), leftX, 58, 220);
+      drawFittedText(configuredLayoutName(), leftX, 58, 220);
       ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
       let menuY = 96;
       for (let i = 0; i < menuItems.length; i++) {
@@ -3438,7 +3452,8 @@
       state.lineSpace = Number(ui.webLineSpace.value);
       const chosenLanguage = document.getElementById("webLanguage").value;
       const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
-      setLanguage(resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : ""));
+      state.settingsLanguage = resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : "");
+      setLanguage(state.settingsLanguage);
       if (hangulEngine) hangulEngine.clear();
       setStatus("Settings saved from web interface.");
       renderWebInterface();
@@ -3532,7 +3547,8 @@
 
     ui.language.addEventListener("change", () => {
       commitComposition();
-      setLanguage(resolveSelectedLanguage(ui.language.value));
+      state.settingsLanguage = resolveSelectedLanguage(ui.language.value);
+      setLanguage(state.settingsLanguage);
       if (hangulEngine) hangulEngine.clear();
       setStatus("Language: " + activeLayoutName() + ".");
       render();
