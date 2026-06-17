@@ -115,7 +115,7 @@
     canvas {
       display: block;
       width: 100%;
-      aspect-ratio: 4 / 3;
+      aspect-ratio: 16 / 9;
       image-rendering: pixelated;
       background: #ffffff;
     }
@@ -892,7 +892,7 @@
             <span>Inkplate 5V2</span>
           </div>
           <div class="screen-frame">
-            <canvas id="screen" width="800" height="600" tabindex="0" aria-label="Inkplate 5V2 screen"></canvas>
+            <canvas id="screen" width="960" height="540" tabindex="0" aria-label="Inkplate 5V2 screen"></canvas>
           </div>
           <div class="power-rail">
             <div class="power-state">
@@ -1194,6 +1194,7 @@
     const APP_VERSION = "1.4.1";
     const GITHUB_SYNC_STATE_DIR = "ize_compose";
     const GITHUB_SYNC_STATE_FILE = "github_sync_state.txt";
+    const GITHUB_REQUEST_TIMEOUT_MS = 15000;
     const screen = document.getElementById("screen");
     const ctx = screen.getContext("2d");
     const SCREEN_W = screen.width;
@@ -1241,6 +1242,7 @@
     let localRootPromptedThisSession = false;
     let hangulEngine = null;
     let typingTimer = null;
+    let compositionTimer = null;
     let sleepTimer = null;
     let powerTransitioning = false;
     let saveNoticeUntil = 0;
@@ -1877,6 +1879,14 @@
       return "GitHub: " + state.githubOwner + "/" + state.githubRepo;
     }
 
+    function browserNetworkOnline() {
+      return typeof navigator === "undefined" || navigator.onLine !== false;
+    }
+
+    function browserNetworkStatusLine() {
+      return browserNetworkOnline() ? "Ethernet/Wi-Fi online" : "Browser network offline";
+    }
+
     function githubConfigComplete() {
       return Boolean(state.githubOwner && state.githubRepo && state.githubBranch && activeGithubToken());
     }
@@ -1891,8 +1901,8 @@
     function openSyncMenu() {
       commitComposition();
       state.mode = "sync";
-      state.syncStatus = "Online Sync";
-      if (!state.syncLog) state.syncLog = "Waiting...";
+      state.syncStatus = browserNetworkStatusLine();
+      state.syncLog = "> " + browserNetworkStatusLine() + "\n> Enter: sync";
       renderWebInterface();
       render();
     }
@@ -1929,11 +1939,22 @@
     }
 
     async function githubJson(method, apiPath, body = null, params = {}) {
-      const response = await fetch(githubApiUrl(apiPath, params), {
-        method,
-        headers: githubApiHeaders(),
-        body: body ? JSON.stringify(body) : null
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), GITHUB_REQUEST_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch(githubApiUrl(apiPath, params), {
+          method,
+          headers: githubApiHeaders(),
+          body: body ? JSON.stringify(body) : null,
+          signal: controller.signal
+        });
+      } catch (error) {
+        if (error && error.name === "AbortError") throw new Error("GitHub request timed out");
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
       if (method === "GET" && response.status === 404) return null;
       const text = await response.text();
       const data = text ? JSON.parse(text) : null;
@@ -2020,10 +2041,10 @@
     }
 
     async function syncGithubDocs() {
-      if (state.networkMode !== "WiFi") {
-        state.syncStatus = "GitHub sync is available only in WiFi mode.";
-        state.syncLog = "> GitHub sync is available only in WiFi mode.";
-        setStatus("GitHub sync requires WiFi mode.");
+      if (!browserNetworkOnline()) {
+        state.syncStatus = "Browser network offline";
+        state.syncLog = "> Browser network offline\n> Check the computer internet connection.";
+        setStatus("GitHub sync needs an internet connection.");
         renderWebInterface();
         render();
         return;
@@ -2043,6 +2064,7 @@
         state.syncLog = "";
         state.syncStatus = "GitHub syncing";
         appendSyncLog("GitHub Sync");
+        appendSyncLog("Network: " + browserNetworkStatusLine());
         appendSyncLog("Repository: " + state.githubOwner + "/" + state.githubRepo);
         appendSyncLog("Branch: " + state.githubBranch);
         appendSyncLog("Path: " + (state.githubPath || "documents"));
@@ -2269,7 +2291,21 @@
       }, state.typingDelayMs);
     }
 
+    function scheduleCompositionCommit() {
+      if (!isKoreanLayout() || !hangulEngine) return;
+      if (compositionTimer) clearTimeout(compositionTimer);
+      compositionTimer = setTimeout(() => {
+        compositionTimer = null;
+        if (!isKoreanLayout() || !hangulEngine || !hangulEngine.composingText()) return;
+        hangulEngine.flush();
+      }, state.typingDelayMs);
+    }
+
     function commitComposition() {
+      if (compositionTimer) {
+        clearTimeout(compositionTimer);
+        compositionTimer = null;
+      }
       if (hangulEngine) hangulEngine.flush();
     }
 
@@ -3165,6 +3201,8 @@
           if (!baseKey || baseKey.length !== 1) return;
           const koreanKey = event.shiftKey ? applyShiftToKey(baseKey.toLowerCase()) : baseKey;
           hangulEngine.process(koreanKey);
+          scheduleCompositionCommit();
+          render();
         } else {
           insertMappedText(mapKeyboardEventText(event));
         }
