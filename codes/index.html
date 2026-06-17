@@ -3692,6 +3692,12 @@
         saveDoc();
         return;
       }
+      if (event.ctrlKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        commitComposition();
+        newDoc();
+        return;
+      }
       if (event.ctrlKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         commitComposition();
@@ -3975,6 +3981,12 @@
         event.preventDefault();
         commitComposition();
         saveDoc();
+        return;
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        commitComposition();
+        newDoc();
         return;
       }
       if (state.mode === "menu") handleMenuKey(event);
