@@ -1626,7 +1626,6 @@ bool restoreSettingsFromBackup() {
 }
 
 String getCurrentLanguageMenuLabel() {
-    if (!isKoreanMode) return "English";
     return getKeyboardModeName();
 }
 
