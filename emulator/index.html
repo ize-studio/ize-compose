@@ -1232,6 +1232,7 @@
     const STATUS_Y = 30;
     const RIGHT_EDGE_MARGIN = 24;
     const CANVAS_FONT_FAMILY = '"Noto Sans KR", "Noto Sans", Arial, sans-serif';
+    const DEFAULT_SCREEN_FONT_PX = 22;
 
     let state = loadState();
     let githubSessionToken = "";
@@ -1299,7 +1300,7 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 45,
+        typingDelayMs: 28,
         status: "Power off."
       };
     }
@@ -1580,6 +1581,30 @@
       return activeLayout().name || activeLayout().id;
     }
 
+    function isEnglishLayout(id = state.language) {
+      return id === "KB_QWERTY" || id === "KB_DVORAK";
+    }
+
+    function selectedLanguageValue(id = state.language) {
+      return isEnglishLayout(id) ? "KB_ENGLISH" : id;
+    }
+
+    function languageSelectOptions() {
+      const options = [{ id: "KB_ENGLISH", name: "English" }];
+      for (const layout of keyboardData().layouts) {
+        if (isEnglishLayout(layout.id)) continue;
+        options.push({ id: layout.id, name: layout.name || layout.id });
+      }
+      return options;
+    }
+
+    function resolveSelectedLanguage(value, englishLayout = "") {
+      if (value === "KB_ENGLISH") {
+        return isEnglishLayout(englishLayout) ? englishLayout : isEnglishLayout(state.language) ? state.language : "KB_QWERTY";
+      }
+      return value || state.language;
+    }
+
     function utf8LimitLabel(label, maxChars) {
       const chars = Array.from(label);
       return chars.length <= maxChars ? label : chars.slice(0, maxChars).join("") + "..";
@@ -1587,8 +1612,8 @@
 
     function statusLanguageLabel() {
       let label = activeLayoutName();
-      if (!isKoreanLayout() && (state.language === "KB_QWERTY" || state.language === "KB_DVORAK")) {
-        label = virtualModifiers.caps ? label.toUpperCase() : label.toLowerCase();
+      if (!isKoreanLayout() && isEnglishLayout()) {
+        label = virtualModifiers.caps ? "ENGLISH" : "english";
       }
       if (Array.from(label).length > 6) label = utf8LimitLabel(label, 4);
       return "[" + label + "]";
@@ -1619,16 +1644,15 @@
     }
 
     function fillLanguageSelect() {
-      const data = keyboardData();
       ui.language.innerHTML = "";
-      for (const layout of data.layouts) {
+      for (const layout of languageSelectOptions()) {
         const option = document.createElement("option");
         option.value = layout.id;
-        option.textContent = layout.name || layout.id;
+        option.textContent = layout.name;
         ui.language.append(option);
       }
-      if (!data.layouts.some((layout) => layout.id === state.language)) state.language = "KB_QWERTY";
-      ui.language.value = state.language;
+      if (!keyboardData().layouts.some((layout) => layout.id === state.language)) state.language = "KB_QWERTY";
+      ui.language.value = selectedLanguageValue();
     }
 
     function mappedKeyValue(key, { shift = false, alt = false, caps = false } = {}) {
@@ -1763,11 +1787,11 @@
       const webLanguage = document.getElementById("webLanguage");
       if (webLanguage) {
         webLanguage.innerHTML = "";
-        for (const layout of keyboardData().layouts) {
+        for (const layout of languageSelectOptions()) {
           const option = document.createElement("option");
           option.value = layout.id;
-          option.textContent = layout.name || layout.id;
-          option.selected = layout.id === state.language;
+          option.textContent = layout.name;
+          option.selected = layout.id === selectedLanguageValue();
           webLanguage.append(option);
         }
       }
@@ -2222,17 +2246,20 @@
       state.pendingText += text;
       persist();
       render();
+      scheduleQueuedText();
+    }
+
+    function scheduleQueuedText() {
       if (typingTimer) return;
-      typingTimer = setInterval(() => {
-        if (!state.pendingText) {
-          clearInterval(typingTimer);
-          typingTimer = null;
-          return;
-        }
+      if (!state.pendingText) return;
+      typingTimer = setTimeout(() => {
+        typingTimer = null;
+        if (!state.pendingText) return;
         const chars = Array.from(state.pendingText);
         const next = chars.shift();
         state.pendingText = chars.join("");
         insertText(next);
+        scheduleQueuedText();
       }, state.typingDelayMs);
     }
 
@@ -2490,8 +2517,8 @@
       if (line2) ctx.fillText(line2, 46, 166);
     }
 
-    const FIRMWARE_FONT_SCALE = 1.45;
-    const STATUS_FONT_PX = 18;
+    const FIRMWARE_FONT_SCALE = DEFAULT_SCREEN_FONT_PX / 16;
+    const STATUS_FONT_PX = DEFAULT_SCREEN_FONT_PX;
 
     function firmwareFontPx(size = state.fontSize) {
       return Math.max(14, Math.min(34, Math.round(size * FIRMWARE_FONT_SCALE)));
@@ -2636,15 +2663,13 @@
       ctx.fillStyle = "#151515";
       const leftX = 36;
       const docsX = 292;
-      const rowH = 32;
-      ctx.font = "22px " + CANVAS_FONT_FAMILY;
+      const rowH = 34;
+      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
       ctx.fillText("Ize Compose", leftX, 32);
-      ctx.font = "19px " + CANVAS_FONT_FAMILY;
+      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
       drawFittedText(activeLayoutName(), leftX, 58, 220);
-      ctx.font = "19px " + CANVAS_FONT_FAMILY;
-      ctx.fillText("v" + APP_VERSION, leftX, 84);
-      ctx.font = "20px " + CANVAS_FONT_FAMILY;
-      let menuY = 124;
+      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
+      let menuY = 96;
       for (let i = 0; i < menuItems.length; i++) {
         let label = menuItems[i];
         if (i === 3) {
@@ -2656,7 +2681,7 @@
         }
         if (i === state.menuIndex) {
           ctx.fillStyle = "#151515";
-          ctx.fillRect(leftX - 10, menuY - 24, 220, 29);
+          ctx.fillRect(leftX - 10, menuY - 25, 220, 30);
           ctx.fillStyle = "#ffffff";
         } else {
           ctx.fillStyle = "#151515";
@@ -2664,21 +2689,24 @@
         drawFittedText(label, leftX, menuY, 205);
         menuY += rowH;
       }
+      ctx.fillStyle = "#151515";
+      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
+      ctx.fillText("v" + APP_VERSION, leftX, menuY + 8);
 
       ctx.fillStyle = "#151515";
-      ctx.font = "22px " + CANVAS_FONT_FAMILY;
+      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
       ctx.fillText("=== DOCUMENTS ===", docsX, 32);
-      ctx.font = "20px " + CANVAS_FONT_FAMILY;
+      ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
       clampDocumentSelection();
       const docs = state.docs.slice(state.fileScrollOffset, state.fileScrollOffset + 12);
       for (let i = 0; i < docs.length; i++) {
         const doc = docs[i];
         const docIndex = state.fileScrollOffset + i;
-        const y = 62 + i * 32;
+        const y = 62 + i * 34;
         const selected = state.menuFocusSide === 1 && docIndex === state.docIndex;
         const current = doc.name === state.currentFileName;
         if (selected || current) {
-          ctx.fillRect(docsX - 10, y - 23, 470, 29);
+          ctx.fillRect(docsX - 10, y - 24, 470, 30);
           ctx.fillStyle = "#ffffff";
         }
         const preview = doc.text.replace(/\s+/g, " ").slice(0, 18);
@@ -2689,7 +2717,7 @@
         ctx.fillStyle = "#151515";
         ctx.fillRect(84, 360, 632, 126);
         ctx.fillStyle = "#ffffff";
-        ctx.font = "22px " + CANVAS_FONT_FAMILY;
+        ctx.font = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
         ctx.fillText("Delete " + state.pendingDeleteName, 116, 402);
         ctx.fillText("Code: " + state.deleteConfirmCode, 116, 438);
         ctx.fillText("Input: " + state.deleteConfirmInput + "_", 116, 474);
@@ -2843,7 +2871,7 @@
       ui.wordMetric.textContent = wordCount(state.text);
       ui.fontSize.value = state.fontSize;
       ui.lineSpace.value = state.lineSpace;
-      ui.language.value = state.language;
+      ui.language.value = selectedLanguageValue();
       ui.message.textContent = state.status;
       ui.statusLine.textContent = state.status;
       ui.powerSwitch.classList.toggle("on", state.powerOn);
@@ -3303,7 +3331,7 @@
       state.lineSpace = Number(ui.webLineSpace.value);
       const chosenLanguage = document.getElementById("webLanguage").value;
       const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
-      state.language = chosenLanguage || (chosenEnglish ? chosenEnglish.value : state.language);
+      state.language = resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : "");
       if (hangulEngine) hangulEngine.clear();
       setStatus("Settings saved from web interface.");
       renderWebInterface();
@@ -3397,7 +3425,7 @@
 
     ui.language.addEventListener("change", () => {
       commitComposition();
-      state.language = ui.language.value;
+      state.language = resolveSelectedLanguage(ui.language.value);
       if (hangulEngine) hangulEngine.clear();
       setStatus("Language: " + activeLayoutName() + ".");
       render();
