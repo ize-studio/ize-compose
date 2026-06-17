@@ -27,7 +27,7 @@
       min-height: 100vh;
       background: var(--bg);
       color: var(--ink);
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: "Noto Sans KR", "Noto Sans", Arial, sans-serif;
     }
 
     .app {
@@ -487,7 +487,7 @@
       border-radius: 6px;
       background: #111;
       color: #e9e4d8;
-      font: 12px/1.35 Consolas, monospace;
+      font: 12px/1.35 "Noto Sans KR", "Noto Sans", Arial, sans-serif;
       white-space: pre-wrap;
     }
 
@@ -529,7 +529,7 @@
       background: #fff;
       color: #161616;
       box-shadow: 0 20px 70px rgba(0,0,0,0.35);
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      font-family: "Noto Sans KR", "Noto Sans", system-ui, -apple-system, Segoe UI, sans-serif;
     }
 
     .local-root-card h2 {
@@ -573,7 +573,7 @@
       border-radius: 8px;
       box-shadow: 0 24px 90px rgba(0,0,0,0.42);
       border: 1px solid #d8d8d8;
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      font-family: "Noto Sans KR", "Noto Sans", system-ui, -apple-system, Segoe UI, sans-serif;
     }
 
     .web-page * {
@@ -822,7 +822,7 @@
       border-radius: 6px;
       background: #111;
       color: #e9e4d8;
-      font: 12px/1.35 Consolas, monospace;
+      font: 12px/1.35 "Noto Sans KR", "Noto Sans", Arial, sans-serif;
       white-space: pre-wrap;
     }
 
@@ -1231,6 +1231,7 @@
     const MARGIN_Y = 24;
     const STATUS_Y = 30;
     const RIGHT_EDGE_MARGIN = 24;
+    const CANVAS_FONT_FAMILY = '"Noto Sans KR", "Noto Sans", Arial, sans-serif';
 
     let state = loadState();
     let githubSessionToken = "";
@@ -2482,9 +2483,9 @@
     function drawStatusScreenFrame(title, line1, line2) {
       clearPaper();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px 'Courier New', monospace";
+      ctx.font = "28px " + CANVAS_FONT_FAMILY;
       ctx.fillText(title, 46, 86);
-      ctx.font = "24px 'Courier New', monospace";
+      ctx.font = "24px " + CANVAS_FONT_FAMILY;
       if (line1) ctx.fillText(line1, 46, 130);
       if (line2) ctx.fillText(line2, 46, 166);
     }
@@ -2497,13 +2498,13 @@
     }
 
     function firmwareFont(size = state.fontSize) {
-      ctx.font = firmwareFontPx(size) + "px 'Courier New', monospace";
+      ctx.font = firmwareFontPx(size) + "px " + CANVAS_FONT_FAMILY;
       ctx.textAlign = "left";
       ctx.direction = "ltr";
     }
 
     function statusFont() {
-      ctx.font = STATUS_FONT_PX + "px 'Courier New', monospace";
+      ctx.font = STATUS_FONT_PX + "px " + CANVAS_FONT_FAMILY;
       ctx.textAlign = "left";
       ctx.direction = "ltr";
     }
@@ -2591,7 +2592,7 @@
 
       if (state.pendingText) {
         ctx.fillStyle = "#151515";
-        ctx.font = "18px 'Courier New', monospace";
+        ctx.font = "18px " + CANVAS_FONT_FAMILY;
         ctx.fillText("buffering " + Math.min(Array.from(state.pendingText).length, 99) + " chars", marginX, textBottom + 38);
       }
 
@@ -2635,13 +2636,15 @@
       ctx.fillStyle = "#151515";
       const leftX = 36;
       const docsX = 292;
-      const rowH = 34;
-      ctx.font = "24px 'Courier New', monospace";
+      const rowH = 32;
+      ctx.font = "22px " + CANVAS_FONT_FAMILY;
       ctx.fillText("Ize Compose", leftX, 32);
-      ctx.font = "22px 'Courier New', monospace";
+      ctx.font = "19px " + CANVAS_FONT_FAMILY;
       drawFittedText(activeLayoutName(), leftX, 58, 220);
-      ctx.font = "24px 'Courier New', monospace";
-      let menuY = 94;
+      ctx.font = "19px " + CANVAS_FONT_FAMILY;
+      ctx.fillText("v" + APP_VERSION, leftX, 84);
+      ctx.font = "20px " + CANVAS_FONT_FAMILY;
+      let menuY = 124;
       for (let i = 0; i < menuItems.length; i++) {
         let label = menuItems[i];
         if (i === 3) {
@@ -2653,7 +2656,7 @@
         }
         if (i === state.menuIndex) {
           ctx.fillStyle = "#151515";
-          ctx.fillRect(leftX - 10, menuY - 25, 220, 30);
+          ctx.fillRect(leftX - 10, menuY - 24, 220, 29);
           ctx.fillStyle = "#ffffff";
         } else {
           ctx.fillStyle = "#151515";
@@ -2663,19 +2666,19 @@
       }
 
       ctx.fillStyle = "#151515";
-      ctx.font = "24px 'Courier New', monospace";
+      ctx.font = "22px " + CANVAS_FONT_FAMILY;
       ctx.fillText("=== DOCUMENTS ===", docsX, 32);
-      ctx.font = "21px 'Courier New', monospace";
+      ctx.font = "20px " + CANVAS_FONT_FAMILY;
       clampDocumentSelection();
       const docs = state.docs.slice(state.fileScrollOffset, state.fileScrollOffset + 12);
       for (let i = 0; i < docs.length; i++) {
         const doc = docs[i];
         const docIndex = state.fileScrollOffset + i;
-        const y = 62 + i * 34;
+        const y = 62 + i * 32;
         const selected = state.menuFocusSide === 1 && docIndex === state.docIndex;
         const current = doc.name === state.currentFileName;
         if (selected || current) {
-          ctx.fillRect(docsX - 10, y - 24, 470, 30);
+          ctx.fillRect(docsX - 10, y - 23, 470, 29);
           ctx.fillStyle = "#ffffff";
         }
         const preview = doc.text.replace(/\s+/g, " ").slice(0, 18);
@@ -2686,14 +2689,11 @@
         ctx.fillStyle = "#151515";
         ctx.fillRect(84, 360, 632, 126);
         ctx.fillStyle = "#ffffff";
-        ctx.font = "24px 'Courier New', monospace";
+        ctx.font = "22px " + CANVAS_FONT_FAMILY;
         ctx.fillText("Delete " + state.pendingDeleteName, 116, 402);
         ctx.fillText("Code: " + state.deleteConfirmCode, 116, 438);
         ctx.fillText("Input: " + state.deleteConfirmInput + "_", 116, 474);
       }
-      ctx.fillStyle = "#151515";
-      ctx.font = "18px 'Courier New', monospace";
-      ctx.fillText("v" + APP_VERSION, leftX, SCREEN_H - 28);
     }
     function drawSearch() {
       drawTyping();
@@ -2704,7 +2704,7 @@
       ctx.strokeStyle = "#151515";
       ctx.strokeRect(118, 84, 564, 66);
       ctx.fillStyle = "#151515";
-      ctx.font = "24px 'Courier New', monospace";
+      ctx.font = "24px " + CANVAS_FONT_FAMILY;
       drawFittedText("Search: " + state.searchQuery + "_", 142, 126, 516);
     }
 
@@ -2712,18 +2712,18 @@
       clearPaper();
       drawStatusBar();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px 'Courier New', monospace";
+      ctx.font = "28px " + CANVAS_FONT_FAMILY;
       ctx.fillText("Online Sync", 48, 82);
-      ctx.font = "22px 'Courier New', monospace";
+      ctx.font = "22px " + CANVAS_FONT_FAMILY;
       drawFittedText(githubConnectionStatusLine(), 48, 120, 704);
       drawFittedText("Network: " + state.networkMode, 48, 152, 704);
       drawFittedText("Status: " + state.syncStatus, 48, 184, 704);
-      ctx.font = "18px 'Courier New', monospace";
+      ctx.font = "18px " + CANVAS_FONT_FAMILY;
       const logLines = String(state.syncLog || "Waiting...").split("\n").slice(-12);
       for (let i = 0; i < logLines.length; i++) {
         drawFittedText(logLines[i], 56, 232 + i * 24, 688);
       }
-      ctx.font = "16px 'Courier New', monospace";
+      ctx.font = "16px " + CANVAS_FONT_FAMILY;
       ctx.fillText("Enter: sync  G: GitHub settings  W: WiFi  Esc: close", 48, SCREEN_H - 32);
     }
 
@@ -2739,9 +2739,9 @@
     function drawWifiScan() {
       clearPaper();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px 'Courier New', monospace";
+      ctx.font = "28px " + CANVAS_FONT_FAMILY;
       ctx.fillText("=== WIFI SCAN ===", 48, 52);
-      ctx.font = "22px 'Courier New', monospace";
+      ctx.font = "22px " + CANVAS_FONT_FAMILY;
       drawFittedText(state.wifiStatusMessage, 48, 88, 704);
       const list = fakeWifiList();
       const startY = 134;
@@ -2757,21 +2757,21 @@
           drawFittedText(row, 48, y, 664);
         }
       }
-      ctx.font = "18px 'Courier New', monospace";
+      ctx.font = "18px " + CANVAS_FONT_FAMILY;
       ctx.fillText("Enter: connect / Tab or Menu: cancel", 48, SCREEN_H - 34);
     }
 
     function drawWifiPassword() {
       clearPaper();
       ctx.fillStyle = "#151515";
-      ctx.font = "28px 'Courier New', monospace";
+      ctx.font = "28px " + CANVAS_FONT_FAMILY;
       const selected = fakeWifiList()[state.wifiScanSelected] || fakeWifiList()[0];
       ctx.fillText("=== WIFI PASSWORD ===", 48, 52);
-      ctx.font = "22px 'Courier New', monospace";
+      ctx.font = "22px " + CANVAS_FONT_FAMILY;
       drawFittedText("SSID: " + selected.ssid, 48, 96, 704);
       drawFittedText(state.wifiStatusMessage, 48, 132, 704);
       drawFittedText("Password: " + "*".repeat(state.wifiPasswordBuffer.length) + "_", 48, 176, 704);
-      ctx.font = "18px 'Courier New', monospace";
+      ctx.font = "18px " + CANVAS_FONT_FAMILY;
       ctx.fillText("Enter: connect / Tab or Menu: cancel", 48, SCREEN_H - 34);
     }
 
@@ -2790,7 +2790,7 @@
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, statusBarBottom, SCREEN_W, SCREEN_H - statusBarBottom);
       ctx.fillStyle = "#151515";
-      ctx.font = "24px 'Courier New', monospace";
+      ctx.font = "24px " + CANVAS_FONT_FAMILY;
       const infoY = statusBarBottom + 42;
       if (state.networkMode === "WiFi") {
         ctx.fillText("Wi-Fi Web Server", 48, infoY);
@@ -2821,7 +2821,7 @@
         ctx.drawImage(initialImage, 0, 0, SCREEN_W, SCREEN_H);
       } else {
         ctx.fillStyle = "#151515";
-        ctx.font = "44px Georgia, Times New Roman, serif";
+        ctx.font = "44px " + CANVAS_FONT_FAMILY;
         ctx.fillText("Ize Compose", 248, 220);
       }
     }
