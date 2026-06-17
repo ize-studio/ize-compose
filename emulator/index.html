@@ -764,6 +764,19 @@
       min-height: auto;
     }
 
+    #webLanguage {
+      width: 100%;
+      min-height: 230px;
+      max-height: 42vh;
+      overflow: auto;
+    }
+
+    #webLanguage option {
+      min-height: 24px;
+      padding: 4px 6px;
+      overflow-wrap: anywhere;
+    }
+
     .web-status,
     .web-hint {
       color: #666;
@@ -821,16 +834,99 @@
 
     .web-doc-row {
       display: grid;
-      grid-template-columns: 150px 1fr auto;
+      grid-template-columns: minmax(0, 150px) minmax(0, 1fr);
       gap: 10px;
       align-items: center;
       padding: 8px;
       border-top: 1px solid #d8d8d8;
     }
 
+    .web-doc-row strong,
+    .web-doc-row span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
     .web-doc-row button {
       width: auto;
       min-width: 86px;
+    }
+
+    .web-doc-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .web-doc-actions button {
+      flex: 1 1 96px;
+      min-width: 0;
+      max-width: 150px;
+    }
+
+    .web-read-page {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      padding-top: 8px;
+      border-top: 1px solid #d8d8d8;
+    }
+
+    .web-read-page button {
+      width: auto;
+      justify-self: start;
+      min-width: 88px;
+    }
+
+    .web-read-page h3 {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .web-read-page pre {
+      max-width: 100%;
+      max-height: 60vh;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid #d8d8d8;
+      border-radius: 6px;
+      background: #fff;
+      color: #161616;
+      font: 14px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .web-delete-confirm {
+      display: grid;
+      gap: 10px;
+      padding: 10px 0 2px;
+      border-top: 1px solid #d8d8d8;
+    }
+
+    .web-delete-code {
+      width: max-content;
+      padding: 8px 12px;
+      border: 1px solid #111;
+      background: #f6f6f6;
+      color: #111;
+      font: 700 30px/1.1 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      letter-spacing: 4px;
+    }
+
+    .web-delete-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .web-delete-actions button {
+      width: auto;
+      min-width: 96px;
     }
 
     .terminal {
@@ -1139,7 +1235,7 @@
                 </div>
                 <div class="web-full">
                   <label for="webLanguage">Language</label>
-                  <select id="webLanguage" size="10"></select>
+                  <select id="webLanguage" size="8"></select>
                 </div>
               </div>
               <p id="webSettingsStatus" class="web-status">Loading...</p>
@@ -1247,7 +1343,7 @@
 
     const menuItems = ["Sync", "New", "Save", "Count", "Sleep", "Network"];
     const networkModes = ["Off", "WiFi", "WebServer"];
-    const UI_SCALE = 2;
+    const UI_SCALE = Math.min(SCREEN_W / 640, SCREEN_H / 360);
     const MARGIN_X = 35;
     const MARGIN_Y = 65;
     const STATUS_Y = 30;
@@ -1268,6 +1364,8 @@
     let powerTransitioning = false;
     let saveNoticeUntil = 0;
     let saveNoticeTimer = null;
+    let audioContext = null;
+    let lastKeySoundAt = 0;
     const virtualModifiers = {
       ctrl: false,
       shift: false,
@@ -1287,10 +1385,16 @@
         menuFocusSide: 0,
         docIndex: 0,
         fileScrollOffset: 0,
+        deleteAskActive: false,
         deletePromptActive: false,
         deleteConfirmCode: "",
         deleteConfirmInput: "",
         pendingDeleteName: "",
+        webDeleteName: "",
+        webDeleteCode: "",
+        webDeleteInput: "",
+        webDeleteError: "",
+        webReadName: "",
         countMode: 2,
         language: "KB_QWERTY",
         settingsLanguage: "KB_QWERTY",
@@ -1326,7 +1430,7 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 300,
+        typingDelayMs: 550,
         previousEnglishLanguage: "KB_QWERTY",
         status: "Power off."
       };
@@ -1345,7 +1449,19 @@
         if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
         if (typeof next.fontSize !== "number" || next.fontSize === 16) next.fontSize = 20;
         if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
-        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180) next.typingDelayMs = 300;
+        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350) next.typingDelayMs = 550;
+        next.menuIndex = 0;
+        next.menuFocusSide = 0;
+        next.deleteAskActive = false;
+        next.deletePromptActive = false;
+        next.deleteConfirmCode = "";
+        next.deleteConfirmInput = "";
+        next.pendingDeleteName = "";
+        next.webDeleteName = "";
+        next.webDeleteCode = "";
+        next.webDeleteInput = "";
+        next.webDeleteError = "";
+        next.webReadName = "";
         if (!Array.isArray(next.githubSyncState)) next.githubSyncState = [];
         return next;
       } catch {
@@ -1412,6 +1528,7 @@
     }
 
     function showLocalRootModal() {
+      if (ui.webModal.classList.contains("open")) return;
       localRootPromptedThisSession = true;
       ui.localRootStatus.textContent = "";
       ui.localRootModal.classList.add("open");
@@ -1708,6 +1825,57 @@
       ui.language.value = selectedLanguageValue(state.settingsLanguage);
     }
 
+    function revealSelectedOption(select) {
+      if (!select || select.selectedIndex < 0) return;
+      const selected = select.options[select.selectedIndex];
+      if (selected && typeof selected.scrollIntoView === "function") selected.scrollIntoView({ block: "nearest" });
+    }
+
+    function ensureAudioContext() {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      if (!audioContext) audioContext = new AudioCtx();
+      if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+      return audioContext;
+    }
+
+    function playTone({ frequency, duration = 0.035, volume = 0.035, type = "square", delay = 0 }) {
+      const ctx = ensureAudioContext();
+      if (!ctx) return;
+      const start = ctx.currentTime + delay;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(volume, start + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.01);
+    }
+
+    function playKeySound(key = "") {
+      const now = performance.now();
+      if (now - lastKeySoundAt < 18) return;
+      lastKeySoundAt = now;
+      const lower = String(key || "").toLowerCase();
+      const frequency = lower === "backspace" || lower === "delete" ? 190 :
+        lower === "enter" || lower === "\n" ? 260 :
+        lower === " " || lower === "space" ? 155 :
+        230;
+      playTone({ frequency, duration: 0.028, volume: 0.028, type: "square" });
+      playTone({ frequency: frequency * 1.9, duration: 0.018, volume: 0.012, type: "triangle", delay: 0.004 });
+    }
+
+    function playPowerSound(turningOn) {
+      const first = turningOn ? 180 : 260;
+      const second = turningOn ? 310 : 145;
+      playTone({ frequency: first, duration: 0.065, volume: 0.04, type: "triangle" });
+      playTone({ frequency: second, duration: 0.09, volume: 0.045, type: "triangle", delay: 0.07 });
+    }
+
     function mappedKeyValue(key, { shift = false, alt = false, caps = false } = {}) {
       if (key.length !== 1) return key;
       const baseKey = key.toLowerCase();
@@ -1814,6 +1982,10 @@
       if (state.networkMode === "Off") state.networkMode = "WebServer";
       generatePin();
       state.webUnlocked = false;
+      state.webReadName = "";
+      clearWebDeletePrompt();
+      ui.localRootModal.classList.remove("open");
+      ui.localRootModal.setAttribute("aria-hidden", "true");
       renderWebInterface();
       ui.webModal.classList.add("open");
       ui.webModal.setAttribute("aria-hidden", "false");
@@ -1822,9 +1994,169 @@
     }
 
     function closeWebInterface() {
+      state.webReadName = "";
+      clearWebDeletePrompt();
       ui.webModal.classList.remove("open");
       ui.webModal.setAttribute("aria-hidden", "true");
       screen.focus();
+    }
+
+    function webEscapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch]));
+    }
+
+    function webDocByName(name) {
+      return state.docs.find((doc) => doc.name === name) || null;
+    }
+
+    function openWebReadPage(name) {
+      if (!requireWebPin()) return;
+      const doc = webDocByName(name);
+      if (!doc) {
+        setStatus("File not found.");
+        renderWebInterface();
+        return;
+      }
+      clearWebDeletePrompt();
+      state.webReadName = doc.name;
+      renderWebInterface();
+    }
+
+    function closeWebReadPage() {
+      state.webReadName = "";
+      renderWebInterface();
+    }
+
+    function clearWebDeletePrompt() {
+      state.webDeleteName = "";
+      state.webDeleteCode = "";
+      state.webDeleteInput = "";
+      state.webDeleteError = "";
+    }
+
+    function startWebDeleteDoc(name) {
+      if (!requireWebPin()) return;
+      const doc = webDocByName(name);
+      if (!doc) {
+        setStatus("File not found.");
+        renderWebInterface();
+        return;
+      }
+      state.webDeleteName = doc.name;
+      state.webDeleteCode = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+      state.webDeleteInput = "";
+      state.webDeleteError = "";
+      setStatus("Delete code: " + state.webDeleteCode);
+      renderWebInterface();
+    }
+
+    async function confirmWebDeleteDoc() {
+      const target = state.webDeleteName;
+      if (!target) return;
+      if (state.webDeleteInput !== state.webDeleteCode) {
+        state.webDeleteError = "Code did not match.";
+        state.webDeleteInput = "";
+        setStatus("Delete code mismatch.");
+        renderWebInterface();
+        return;
+      }
+      await deleteDoc(target);
+      clearWebDeletePrompt();
+      renderWebInterface();
+      render();
+    }
+
+    function renderWebDeletePrompt() {
+      const doc = webDocByName(state.webDeleteName);
+      if (!doc) {
+        clearWebDeletePrompt();
+        return false;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "web-delete-confirm";
+      const title = document.createElement("h3");
+      title.textContent = "Delete document";
+      const message = document.createElement("p");
+      message.className = "web-status";
+      message.textContent = "Type the 6-digit code to delete " + doc.name + ".";
+      const code = document.createElement("div");
+      code.className = "web-delete-code";
+      code.textContent = state.webDeleteCode;
+      const input = document.createElement("input");
+      input.id = "webDeleteConfirmInput";
+      input.inputMode = "numeric";
+      input.autocomplete = "one-time-code";
+      input.maxLength = 6;
+      input.pattern = "[0-9]{6}";
+      input.placeholder = "6-digit code";
+      input.value = state.webDeleteInput || "";
+      input.addEventListener("input", () => {
+        state.webDeleteInput = input.value.replace(/\D/g, "").slice(0, 6);
+        input.value = state.webDeleteInput;
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          confirmWebDeleteDoc();
+        } else if (event.key === "Escape" || isTabKey(event)) {
+          event.preventDefault();
+          clearWebDeletePrompt();
+          setStatus("Delete canceled.");
+          renderWebInterface();
+        }
+      });
+      const error = document.createElement("p");
+      error.className = "web-warn";
+      error.textContent = state.webDeleteError || "";
+      const actions = document.createElement("div");
+      actions.className = "web-delete-actions";
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "warn";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => confirmWebDeleteDoc());
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "secondary";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => {
+        clearWebDeletePrompt();
+        setStatus("Delete canceled.");
+        renderWebInterface();
+      });
+      actions.append(del, cancel);
+      wrap.append(title, message, code, input, error, actions);
+      ui.webDocList.append(wrap);
+      setTimeout(() => input.focus(), 0);
+      return true;
+    }
+
+    function renderWebReadPage() {
+      const doc = webDocByName(state.webReadName);
+      if (!doc) {
+        state.webReadName = "";
+        return false;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "web-read-page";
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "secondary";
+      back.textContent = "Back";
+      back.addEventListener("click", closeWebReadPage);
+      const title = document.createElement("h3");
+      title.textContent = doc.name;
+      const body = document.createElement("pre");
+      body.textContent = doc.text || "";
+      wrap.append(back, title, body);
+      ui.webDocList.append(wrap);
+      return true;
     }
 
     function renderWebInterface() {
@@ -1849,6 +2181,7 @@
           option.selected = layout.id === selectedLanguageValue(state.settingsLanguage);
           webLanguage.append(option);
         }
+        revealSelectedOption(webLanguage);
       }
       document.querySelectorAll('input[name="webEnglishLayout"]').forEach((radio) => {
         radio.checked = radio.value === (state.settingsLanguage === "KB_DVORAK" ? "KB_DVORAK" : "KB_QWERTY");
@@ -1861,8 +2194,7 @@
       document.getElementById("ghOwner").value = state.githubOwner;
       document.getElementById("ghRepo").value = state.githubRepo;
       document.getElementById("ghBranch").value = state.githubBranch;
-      state.githubPath = "documents";
-      document.getElementById("ghPath").value = "documents";
+      document.getElementById("ghPath").value = state.githubPath || "documents";
       const tokenInput = document.getElementById("ghToken");
       const saveTokenBox = document.getElementById("ghSaveToken");
       tokenInput.value = "";
@@ -1872,6 +2204,8 @@
       document.getElementById("githubStatus").textContent = state.syncStatus || "Waiting...";
       document.getElementById("webSyncLog").textContent = state.syncLog || "Waiting...";
       ui.webDocList.innerHTML = "";
+      if (state.webReadName && renderWebReadPage()) return;
+      if (state.webDeleteName && renderWebDeletePrompt()) return;
       for (const doc of state.docs.slice(0, 12)) {
         const row = document.createElement("div");
         row.className = "web-doc-row";
@@ -1880,14 +2214,33 @@
         const preview = document.createElement("span");
         preview.textContent = doc.text.replace(/\s+/g, " ").slice(0, 90) || "Empty document";
         const open = document.createElement("button");
-        open.textContent = "Open";
-        open.addEventListener("click", () => loadDoc(doc.name));
-        row.append(name, preview, open);
+        open.textContent = "Read";
+        open.addEventListener("click", () => openWebReadPage(doc.name));
+        const download = document.createElement("button");
+        download.textContent = "Download";
+        download.addEventListener("click", () => {
+          const blob = new Blob([doc.text || ""], { type: "text/plain;charset=utf-8" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = doc.name;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        });
+        const del = document.createElement("button");
+        del.textContent = "Delete";
+        del.className = "warn";
+        del.addEventListener("click", () => startWebDeleteDoc(doc.name));
+        const actions = document.createElement("div");
+        actions.className = "web-doc-actions";
+        actions.append(open, download, del);
+        row.append(name, preview, actions);
         ui.webDocList.append(row);
       }
     }
 
     function showWebTab(id) {
+      state.webReadName = "";
+      clearWebDeletePrompt();
       for (const section of ["webDocs", "webSettings"]) {
         document.getElementById(section).classList.toggle("active", section === id);
       }
@@ -2240,23 +2593,34 @@
     }
 
     function startDeletePrompt(name) {
-      if (state.docs.length <= 1) {
-        setStatus("Cannot delete the last document.");
-        return;
-      }
-      state.deletePromptActive = true;
+      state.deleteAskActive = true;
+      state.deletePromptActive = false;
       state.pendingDeleteName = name;
+      state.deleteConfirmCode = "";
+      state.deleteConfirmInput = "";
+      setStatus("Delete? Enter: code / Tab: cancel.");
+      render();
+      screen.focus();
+    }
+
+    function startDeleteCodePrompt() {
+      if (!state.pendingDeleteName) return;
+      state.deleteAskActive = false;
+      state.deletePromptActive = true;
       state.deleteConfirmCode = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
       state.deleteConfirmInput = "";
       setStatus("Delete code: " + state.deleteConfirmCode);
       render();
+      screen.focus();
     }
 
     function cancelDeletePrompt() {
+      state.deleteAskActive = false;
       state.deletePromptActive = false;
       state.deleteConfirmCode = "";
       state.deleteConfirmInput = "";
       state.pendingDeleteName = "";
+      screen.focus();
     }
 
     function confirmDeletePrompt() {
@@ -2287,15 +2651,18 @@
     }
 
     async function deleteDoc(name) {
-      if (state.docs.length <= 1) {
-        setStatus("Cannot delete the last document.");
-        return;
-      }
+      const wasCurrent = state.currentFileName === name;
       state.docs = state.docs.filter((entry) => entry.name !== name);
       try {
         await deleteLocalDocFile(name);
       } catch {}
-      if (state.currentFileName === name) {
+      if (!state.docs.length) {
+        const newName = nextDocName();
+        const doc = { name: newName, text: "" };
+        state.docs.push(doc);
+        if (localRootHandle) await writeLocalDoc(doc);
+      }
+      if (wasCurrent) {
         const doc = state.docs[0];
         state.currentFileName = doc.name;
         state.text = doc.text;
@@ -2338,6 +2705,26 @@
       }, state.typingDelayMs);
     }
 
+    function transitionDelay(ms) {
+      return new Promise((resolve) => {
+        sleepTimer = setTimeout(() => {
+          sleepTimer = null;
+          resolve();
+        }, ms);
+      });
+    }
+
+    async function runSleepClearSequence() {
+      await transitionDelay(1500);
+      state.mode = "sleepFlash";
+      state.sleepFlashFrame = 1;
+      render();
+      await transitionDelay(200);
+      state.sleepFlashFrame = 0;
+      render();
+      await transitionDelay(200);
+    }
+
     function commitComposition() {
       if (hangulEngine) hangulEngine.flush();
     }
@@ -2372,7 +2759,15 @@
     function toggleMenu() {
       if (!state.powerOn) return;
       state.mode = state.mode === "menu" ? "typing" : "menu";
+      state.deleteAskActive = false;
+      state.deletePromptActive = false;
+      state.deleteConfirmCode = "";
+      state.deleteConfirmInput = "";
+      state.pendingDeleteName = "";
       if (state.mode === "menu") {
+        state.menuIndex = 0;
+        state.menuFocusSide = 0;
+        state.menuEditingValue = false;
         state.docIndex = 0;
         state.fileScrollOffset = 0;
         clampDocumentSelection();
@@ -2395,33 +2790,25 @@
         });
       }
       renderDocs();
-      state.powerOn = false;
-      state.mode = "sleepFlash";
       state.sleepFlashFrame = 0;
       setStatus("Powering off.");
       render();
-      sleepTimer = setInterval(() => {
-        state.sleepFlashFrame += 1;
-        if (state.sleepFlashFrame >= 4) {
-          clearInterval(sleepTimer);
-          sleepTimer = null;
-          state.mode = "initial";
-          state.powerOn = false;
-          powerTransitioning = false;
-          setStatus("Power off.");
-          render();
-          return;
-        }
-        render();
-      }, 240);
+      await runSleepClearSequence();
+      state.mode = "sleep";
+      state.powerOn = false;
+      powerTransitioning = false;
+      setStatus("Power off.");
+      render();
     }
 
     async function wake() {
       if (powerTransitioning && state.mode === "sleepFlash") return;
       if (sleepTimer) {
-        clearInterval(sleepTimer);
+        clearTimeout(sleepTimer);
         sleepTimer = null;
       }
+      powerTransitioning = true;
+      await runSleepClearSequence();
       powerTransitioning = false;
       state.powerOn = true;
       state.mode = "typing";
@@ -2675,8 +3062,11 @@
     }
 
     function drawMenuEntry(text, x, y, isSelected, isRightSide) {
-      const maxTextWidth = (isRightSide ? 520 : 185) * UI_SCALE;
-      const boxW = (isRightSide ? 540 : 190) * UI_SCALE;
+      const logicalMaxTextWidth = isRightSide
+        ? Math.max(80, SCREEN_W / UI_SCALE - x - RIGHT_EDGE_MARGIN)
+        : 185;
+      const maxTextWidth = logicalMaxTextWidth * UI_SCALE;
+      const boxW = (logicalMaxTextWidth + 8) * UI_SCALE;
       const rowH = (BASE_FONT_SIZE + state.lineSpace + 8) * UI_SCALE;
       const drawX = x * UI_SCALE;
       const drawY = y * UI_SCALE;
@@ -2839,9 +3229,9 @@
         const selected = state.menuFocusSide === 1 && docIndex === state.docIndex;
         const preview = Array.from(doc.text.replace(/\s+/g, " ")).slice(0, 12).join("");
         const sizeKb = Math.max(0.1, new Blob([doc.text || ""]).size / 1024).toFixed(1);
-        const label = state.deletePromptActive && selected
-          ? "Delete code required"
-          : String(docIndex + 1) + ". " + doc.name + " [" + sizeKb + "KB] | " + preview;
+        let label = String(docIndex + 1) + ". " + doc.name + " [" + sizeKb + "KB] | " + preview;
+        if (selected && state.deleteAskActive) label = "Delete? Enter: code / Tab: cancel";
+        else if (selected && state.deletePromptActive) label = "Delete code required";
         drawMenuEntry(label, docsX, y, selected, true);
       }
       if (state.deletePromptActive) {
@@ -2979,7 +3369,7 @@
     }
 
     function drawSleepFlash() {
-      ctx.fillStyle = state.sleepFlashFrame % 2 === 0 ? "#f4f2e8" : "#000";
+      ctx.fillStyle = state.sleepFlashFrame % 2 === 0 ? "#fff" : "#000";
       ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
     }
 
@@ -3124,6 +3514,16 @@
       }
     }
 
+    function setKeyPressed(key, code = "", pressed = false) {
+      for (const button of findKeyButtons(key, code)) {
+        if (keyFlashTimers.has(button)) {
+          clearTimeout(keyFlashTimers.get(button));
+          keyFlashTimers.delete(button);
+        }
+        button.classList.toggle("flash", Boolean(pressed));
+      }
+    }
+
     function clearMomentaryModifiers() {
       virtualModifiers.ctrl = false;
       virtualModifiers.shift = false;
@@ -3140,6 +3540,10 @@
         metaKey: false,
         preventDefault() {}
       };
+    }
+
+    function isTabKey(event) {
+      return event.key === "Tab" || event.key === "\t";
     }
 
     function applyShiftToKey(key) {
@@ -3239,10 +3643,11 @@
         handleTypingKey(event);
       }
     }
-    function pressVirtualKey(button) {
+    function pressVirtualKey(button, options = {}) {
       if (!state.powerOn) return;
+      playKeySound(button.dataset.key || button.dataset.modifier || "");
       if (button.dataset.modifier) {
-        flashKey(button.dataset.modifier);
+        if (!options.visualHandled) flashKey(button.dataset.modifier);
         const modifier = button.dataset.modifier;
         virtualModifiers[modifier] = !virtualModifiers[modifier];
         if (modifier === "caps") {
@@ -3266,7 +3671,7 @@
       let key = button.dataset.key || "";
       if (key === "Backslash") key = "\\";
       if (key === "Tab") key = "\t";
-      flashKey(key, button.dataset.key || "");
+      if (!options.visualHandled) flashKey(key, button.dataset.key || "");
       routeKey(key, { ctrlKey: virtualModifiers.ctrl, altKey: virtualModifiers.alt, shiftKey: virtualModifiers.shift });
       clearMomentaryModifiers();
       screen.focus();
@@ -3306,7 +3711,7 @@
         render();
         return;
       }
-      if (event.key === "Tab") {
+      if (isTabKey(event)) {
         event.preventDefault();
         insertText("    ");
         return;
@@ -3380,16 +3785,27 @@
     }
 
     function handleMenuKey(event) {
+      if (state.deleteAskActive) {
+        event.preventDefault();
+        if (event.key === "Enter") startDeleteCodePrompt();
+        else if (event.key === "Escape" || isTabKey(event) || event.key === "Backspace" ||
+          event.key === "Delete" || event.key === "ArrowUp" || event.key === "ArrowDown" ||
+          event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          cancelDeletePrompt();
+        }
+        render();
+        return;
+      }
       if (state.deletePromptActive) {
         event.preventDefault();
-        if (event.key === "Escape" || event.key === "Tab") cancelDeletePrompt();
+        if (event.key === "Escape" || isTabKey(event)) cancelDeletePrompt();
         else if (event.key === "Backspace") state.deleteConfirmInput = state.deleteConfirmInput.slice(0, -1);
         else if (event.key === "Enter") confirmDeletePrompt();
         else if (/^[0-9]$/.test(event.key) && state.deleteConfirmInput.length < 6) state.deleteConfirmInput += event.key;
         render();
         return;
       }
-      if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape" || isTabKey(event)) {
         event.preventDefault();
         if (state.menuEditingValue) state.menuEditingValue = false;
         else state.mode = "typing";
@@ -3433,14 +3849,14 @@
       const list = fakeWifiList();
       if (event.key === "ArrowUp" && state.wifiScanSelected > 0) state.wifiScanSelected--;
       else if (event.key === "ArrowDown" && state.wifiScanSelected < list.length - 1) state.wifiScanSelected++;
-      else if (event.key === "Tab" || event.key === "Escape") { stopNetworkServices(); state.mode = "typing"; }
+      else if (isTabKey(event) || event.key === "Escape") { stopNetworkServices(); state.mode = "typing"; }
       else if (event.key === "Enter" && list.length > 0) { state.mode = "wifiPassword"; state.wifiPasswordBuffer = ""; state.wifiStatusMessage = "Enter password. Enter: connect. Tab/Menu: cancel."; }
       event.preventDefault();
       render();
     }
 
     function handleWifiPasswordKey(event) {
-      if (event.key === "Tab" || event.key === "Escape") { stopNetworkServices(); state.mode = "typing"; }
+      if (isTabKey(event) || event.key === "Escape") { stopNetworkServices(); state.mode = "typing"; }
       else if (event.key === "Backspace") state.wifiPasswordBuffer = state.wifiPasswordBuffer.slice(0, -1);
       else if (event.key === "Enter") { state.networkMode = "WiFi"; state.tempNetworkMode = "WiFi"; state.mode = "network"; state.wifiStatusMessage = "Connected."; openWebInterface("WiFi"); return; }
       else if (!event.ctrlKey && !event.metaKey && event.key.length === 1) state.wifiPasswordBuffer += event.key;
@@ -3449,7 +3865,7 @@
     }
 
     function handleWebPasswordKey(event) {
-      if (event.key === "Tab" || event.key === "Escape") { state.webServerPasswordInput = ""; state.webServerPasswordHint = "Numbers only / Tab cancels"; state.mode = "menu"; }
+      if (isTabKey(event) || event.key === "Escape") { state.webServerPasswordInput = ""; state.webServerPasswordHint = "Numbers only / Tab cancels"; state.mode = "menu"; }
       else if (event.key === "Backspace") { state.webServerPasswordInput = state.webServerPasswordInput.slice(0, -1); state.webServerPasswordHint = "Numbers only / Tab cancels"; }
       else if (event.key === "Enter") {
         if (state.webServerPasswordInput.length === 10) {
@@ -3541,7 +3957,8 @@
         event.preventDefault();
         return;
       }
-      flashKey(event.key, event.code);
+      if (!event.repeat) playKeySound(event.key);
+      setKeyPressed(event.key, event.code, true);
       if (state.mode === "sleep") {
         event.preventDefault();
         wake();
@@ -3570,8 +3987,26 @@
       else handleTypingKey(event);
     });
 
+    screen.addEventListener("keyup", (event) => {
+      setKeyPressed(event.key, event.code, false);
+    });
+
     document.querySelectorAll(".keyboard .key").forEach((button) => {
-      button.addEventListener("click", () => pressVirtualKey(button));
+      button.addEventListener("click", () => {
+        if (button.dataset.pointerHandled === "1") {
+          button.dataset.pointerHandled = "";
+          return;
+        }
+        pressVirtualKey(button);
+      });
+      button.addEventListener("pointerdown", () => {
+        button.dataset.pointerHandled = "1";
+        button.classList.add("flash");
+        pressVirtualKey(button, { visualHandled: true });
+      });
+      button.addEventListener("pointerup", () => button.classList.remove("flash"));
+      button.addEventListener("pointerleave", () => button.classList.remove("flash"));
+      button.addEventListener("pointercancel", () => button.classList.remove("flash"));
     });
 
     screen.addEventListener("paste", (event) => {
@@ -3590,8 +4025,13 @@
     document.getElementById("openWebBtn").addEventListener("click", () => openWebInterface(state.networkMode === "Off" ? "WebServer" : state.networkMode));
     ui.powerSwitch.addEventListener("click", (event) => {
       event.preventDefault();
-      if (state.powerOn) void enterSleep();
-      else void wake();
+      if (state.powerOn) {
+        if (!powerTransitioning && !sleepTimer) playPowerSound(false);
+        void enterSleep();
+      } else {
+        playPowerSound(true);
+        void wake();
+      }
     });
     document.getElementById("resetBtn").addEventListener("click", () => {
       state = defaultState();
@@ -3629,6 +4069,7 @@
       state.settingsLanguage = resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : "");
       setLanguage(state.settingsLanguage);
       if (hangulEngine) hangulEngine.clear();
+      persist();
       setStatus("Settings saved from web interface.");
       renderWebInterface();
       render();
@@ -3671,7 +4112,7 @@
       state.githubOwner = newOwner;
       state.githubRepo = newRepo;
       state.githubBranch = document.getElementById("ghBranch").value.trim() || "main";
-      state.githubPath = "documents";
+      state.githubPath = document.getElementById("ghPath").value.trim() || "documents";
       state.githubTokenSet = state.githubToken.length > 0;
       document.getElementById("ghToken").value = "";
       setStatus(saveToken && state.githubToken ? "GitHub settings saved with token." : "GitHub settings saved with session token.");
@@ -3731,6 +4172,7 @@
       state.settingsLanguage = resolveSelectedLanguage(ui.language.value);
       setLanguage(state.settingsLanguage);
       if (hangulEngine) hangulEngine.clear();
+      persist();
       setStatus("Language: " + activeLayoutName() + ".");
       render();
       screen.focus();
