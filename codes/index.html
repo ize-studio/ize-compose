@@ -1316,7 +1316,12 @@
     const SCREEN_H = screen.height;
     const LOGICAL_SCREEN_H = SCREEN_H;
     const initialImage = new Image();
-    initialImage.src = "../others/initial.png";
+    const INITIAL_IMAGE_PATHS = ["../others/initial.png", "others/initial.png"];
+    let initialImagePathIndex = 0;
+
+    function loadInitialImage() {
+      initialImage.src = INITIAL_IMAGE_PATHS[initialImagePathIndex];
+    }
 
     const ui = {
       modeMetric: document.getElementById("modeMetric"),
@@ -4191,6 +4196,12 @@
     });
 
     initialImage.addEventListener("load", render);
+    initialImage.addEventListener("error", () => {
+      if (initialImagePathIndex + 1 >= INITIAL_IMAGE_PATHS.length) return;
+      initialImagePathIndex += 1;
+      loadInitialImage();
+    });
+    loadInitialImage();
     localRootReadyPromise = restoreLocalRootHandle().then(() => {
       if (localRootHandle) setStatus("Power off. SD root: " + state.localRootName + ".");
       render();
