@@ -1326,7 +1326,7 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 180,
+        typingDelayMs: 300,
         previousEnglishLanguage: "KB_QWERTY",
         status: "Power off."
       };
@@ -1343,9 +1343,9 @@
         next.tempNetworkMode = "Off";
         next.githubPath = "documents";
         if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
-        if (typeof next.fontSize !== "number") next.fontSize = 20;
+        if (typeof next.fontSize !== "number" || next.fontSize === 16) next.fontSize = 20;
         if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
-        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24) next.typingDelayMs = 180;
+        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180) next.typingDelayMs = 300;
         if (!Array.isArray(next.githubSyncState)) next.githubSyncState = [];
         return next;
       } catch {
