@@ -65,8 +65,8 @@ window.IZE_KEY_ENGINE = (() => {
 
     function flush() {
       const text = composingText();
-      if (text) insertText(text);
       clear();
+      if (text) insertText(text);
     }
 
     function backspace() {

@@ -1242,7 +1242,6 @@
     let localRootPromptedThisSession = false;
     let hangulEngine = null;
     let typingTimer = null;
-    let compositionTimer = null;
     let sleepTimer = null;
     let powerTransitioning = false;
     let saveNoticeUntil = 0;
@@ -2291,21 +2290,7 @@
       }, state.typingDelayMs);
     }
 
-    function scheduleCompositionCommit() {
-      if (!isKoreanLayout() || !hangulEngine) return;
-      if (compositionTimer) clearTimeout(compositionTimer);
-      compositionTimer = setTimeout(() => {
-        compositionTimer = null;
-        if (!isKoreanLayout() || !hangulEngine || !hangulEngine.composingText()) return;
-        hangulEngine.flush();
-      }, state.typingDelayMs);
-    }
-
     function commitComposition() {
-      if (compositionTimer) {
-        clearTimeout(compositionTimer);
-        compositionTimer = null;
-      }
       if (hangulEngine) hangulEngine.flush();
     }
 
@@ -3201,7 +3186,6 @@
           if (!baseKey || baseKey.length !== 1) return;
           const koreanKey = event.shiftKey ? applyShiftToKey(baseKey.toLowerCase()) : baseKey;
           hangulEngine.process(koreanKey);
-          scheduleCompositionCommit();
           render();
         } else {
           insertMappedText(mapKeyboardEventText(event));
