@@ -14,9 +14,9 @@ Code repository: [github.com/ize-studio/ize-compose](https://github.com/ize-stud
 
 The Ize Compose Emulator is now available. You can preview the device screen, keyboard input, menu flow, language selection, document handling, and simulated web interface in a browser before installing the firmware.
 
-![Ize Compose Emulator initial screen](https://github.com/ize-studio/ize-compose/blob/emulator/others/initial.png?raw=true)
+![Ize Compose Emulator initial screen](https://raw.githubusercontent.com/ize-studio/ize-compose/emulator/others/initial.png)
 
-[Ize Compose Emulator 사용 안내](https://github.com/ize-studio/ize-compose/blob/emulator/ize-compose-emulator.md)
+[Read the Ize Compose Emulator guide](https://github.com/ize-studio/ize-compose/blob/emulator/ize-compose-emulator.md)
 
 v1.3.0 adds Wi-Fi client document-server mode, splits browser support into SD-loadable files, and preserves the SD settings backup flow.
 
