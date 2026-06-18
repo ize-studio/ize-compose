@@ -1,6 +1,6 @@
 # Ize Compose Emulator
 
-Ize Compose Emulator is a browser-based HTML emulator for the Ize Compose / Zerowriter device experience. It reproduces the visible device layout, e-ink screen behavior, keyboard input flow, document list, simulated network menu, web management screen, and GitHub document sync workflow.
+Ize Compose Emulator is a browser-based HTML emulator for the Ize Compose / Zerowriter device experience. It reproduces the visible device layout, e-ink screen behavior, keyboard input flow, multilingual keyboard layout behavior, document list, simulated network menu, web management screen, and GitHub document sync workflow.
 
 This emulator is not a replacement for the firmware. It is a simulation for checking and testing the main user experience in a browser.
 
@@ -94,7 +94,7 @@ Writing shortcuts:
 | `Ctrl + N` | Create a new document |
 | `Ctrl + F` | Search |
 | `Ctrl + L` | Sleep |
-| `Ctrl + Space` | Toggle English / Korean input |
+| `Ctrl + Space` | Toggle Language / English Keyboard input |
 | `Esc` or `Menu` | Open menu |
 
 Because this is a browser-based emulator, some physical keyboard shortcuts that use `Alt` or `Ctrl` may be intercepted by the browser or operating system before they reach the emulator. The exact behavior depends on the browser, OS, and active browser focus. If a shortcut is taken by the browser, use the on-screen emulator key or the emulator menu instead. A tablet or other touchscreen device is recommended when you want to avoid physical keyboard shortcut conflicts.
@@ -110,8 +110,8 @@ The web settings screen exposes text-related controls:
 | Text Size | Controls rendered text size. The user-facing default starts at `2.0`, mapped to the emulator's current internal baseline. |
 | Line Space | Controls line spacing. |
 | Character Space | Controls character spacing. Default is `0`. |
-| English Keyboard | Selects QWERTY or Dvorak. |
-| Language | Selects input language. |
+| English Keyboard | Selects QWERTY or Dvorak. The QWERTY and Dvorak `Alt` accent behavior is implemented to follow the firmware as closely as practical in a browser. |
+| Language | Selects input language. The multilingual keyboard layouts are implemented from the firmware layout data as closely as practical in the emulator. |
 
 The device menu language display is intentionally not described here because that area is scheduled for update.
 

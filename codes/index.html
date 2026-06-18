@@ -1970,7 +1970,7 @@
     }
 
     function mapKeyboardEventText(event) {
-      return mappedKeyValue(event.key, {
+      return mappedKeyValue(physicalQwertyKey(event), {
         shift: Boolean(event.shiftKey || virtualModifiers.shift),
         alt: Boolean(event.altKey || virtualModifiers.alt),
         caps: virtualModifiers.caps
@@ -3805,7 +3805,7 @@
       }
       if (isCtrlSpace(event)) {
         event.preventDefault();
-        setLanguage(isKoreanLayout() ? (state.previousEnglishLanguage || "KB_QWERTY") : "KB_KOREAN");
+        setLanguage(isEnglishLayout() ? state.settingsLanguage : (state.previousEnglishLanguage || "KB_QWERTY"));
         setStatus("Language: " + activeLayoutName() + ".");
         render();
         return;
