@@ -1435,7 +1435,7 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 550,
+        typingDelayMs: 750,
         previousEnglishLanguage: "KB_QWERTY",
         status: "Power off."
       };
@@ -1454,7 +1454,7 @@
         if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
         if (typeof next.fontSize !== "number" || next.fontSize === 16) next.fontSize = 20;
         if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
-        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350) next.typingDelayMs = 550;
+        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350 || next.typingDelayMs === 550) next.typingDelayMs = 750;
         next.menuIndex = 0;
         next.menuFocusSide = 0;
         next.deleteAskActive = false;
@@ -3590,6 +3590,14 @@
       return event.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
     }
 
+    function physicalKeyName(event) {
+      return String(physicalQwertyKey(event) || "").toLowerCase();
+    }
+
+    function isCtrlPhysicalKey(event, keys) {
+      return event.ctrlKey && keys.includes(physicalKeyName(event));
+    }
+
     function moveCursorWord(direction) {
       const chars = Array.from(state.text);
       let index = Array.from(state.text.slice(0, state.cursor)).length;
@@ -3691,25 +3699,25 @@
         render();
         return;
       }
-      if (event.ctrlKey && event.key.toLowerCase() === "s") {
+      if (isCtrlPhysicalKey(event, ["s"])) {
         event.preventDefault();
         commitComposition();
         saveDoc();
         return;
       }
-      if (event.ctrlKey && event.key.toLowerCase() === "n") {
+      if (isCtrlPhysicalKey(event, ["n"])) {
         event.preventDefault();
         commitComposition();
         newDoc();
         return;
       }
-      if (event.ctrlKey && event.key.toLowerCase() === "f") {
+      if (isCtrlPhysicalKey(event, ["f"])) {
         event.preventDefault();
         commitComposition();
         startSearch();
         return;
       }
-      if (event.ctrlKey && event.key.toLowerCase() === "l") {
+      if (isCtrlPhysicalKey(event, ["l"])) {
         event.preventDefault();
         commitComposition();
         enterSleep();
@@ -3950,13 +3958,13 @@
         syncGithubDocs();
         return;
       }
-      if (event.key.toLowerCase() === "g") {
+      if (physicalKeyName(event) === "g") {
         event.preventDefault();
         openWebInterface(state.networkMode === "Off" ? "WiFi" : state.networkMode);
         showWebTab("webSettings");
         return;
       }
-      if (event.key.toLowerCase() === "w") {
+      if (physicalKeyName(event) === "w") {
         event.preventDefault();
         state.networkMode = "WiFi";
         openWebInterface("WiFi");
@@ -3966,6 +3974,56 @@
     function isBrowserEditableTarget(target) {
       if (!(target instanceof Element)) return false;
       return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    }
+
+    function isTextInputKey(event) {
+      return !event.ctrlKey && !event.metaKey && event.key.length === 1;
+    }
+
+    function isEmulatorHandledPhysicalKey(event) {
+      if (!state.powerOn) return false;
+      if (state.mode === "sleep") return true;
+      if (event.key === "CapsLock") return true;
+      if (isCtrlPhysicalKey(event, ["s", "n"])) return true;
+      if (state.mode === "typing") {
+        return (
+          isCtrlPhysicalKey(event, ["s", "n", "f", "l"]) ||
+          isCtrlSpace(event) ||
+          isCtrlArrow(event) ||
+          event.ctrlKey && event.key === "Backspace" ||
+          isTabKey(event) ||
+          ["Escape", "Backspace", "Enter", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) ||
+          isTextInputKey(event)
+        );
+      }
+      if (state.mode === "menu") {
+        if (state.deleteAskActive) {
+          return ["Enter", "Escape", "Backspace", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key) || isTabKey(event);
+        }
+        if (state.deletePromptActive) {
+          return ["Escape", "Backspace", "Enter"].includes(event.key) || isTabKey(event) || /^[0-9]$/.test(event.key);
+        }
+        return ["Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Backspace", "Delete", "Enter"].includes(event.key) || isTabKey(event);
+      }
+      if (state.mode === "wifiScan") {
+        return ["ArrowUp", "ArrowDown", "Escape", "Enter"].includes(event.key) || isTabKey(event);
+      }
+      if (state.mode === "wifiPassword") {
+        return ["Escape", "Backspace", "Enter"].includes(event.key) || isTabKey(event) || isTextInputKey(event);
+      }
+      if (state.mode === "webPassword") {
+        return ["Escape", "Backspace", "Enter"].includes(event.key) || isTabKey(event) || isTextInputKey(event);
+      }
+      if (state.mode === "network") {
+        return event.ctrlKey && event.key === "Escape";
+      }
+      if (state.mode === "search") {
+        return ["Escape", "Backspace", "Enter"].includes(event.key) || isTextInputKey(event);
+      }
+      if (state.mode === "sync") {
+        return ["Escape", "Enter"].includes(event.key) || ["g", "w"].includes(physicalKeyName(event));
+      }
+      return false;
     }
 
     function handlePhysicalKeydown(event) {
@@ -3987,13 +4045,13 @@
         render();
         return;
       }
-      if (event.ctrlKey && event.key.toLowerCase() === "s") {
+      if (isCtrlPhysicalKey(event, ["s"])) {
         event.preventDefault();
         commitComposition();
         saveDoc();
         return;
       }
-      if (event.ctrlKey && event.key.toLowerCase() === "n") {
+      if (isCtrlPhysicalKey(event, ["n"])) {
         event.preventDefault();
         commitComposition();
         newDoc();
@@ -4019,6 +4077,7 @@
 
     document.addEventListener("keydown", (event) => {
       if (event.target === screen || isBrowserEditableTarget(event.target)) return;
+      if (!isEmulatorHandledPhysicalKey(event)) return;
       handlePhysicalKeydown(event);
     }, true);
 
