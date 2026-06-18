@@ -103,7 +103,7 @@ If that file is missing, the firmware returns an error. Keep this file on the SD
 
 ### PIN
 
-![Ize Compose wifi PIN](https://github.com/ize-studio/ize-compose/blob/c39df9fdff4c6269cf6d3a110dd5470989590c87/others/Screenshot_20260615_065055_Samsung%20Browser(1).jpg)
+![Ize Compose wifi PIN](/others/Screenshot_20260615_065055_Samsung%20Browser(1).jpg)
 
 The PIN field is at the top of the web page. The same PIN is required for:
 
