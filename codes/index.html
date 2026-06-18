@@ -3963,7 +3963,12 @@
       }
     }
 
-    screen.addEventListener("keydown", (event) => {
+    function isBrowserEditableTarget(target) {
+      if (!(target instanceof Element)) return false;
+      return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    }
+
+    function handlePhysicalKeydown(event) {
       if (!state.powerOn) {
         event.preventDefault();
         return;
@@ -4002,26 +4007,49 @@
       else if (state.mode === "search") handleSearchKey(event);
       else if (state.mode === "sync") handleSyncKey(event);
       else handleTypingKey(event);
+    }
+
+    screen.addEventListener("keydown", (event) => {
+      handlePhysicalKeydown(event);
     });
 
     screen.addEventListener("keyup", (event) => {
       setKeyPressed(event.key, event.code, false);
     });
 
+    document.addEventListener("keydown", (event) => {
+      if (event.target === screen || isBrowserEditableTarget(event.target)) return;
+      handlePhysicalKeydown(event);
+    }, true);
+
+    document.addEventListener("keyup", (event) => {
+      if (event.target === screen || isBrowserEditableTarget(event.target)) return;
+      setKeyPressed(event.key, event.code, false);
+    }, true);
+
     document.querySelectorAll(".keyboard .key").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.type = "button";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         if (button.dataset.pointerHandled === "1") {
           button.dataset.pointerHandled = "";
           return;
         }
         pressVirtualKey(button);
       });
-      button.addEventListener("pointerdown", () => {
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         button.dataset.pointerHandled = "1";
         button.classList.add("flash");
         pressVirtualKey(button, { visualHandled: true });
       });
-      button.addEventListener("pointerup", () => button.classList.remove("flash"));
+      button.addEventListener("pointerup", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        button.classList.remove("flash");
+      });
       button.addEventListener("pointerleave", () => button.classList.remove("flash"));
       button.addEventListener("pointercancel", () => button.classList.remove("flash"));
     });
