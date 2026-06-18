@@ -4075,6 +4075,20 @@
       setKeyPressed(event.key, event.code, false);
     });
 
+    window.addEventListener("keydown", (event) => {
+      if (isBrowserEditableTarget(event.target)) return;
+      if (!isEmulatorHandledPhysicalKey(event)) return;
+      handlePhysicalKeydown(event);
+      event.stopImmediatePropagation();
+    }, true);
+
+    window.addEventListener("keyup", (event) => {
+      if (isBrowserEditableTarget(event.target)) return;
+      if (!isEmulatorHandledPhysicalKey(event)) return;
+      setKeyPressed(event.key, event.code, false);
+      event.stopImmediatePropagation();
+    }, true);
+
     document.addEventListener("keydown", (event) => {
       if (event.target === screen || isBrowserEditableTarget(event.target)) return;
       if (!isEmulatorHandledPhysicalKey(event)) return;
