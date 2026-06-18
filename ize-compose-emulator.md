@@ -1,545 +1,510 @@
 # Ize Compose Emulator
 
-Ize Compose Emulator는 Ize Compose/Zerowriter 계열 장치의 화면, 키보드, 문서 목록, 네트워크 메뉴, 웹 관리 화면을 브라우저에서 확인하기 위한 HTML 기반 에뮬레이터입니다. 실제 펌웨어를 완전히 대체하는 프로그램이 아니라, 펌웨어의 주요 사용 경험을 웹 브라우저 안에서 재현하고 테스트하기 위한 시뮬레이션입니다.
+Ize Compose Emulator is a browser-based HTML emulator for the Ize Compose / Zerowriter device experience. It reproduces the visible device layout, e-ink screen behavior, keyboard input flow, document list, simulated network menu, web management screen, and GitHub document sync workflow.
 
-이 문서는 펌웨어 `1.4.1` 기준의 에뮬레이터 동작을 설명합니다.
+This emulator is not a replacement for the firmware. It is a simulation for checking and testing the main user experience in a browser.
 
-현재 저장소 구조는 다음과 같습니다.
+Firmware reference: `1.4.1`.
+
+## Repository Layout
 
 ```text
 codes/
-  index.html              # 에뮬레이터 본체
-  key-engine.js           # 한글 조합 및 키 처리 보조 엔진
-  keyboard-layouts.js     # 지원 키보드 레이아웃 데이터
+  index.html              # Main emulator HTML file
+  key-engine.js           # Character composition and key processing helper
+  keyboard-layouts.js     # Keyboard layout data
 others/
-  initial.png             # 전원/잠자기 화면에 쓰는 렌더링 이미지
-ize-compose-emulator.md   # 이 문서
+  initial.png             # Initial / sleep screen image
+  emulator-render.png     # Rendered emulator preview image
+ize-compose-emulator.md   # This document
 ```
 
-## 실행 방법
+The emulator is launched from `codes/index.html`.
 
-브라우저에서 `codes/index.html`을 열면 바로 실행됩니다. 별도의 빌드 과정은 없습니다.
+`codes/index.html`, `codes/key-engine.js`, `codes/keyboard-layouts.js`, and `others/initial.png` are connected by relative paths. Keep the downloaded folder structure intact. Do not move individual files into separate folders.
 
-GitHub에서 에뮬레이터 파일을 받을 때는 파일을 하나씩 미리보기로 열어서 저장하지 않습니다. 반드시 압축파일로 한 번에 받은 뒤 압축을 풀어야 합니다.
+## Rendered Preview
 
-GitHub에서 받는 순서:
+![Ize Compose Emulator rendered preview](others/emulator-render.png)
 
-1. GitHub 저장소 페이지를 엽니다.
-2. `Code` 버튼을 누릅니다.
-3. `Download ZIP`을 선택합니다.
-4. 컴퓨터에서 받을 폴더를 정합니다.
-5. ZIP 파일을 그 폴더에 저장합니다.
-6. 저장된 ZIP 파일을 압축 해제합니다.
-7. 압축 해제된 폴더 안에서 `codes/`, `others/`, `ize-compose-emulator.md`가 같은 상위 폴더에 있는지 확인합니다.
-8. `codes/index.html`을 브라우저에서 엽니다.
+The preview image is a browser-rendered capture of `codes/index.html` and is stored at `others/emulator-render.png`.
 
-`codes/index.html`, `codes/key-engine.js`, `codes/keyboard-layouts.js`, `others/initial.png`는 서로 상대경로로 연결되어 있습니다. 이 파일들을 따로따로 다른 폴더에 저장하면 이미지나 키보드 레이아웃이 깨질 수 있습니다. 항상 압축을 푼 폴더 구조를 유지합니다.
+## How To Download And Run
 
-권장 사용 순서:
+Do not open each file in GitHub preview and save it one by one. Download the repository as a ZIP file, unzip it, and keep all files together in the extracted folder.
 
-1. `codes/index.html`을 브라우저에서 엽니다.
-2. 전원 스위치로 에뮬레이터를 처음 켭니다.
-3. 이때 SD 루트/저장소 폴더 권한 안내가 뜰 수 있습니다.
-4. 문서를 실제 폴더에 저장하려면 `Select Folder`를 눌러 폴더 권한을 허가합니다.
-5. 브라우저 안에만 저장해도 된다면 닫아도 됩니다.
-6. 전자잉크 화면 영역을 클릭해 포커스를 줍니다.
-7. 실제 키보드로 입력하거나 화면의 가상 키보드를 클릭합니다.
+Download steps:
 
-브라우저 보안 정책 때문에 소리는 첫 사용자 입력 이후부터 정상적으로 재생됩니다. 키보드 입력음과 전원 스위치음은 외부 오디오 파일 없이 Web Audio로 합성됩니다.
+1. Open the GitHub repository page.
+2. Click the `Code` button.
+3. Choose `Download ZIP`.
+4. Choose a local folder where the ZIP file will be saved.
+5. Save the ZIP file there.
+6. Extract the ZIP file.
+7. Confirm that the extracted folder contains `codes/`, `others/`, and `ize-compose-emulator.md` at the same level.
+8. Open `codes/index.html` in a browser.
 
-## 기본 화면 구성
+Recommended first run:
 
-에뮬레이터는 크게 세 영역으로 나뉩니다.
+1. Open `codes/index.html`.
+2. Turn on the emulator with the power switch.
+3. The browser may ask for local storage folder permission after the file is opened and the emulator is powered on for the first time.
+4. If you want documents to be stored in an actual local folder, click `Select Folder` and allow folder access.
+5. If you only want browser-local storage, close or skip the folder prompt.
+6. Click the e-ink screen area to focus the emulator.
+7. Type with the physical keyboard or click the on-screen keyboard.
 
-- 전자잉크 화면: 실제 장치 화면처럼 텍스트, 메뉴, 네트워크 상태, 잠자기 화면을 렌더링합니다.
-- 가상 키보드: 실제 키 배열을 흉내 낸 클릭 가능한 키보드입니다.
-- 사이드 패널: 브라우저용 보조 컨트롤입니다. 메뉴, 저장, 잠자기, 새 문서, 검색, 웹 화면 열기, 글자 크기, 줄 간격, 언어 선택, 문서 목록, 텍스트 가져오기를 제공합니다.
+Browser security rules can block some local file features until the first user action. Keyboard sound and power switch sound are generated with Web Audio and do not use external audio files.
 
-검은 키는 입력 신호가 들어오는 동안 보라색으로, 흰 키는 노란색으로 표시됩니다. 물리 키보드 입력과 화면 키보드 입력 모두 같은 입력 경로를 사용합니다.
+## Main Screen
 
-## 글쓰기 화면
+The emulator has three main visible areas:
 
-전자잉크 화면을 클릭한 뒤 타이핑하면 현재 문서에 글자가 입력됩니다. 입력된 내용은 현재 문서 객체에 반영되고 브라우저 저장소에 보존됩니다.
-
-주요 동작:
-
-| 동작 | 설명 |
+| Area | Description |
 | --- | --- |
-| 일반 문자 입력 | 현재 커서 위치에 문자 입력 |
-| `Enter` | 줄바꿈 입력 |
-| `Backspace` | 커서 앞 문자 삭제 |
-| `Tab` | 공백 4칸 입력 |
-| `CapsLock` | 대문자 입력 상태 전환 |
-| 방향키 좌/우 | 커서 한 글자 이동 |
-| `Home` / `End` | 문서 처음/끝으로 이동 |
-| `Ctrl + Backspace` | 커서 앞 단어 삭제 |
-| `Ctrl + ←` / `Ctrl + →` | 단어 단위 커서 이동 |
-| `Ctrl + ↑` / `Ctrl + ↓` | 문서 처음/끝으로 이동 |
-| `Ctrl + S` | 현재 문서 저장 |
-| `Ctrl + N` | 새 문서 생성 |
-| `Ctrl + F` | 검색 모드 |
-| `Ctrl + L` | 잠자기 |
-| `Ctrl + Space` | 영어/한국어 입력 전환 |
-| `Esc` 또는 `Menu` | 메뉴 열기 |
+| E-ink screen | Shows the writing area, status bar, menu, network status, sleep screen, and document list. |
+| Physical-style keyboard | Clickable keyboard matching the device layout. Physical keyboard events and mouse/touch key clicks use the same input path. |
+| Hidden browser controls | Internal browser controls are mostly hidden because the emulator is meant to behave like the device. |
 
-입력 큐로 들어간 글자는 화면에 바로 한꺼번에 나오지 않고 지연 표시됩니다. 현재 기본 지연은 글자당 0.55초입니다.
+When a key signal is active, white keys flash yellow and black keys flash purple. The key highlight stays active while the key signal is held.
 
-상태바에는 입력 언어, 글자/단어 카운트, 현재 파일명, 저장 표시, 배터리 표시가 렌더링됩니다. 배터리 표시는 시뮬레이션 값입니다.
+## Writing Screen
 
-## 언어와 키보드 레이아웃
+Click the e-ink screen or use the physical keyboard to type into the current document.
 
-지원 언어 목록은 `codes/keyboard-layouts.js`에 들어 있습니다. 한국어 레이아웃은 `KB_KOREAN`이며 메뉴와 웹 설정에는 `한국어`로 표시됩니다.
+Text is not drawn instantly at the exact keydown moment. The emulator uses a delayed input display to better match the device typing feel. Current default typing delay is managed in `codes/index.html`.
 
-언어 설정은 두 가지 경로에서 바꿀 수 있습니다.
+Writing shortcuts:
 
-- 사이드 패널의 Settings > Language
-- 웹 관리 화면의 Settings & Update > Environment Settings > Language
-
-한국어 입력은 키보드 이벤트를 QWERTY 기준으로 해석한 뒤 한글 조합 엔진을 거칩니다. 한글 조합 중 `Backspace`는 조합 중인 글자를 먼저 처리합니다.
-
-## 메뉴 사용법
-
-`Esc`, `Menu` 키 또는 사이드 패널의 `Menu` 버튼으로 메뉴를 엽니다. 메뉴는 왼쪽 명령 목록과 오른쪽 문서 목록으로 구성됩니다.
-
-기본 메뉴 항목:
-
-| 항목 | 설명 |
+| Input | Action |
 | --- | --- |
-| `Sync` | GitHub 동기화 상태 화면으로 이동 |
-| `New` | 새 `docNNNN.txt` 문서 생성 |
-| `Save` | 현재 문서 저장 |
-| `Count` | 카운트 표시 모드 전환 |
-| `Sleep` | 잠자기 모드 진입 |
-| `Network` | 네트워크 모드 선택 |
+| Normal character | Insert character at the cursor |
+| `Enter` | Insert line break |
+| `Backspace` | Delete character before cursor |
+| `Tab` | Insert four spaces |
+| `CapsLock` | Toggle uppercase input state |
+| Arrow keys | Move cursor |
+| `Home` / `End` | Move to start / end of document |
+| `Ctrl + Backspace` | Delete word before cursor |
+| `Ctrl + Left` / `Ctrl + Right` | Move cursor by word |
+| `Ctrl + Up` / `Ctrl + Down` | Move to start / end of document |
+| `Ctrl + S` | Save current document |
+| `Ctrl + N` | Create a new document |
+| `Ctrl + F` | Search |
+| `Ctrl + L` | Sleep |
+| `Ctrl + Space` | Toggle English / Korean input |
+| `Esc` or `Menu` | Open menu |
 
-메뉴 조작:
+The status bar shows writing-related state such as input language, character count, word count, current file name, save status, and a simulated battery indicator.
 
-| 키 | 동작 |
+## Text Settings
+
+The web settings screen exposes text-related controls:
+
+| Setting | Purpose |
 | --- | --- |
-| `↑` / `↓` | 왼쪽 메뉴 또는 오른쪽 문서 목록에서 이동 |
-| `←` / `→` | 왼쪽 메뉴와 오른쪽 문서 목록 사이 포커스 이동 |
-| `Enter` | 선택 항목 실행 또는 문서 열기 |
-| `Tab` / `Esc` | 메뉴 닫기 또는 현재 편집/삭제 흐름 취소 |
-| `Backspace` / `Delete` | 문서 목록 포커스에서 삭제 요청 시작 |
+| Text Size | Controls rendered text size. The user-facing default starts at `2.0`, mapped to the emulator's current internal baseline. |
+| Line Space | Controls line spacing. |
+| Character Space | Controls character spacing. Default is `0`. |
+| English Keyboard | Selects QWERTY or Dvorak. |
+| Language | Selects input language. |
 
-문서 삭제는 바로 실행되지 않습니다.
+The device menu language display is intentionally not described here because that area is scheduled for update.
 
-1. 문서 목록에 포커스를 둡니다.
-2. `Backspace` 또는 `Delete`를 누릅니다.
-3. `Delete? Enter: code / Tab: cancel` 안내가 표시됩니다.
-4. `Enter`를 누르면 6자리 삭제 코드가 표시됩니다.
-5. 같은 6자리 숫자를 입력하고 `Enter`를 누르면 삭제됩니다.
-6. `Tab`, `Esc`, 다시 `Backspace`, 방향키 등은 삭제 흐름을 취소합니다.
+## Menu
 
-마지막 문서를 삭제하면 빈 새 문서가 자동으로 생성됩니다.
+Open the menu with `Esc`, the `Menu` key, or the hidden side panel menu button if it is exposed during development.
 
-## 검색 모드
+The menu contains a left command list and a right document list.
 
-`Ctrl + F` 또는 사이드 패널의 `Search` 버튼으로 검색 모드에 들어갑니다.
+Menu items:
 
-검색 모드 조작:
-
-| 키 | 동작 |
+| Item | Action |
 | --- | --- |
-| 일반 문자 | 검색어 입력 |
-| `Backspace` | 검색어 한 글자 삭제 |
-| `Enter` | 다음 일치 항목 검색 |
-| `Esc` | 검색 모드 종료 |
+| `Sync` | Open the GitHub / network sync status screen |
+| `New` | Create a new `docNNNN.txt` document |
+| `Save` | Save the current document |
+| `Count` | Change counter display mode |
+| `Sleep` | Enter sleep mode |
+| `Network` | Open network mode |
 
-검색 결과가 있으면 커서가 일치 위치로 이동하고 화면에 강조 표시됩니다.
+Menu controls:
 
-## 잠자기와 전원
+| Input | Action |
+| --- | --- |
+| `Up` / `Down` | Move within the focused list |
+| `Left` / `Right` | Move focus between menu commands and document list |
+| `Enter` | Run selected command or open selected document |
+| `Tab` / `Esc` | Close menu or cancel the current prompt |
+| `Backspace` / `Delete` | Start document deletion when the document list is focused |
 
-잠자기는 다음 경로로 실행할 수 있습니다.
+### Document Deletion From Menu
 
-- 사이드 패널의 `Sleep`
-- 메뉴의 `Sleep`
-- `Ctrl + L`
-- 전원 스위치
+Document deletion is not immediate.
 
-잠자기 진입 시 현재 문서를 저장한 뒤, 전자잉크 화면 클리어를 흉내 내는 시퀀스를 실행합니다.
+1. Focus a document in the document list.
+2. Press `Backspace` or `Delete`.
+3. The screen shows a delete prompt.
+4. Press `Enter` to request a six-digit delete code.
+5. Type the same six-digit code.
+6. Press `Enter` to delete.
+7. Press `Tab`, `Esc`, `Menu`, or `Backspace` again to cancel.
+
+If the last document is deleted, the emulator creates a blank document automatically.
+
+## Search
+
+Open search with `Ctrl + F` or the hidden side panel search button if exposed during development.
+
+Search controls:
+
+| Input | Action |
+| --- | --- |
+| Normal character | Type search query |
+| `Backspace` | Delete query character |
+| `Enter` | Find next match |
+| `Esc` | Exit search |
+
+When a match is found, the cursor moves to the match and the screen highlights the result.
+
+## Sleep And Power
+
+Sleep mode can be triggered by:
+
+| Input | Action |
+| --- | --- |
+| `Ctrl + L` | Enter sleep |
+| Menu `Sleep` | Enter sleep |
+| Power switch | Toggle power / sleep state |
+
+Sleep entry and wake behavior include a simulated e-ink clear sequence:
 
 ```text
-1.5초 대기
-0.2초 검정 전체 화면
-0.2초 흰색 전체 화면
-잠자기/초기 이미지 표시
+1.5 second delay
+0.2 second full black screen
+0.2 second full white screen
+sleep image or writing screen
 ```
 
-복귀할 때도 같은 클리어 시퀀스가 실행된 뒤 글쓰기 화면으로 돌아옵니다. 전원 스위치는 켜짐/꺼짐에 따라 다른 짧은 소리를 냅니다.
+The power switch and keyboard input use simulated Web Audio sounds.
 
-## 문서 저장 방식
+## Web Interface
 
-기본 저장은 브라우저의 `localStorage`에 이루어집니다. 문서 목록, 현재 문서명, 글 내용, 설정값 등이 저장됩니다.
+The web interface is a simulated version of the device management screen. It appears as an in-browser modal or page, not as a real device-hosted web server.
 
-로컬 SD 루트 폴더 권한 안내는 파일을 연 직후가 아니라, 에뮬레이터 전원을 처음 켤 때 나타납니다. 이때 `Select Folder`를 눌러 폴더 권한을 허가하면 브라우저의 File System Access API를 이용해 해당 폴더를 실제 SD 루트처럼 사용하려고 시도합니다. 브라우저가 이 API를 지원하지 않거나 권한을 허가하지 않으면 브라우저 내부 저장만 사용합니다.
+When the web interface opens, it asks for a four-digit PIN. The required PIN is the same four-digit `state.webPin` value displayed on the device screen. Other values do not unlock the web interface.
 
-문서 이름은 기본적으로 `doc0001.txt`, `doc0002.txt` 형식입니다. 새 문서는 가장 큰 번호 다음 번호로 생성됩니다.
+Web tabs:
 
-## 웹 관리 화면 사용법
-
-웹 관리 화면은 사이드 패널의 `Web` 버튼, 메뉴의 네트워크 흐름, 또는 Sync 화면의 키 입력으로 열 수 있습니다. 실제 장치의 웹 인터페이스를 브라우저 팝업/모달로 흉내 냅니다.
-
-웹 화면을 열면 먼저 4자리 PIN을 요구합니다. 이 PIN은 장치 화면에 표시되는 `state.webPin` 값입니다. 다른 값을 입력하면 열리지 않습니다.
-
-웹 화면 탭:
-
-- `Documents`
-- `Settings & Update`
-
-### Documents 탭
-
-문서 탭에서는 다음 작업을 할 수 있습니다.
-
-| 기능 | 설명 |
+| Tab | Purpose |
 | --- | --- |
-| Upload Text | 입력한 텍스트를 다음 `docNNNN.txt` 문서로 추가 |
-| Read | 문서를 웹 화면 안에서 읽기 전용으로 열기 |
-| Back | 읽기 화면에서 문서 목록으로 돌아가기 |
-| Download | 문서를 `.txt` 파일로 다운로드 |
-| Delete | 6자리 확인 코드를 입력한 뒤 문서 삭제 |
+| `Documents` | Upload, read, download, and delete text documents |
+| `Settings & Update` | Change settings, enter GitHub sync details, and show simulated update controls |
 
-웹 삭제도 메뉴 삭제와 마찬가지로 6자리 숫자 확인을 요구합니다. 틀린 코드를 입력하면 삭제하지 않고 다시 입력하게 합니다.
+### Documents Tab
 
-### Settings & Update 탭
-
-환경설정 카드에서는 다음 설정을 저장할 수 있습니다.
-
-| 설정 | 설명 |
+| Action | Description |
 | --- | --- |
-| Text Size | 화면 글자 크기 |
-| Line Space | 줄 간격 |
-| Character Space | 글자 간격 |
-| English Keyboard | Qwerty/Dvorak 선택 |
-| Language | 입력 언어 선택 |
+| Upload Text | Saves pasted text as the next `docNNNN.txt` document |
+| Read | Opens the document in a read-only web view |
+| Back | Returns from the read view to the document list |
+| Download | Downloads the document as a `.txt` file |
+| Delete | Deletes a document after six-digit confirmation |
 
-현재 코드 기준으로 `Sleep Timer`, `Speed`, `Refresh` 입력은 화면에 있지만 실제 동작 전체에 연결되어 있지는 않습니다. 글자 입력 큐 지연은 코드 기본값으로 관리됩니다.
+The `Read` action opens a read-only view inside the web interface. `Back` returns to the document list. It should not close the whole web interface.
 
-Firmware Update, Font/Image Upload, Online Firmware Update 영역은 실제 펌웨어 업데이트를 수행하지 않습니다. 현재는 시뮬레이션/자리 표시 성격입니다.
+Web document deletion also requires a six-digit confirmation code.
 
-### GitHub Sync
+### Settings And Update Tab
 
-GitHub Sync 영역은 GitHub REST API를 사용해 에뮬레이터의 `.txt` 문서와 GitHub 저장소의 `documents/` 폴더를 맞추는 기능입니다. 실제 펌웨어의 네트워크 동기화를 브라우저에서 시험하기 위한 기능이므로, GitHub 계정, 저장소, 브랜치, 토큰이 필요합니다.
+The settings tab includes text settings, English keyboard layout selection, language selection, GitHub Sync, and simulated firmware/resource update cards.
 
-GitHub 화면 이름은 시간이 지나면 조금 바뀔 수 있습니다. 이 문서는 2026년 6월 기준 GitHub 웹 UI 흐름을 기준으로 적었습니다. 공식 문서는 [Creating a new repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-new-repository)와 [Managing your personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)를 확인하면 됩니다.
+Current emulator behavior:
 
-#### 전체 흐름 요약
-
-처음 GitHub 연동을 준비하는 흐름은 다음 순서입니다.
-
-1. GitHub에서 비공개 저장소를 만듭니다.
-2. 저장소 안에 `documents/` 폴더를 만듭니다.
-3. GitHub personal access token을 발급합니다.
-4. 발급 직후 토큰 문자열을 복사합니다.
-5. 에뮬레이터 웹 화면을 열고 PIN을 입력합니다.
-6. GitHub Sync 설정에 Owner, Repository, Branch, Token을 붙여넣습니다.
-7. `Save GitHub Settings`를 누릅니다.
-8. `Sync Now`를 눌러 동기화합니다.
-
-#### 1. 비공개 GitHub 저장소 만들기
-
-1. 브라우저에서 `https://github.com`에 로그인합니다.
-2. 오른쪽 위의 `+` 버튼을 누릅니다.
-3. `New repository`를 선택합니다.
-4. `Owner`에서 저장소를 만들 계정 또는 조직을 선택합니다.
-5. `Repository name`에 저장소 이름을 입력합니다.
-   - 예: `ize-compose-documents`
-   - 에뮬레이터 웹 설정의 `Repository` 칸에는 이 이름을 그대로 넣습니다.
-6. 공개 여부에서 `Private`를 선택합니다.
-7. 필요하면 `Add a README file`을 켭니다. 켜도 되고 꺼도 됩니다.
-8. `.gitignore`, License는 문서 저장용 저장소라면 꼭 필요하지 않습니다.
-9. `Create repository`를 누릅니다.
-
-저장소를 만든 뒤 에뮬레이터에 입력할 값은 다음처럼 정리해 둡니다.
-
-| GitHub 화면 | 에뮬레이터 입력칸 |
+| Area | Behavior |
 | --- | --- |
-| 저장소 소유자 이름 | `Owner` |
-| 저장소 이름 | `Repository` |
-| 기본 브랜치 이름 | `Branch` |
+| Text Size | Connected to the emulator text renderer |
+| Line Space | Connected to the emulator text renderer |
+| Character Space | Connected to the emulator text renderer |
+| English Keyboard | Changes English keyboard layout |
+| Language | Changes input language |
+| Sleep Timer | Visible, but not fully wired to firmware-equivalent behavior |
+| Speed | Visible, but typing queue delay is currently code-managed |
+| Refresh | Visible, but not fully wired to firmware-equivalent behavior |
+| Firmware Update | Simulated UI only |
+| Font / Image Upload | Simulated UI only |
+| Online Firmware Update | Simulated UI only |
 
-예를 들어 저장소 주소가 `https://github.com/ize-studio/ize-compose-documents`라면 다음처럼 입력합니다.
+## GitHub Sync Setup
+
+GitHub Sync lets the emulator sync local `.txt` documents with a GitHub repository folder. It uses the GitHub REST API from the browser.
+
+You need:
+
+| Item | Description |
+| --- | --- |
+| GitHub account | Personal or organization account |
+| Private repository | Recommended for personal documents |
+| `documents/` folder | Folder used for synced text files |
+| Personal access token | Token with repository contents read/write permission |
+| Browser network access | Required for GitHub API calls |
+
+Official GitHub references:
+
+- [Creating a new repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-new-repository)
+- [Managing your personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+
+GitHub UI labels can change over time. This guide describes the general GitHub web flow as of June 2026.
+
+### Full GitHub Sync Overview
+
+1. Create a private GitHub repository.
+2. Create a `documents/` folder in that repository.
+3. Create a personal access token.
+4. Copy the token immediately after it is generated.
+5. Open the emulator web interface and enter the four-digit PIN shown on the device screen.
+6. Paste Owner, Repository, Branch, and Token into GitHub Sync settings.
+7. Click `Save GitHub Settings`.
+8. Click `Sync Now`.
+
+### 1. Create A Private Repository
+
+1. Open `https://github.com` and sign in.
+2. Click the `+` button in the upper-right area.
+3. Choose `New repository`.
+4. Select the account or organization under `Owner`.
+5. Enter a repository name.
+   - Example: `ize-compose-documents`
+6. Under visibility, choose `Private`.
+7. You may enable `Add a README file`, but it is not required.
+8. `.gitignore` and license are not required for a document storage repository.
+9. Click `Create repository`.
+
+Values used by the emulator:
+
+| GitHub page value | Emulator field |
+| --- | --- |
+| Repository owner name | `Owner` |
+| Repository name | `Repository` |
+| Branch name | `Branch` |
+
+Example:
 
 ```text
+Repository URL: https://github.com/ize-studio/ize-compose-documents
+
 Owner: ize-studio
 Repository: ize-compose-documents
 Branch: main
 ```
 
-#### 2. `documents/` 폴더 만들기
+### 2. Create The `documents/` Folder
 
-에뮬레이터는 현재 GitHub 저장소의 `documents/` 폴더를 문서 위치로 사용합니다. GitHub는 빈 폴더만 따로 저장하지 않으므로, 폴더 안에 파일 하나를 만들어야 합니다.
+The emulator uses `documents/` as the GitHub document folder.
 
-방법 A: `.gitkeep`으로 폴더만 준비하기
+Git does not store empty folders, so create a file inside the folder.
 
-1. 새로 만든 저장소 페이지로 들어갑니다.
-2. `Add file`을 누릅니다.
-3. `Create new file`을 선택합니다.
-4. 파일 이름 칸에 `documents/.gitkeep`을 입력합니다.
-5. 내용은 비워 둬도 됩니다.
-6. 아래쪽 `Commit changes`를 누릅니다.
+Option A: create `.gitkeep`.
 
-방법 B: 첫 문서를 직접 만들기
+1. Open the new repository page.
+2. Click `Add file`.
+3. Choose `Create new file`.
+4. In the file name field, type `documents/.gitkeep`.
+5. Leave the content empty or add a short note.
+6. Click `Commit changes`.
 
-1. 저장소 페이지에서 `Add file`을 누릅니다.
-2. `Create new file`을 선택합니다.
-3. 파일 이름 칸에 `documents/doc0001.txt`를 입력합니다.
-4. 본문에 테스트 문장을 조금 입력합니다.
-5. `Commit changes`를 누릅니다.
+Option B: create the first document manually.
 
-에뮬레이터 동기화 대상은 `.txt` 파일입니다. `.gitkeep`은 폴더를 만들기 위한 파일일 뿐이고, 문서 동기화 대상으로 쓰지 않습니다.
+1. Click `Add file`.
+2. Choose `Create new file`.
+3. In the file name field, type `documents/doc0001.txt`.
+4. Add a short text body.
+5. Click `Commit changes`.
 
-#### 3. Fine-grained personal access token 만들기
+The emulator sync target is `.txt` documents. `.gitkeep` is only used to make the folder exist.
 
-권장 방식은 fine-grained personal access token입니다. 특정 저장소 하나와 필요한 권한만 줄 수 있기 때문입니다.
+### 3. Create A Fine-Grained Personal Access Token
 
-1. GitHub 오른쪽 위 프로필 사진을 누릅니다.
-2. `Settings`를 누릅니다.
-3. 왼쪽 메뉴 맨 아래쪽의 `Developer settings`를 누릅니다.
-4. `Personal access tokens`를 엽니다.
-5. `Fine-grained tokens`를 선택합니다.
-6. `Generate new token`을 누릅니다.
-7. 토큰 이름을 입력합니다.
-   - 예: `Ize Compose Emulator Sync`
-8. `Expiration`을 선택합니다.
-   - 처음 테스트라면 짧게 잡는 편이 안전합니다.
-9. `Resource owner`에서 저장소 소유자 계정 또는 조직을 선택합니다.
-10. `Repository access`에서 `Only select repositories`를 선택합니다.
-11. 방금 만든 비공개 저장소를 선택합니다.
-12. `Repository permissions`에서 `Contents`를 찾습니다.
-13. `Contents` 권한을 `Read and write`로 설정합니다.
-14. `Metadata`는 보통 자동으로 `Read-only`가 들어갑니다.
-15. 다른 권한은 특별히 필요하지 않습니다.
-16. 아래쪽 `Generate token`을 누릅니다.
-17. GitHub가 토큰을 보여주면 즉시 복사합니다.
+Fine-grained personal access tokens are recommended because they can be limited to one repository.
 
-여기서 가장 중요한 부분은 저장소 권한 허가입니다. `Repository access`에서 방금 만든 비공개 저장소를 반드시 선택해야 합니다. 저장소를 선택하지 않거나 `Contents` 권한을 `Read and write`로 주지 않으면 에뮬레이터가 파일 목록을 읽거나 문서를 업로드할 수 없습니다.
+1. In GitHub, click your profile photo in the upper-right corner.
+2. Click `Settings`.
+3. In the left menu, click `Developer settings`.
+4. Open `Personal access tokens`.
+5. Choose `Fine-grained tokens`.
+6. Click `Generate new token`.
+7. Enter a token name.
+   - Example: `Ize Compose Emulator Sync`
+8. Choose an expiration.
+9. Under `Resource owner`, select the account or organization that owns the repository.
+10. Under `Repository access`, choose `Only select repositories`.
+11. Select the private repository you created.
+12. Under `Repository permissions`, find `Contents`.
+13. Set `Contents` to `Read and write`.
+14. `Metadata` is usually added automatically as read-only.
+15. Other permissions are not required for document sync.
+16. Click `Generate token`.
+17. When GitHub shows the token, copy it immediately.
 
-조직 저장소를 쓰는 경우 조직 정책에 따라 fine-grained token 승인이 추가로 필요할 수 있습니다. 승인이 필요한 조직이라면 GitHub 안내에 따라 토큰 접근 요청을 승인받은 뒤 사용합니다.
+The repository access step is important. If the token is not allowed to access the selected private repository, the emulator cannot read, upload, update, or delete files.
 
-토큰은 이 화면을 벗어나면 다시 전체 문자열을 볼 수 없습니다. 복사하지 못했다면 토큰을 새로 만들어야 합니다.
+Organization repositories may require organization approval before the token works. Follow GitHub's approval flow if GitHub shows an organization approval message.
 
-#### 4. 토큰 복사하기
+GitHub shows the full token only once. If you leave the page without copying it, create a new token.
 
-토큰 생성 완료 화면에서 다음 중 하나로 복사합니다.
+### 4. Copy The Token
 
-1. 토큰 문자열 오른쪽의 복사 버튼을 누릅니다.
-2. 또는 토큰 문자열을 드래그해서 선택합니다.
-3. `Ctrl + C`를 누릅니다.
-4. 메모장이나 채팅창 같은 곳에 붙여넣어 보관하지 않습니다. 토큰은 비밀번호처럼 다룹니다.
+After token generation:
 
-복사가 제대로 됐는지 확인하려면 에뮬레이터의 Token 칸에 붙여넣을 때 긴 문자열이 들어가는지만 보면 됩니다. 토큰은 보안상 화면에 그대로 보이지 않을 수 있습니다.
+1. Click the copy button next to the token, or select the token text manually.
+2. Press `Ctrl + C` if selecting manually.
+3. Do not paste the token into public notes, chats, documentation, or repository files.
+4. Treat the token like a password.
 
-#### 5. 에뮬레이터에 GitHub 정보 붙여넣기
+To confirm that copying worked, paste it only into the emulator Token field. The token may be hidden by the browser input field.
 
-1. `codes/index.html`을 브라우저에서 엽니다.
-2. 에뮬레이터 화면에서 `Web` 버튼을 누릅니다.
-3. 장치 화면에 표시된 4자리 PIN을 확인합니다.
-4. 웹 화면의 PIN 입력칸에 4자리 PIN을 입력합니다.
-5. `Open`을 누릅니다.
-6. `Settings & Update` 탭을 누릅니다.
-7. `GitHub Sync` 카드로 이동합니다.
-8. `Owner`에 저장소 소유자 이름을 입력합니다.
-9. `Repository`에 저장소 이름을 입력합니다.
-10. `Branch`에 브랜치 이름을 입력합니다.
-    - 보통 `main`입니다.
-11. `Token` 칸을 클릭합니다.
-12. `Ctrl + V`로 방금 복사한 토큰을 붙여넣습니다.
-13. 이 브라우저에 토큰을 저장하려면 `Save token on this computer only`를 체크합니다.
-14. 공용 컴퓨터라면 체크하지 않습니다.
-15. `Save GitHub Settings`를 누릅니다.
-16. 상태 메시지가 저장됐다고 바뀌는지 확인합니다.
-17. `Sync Now`를 누릅니다.
+### 5. Paste GitHub Details Into The Emulator
 
-동기화가 시작되면 아래 로그 영역에 업로드, 다운로드, 삭제 계획과 결과가 표시됩니다.
+1. Open `codes/index.html` in a browser.
+2. Press the emulator `Web` control or open the web interface through the device menu flow.
+3. Check the four-digit PIN shown on the device screen.
+4. Enter that same four-digit PIN in the web PIN field.
+5. Click `Open`.
+6. Open the `Settings & Update` tab.
+7. Find the `GitHub Sync` card.
+8. Enter the repository owner in `Owner`.
+9. Enter the repository name in `Repository`.
+10. Enter the branch name in `Branch`.
+    - Usually `main`.
+11. Click the `Token` field.
+12. Press `Ctrl + V` to paste the copied token.
+13. If this is a private computer and you want the browser to keep the token, enable `Save token on this computer only`.
+14. On a shared computer, leave that checkbox off.
+15. Click `Save GitHub Settings`.
+16. Confirm that the status message changes.
+17. Click `Sync Now`.
 
-#### 준비물
+`Save GitHub Settings` only saves the settings. It does not run document sync. `Sync Now` starts the sync.
 
-| 항목 | 설명 |
+### GitHub Sync Fields
+
+| Field | Meaning |
 | --- | --- |
-| GitHub Owner | 사용자명 또는 조직명 |
-| Repository | 문서를 저장할 저장소 이름 |
-| Branch | 동기화할 브랜치. 기본값은 `main` |
-| Document path | 현재 UI에서는 `documents`로 고정 |
-| Token | 저장소 contents를 읽고 쓸 수 있는 GitHub 토큰 |
+| `Owner` | GitHub username or organization name |
+| `Repository` | Repository name |
+| `Branch` | Branch to sync with, usually `main` |
+| `Document path` | Currently fixed to `documents` |
+| `Token` | GitHub token with contents read/write permission |
+| `Save token on this computer only` | Stores the token in this browser only |
+| `Delete token` | Removes saved and session tokens |
 
-토큰은 GitHub API에서 파일 목록 읽기, 파일 내용 읽기, 파일 생성/수정, 파일 삭제를 할 수 있어야 합니다. Fine-grained token을 쓰는 경우 대상 저장소에 대해 Contents 읽기/쓰기 권한이 필요합니다. Classic token을 쓰는 경우 private 저장소라면 저장소 접근 권한이 포함되어야 합니다.
+If the token field is left blank while saving, the emulator tries to keep the existing saved token. Token replacement and deletion depend on the save-token checkbox and the `Delete token` button.
 
-토큰은 비밀번호처럼 취급해야 합니다. 공용 컴퓨터에서는 `Save token on this computer only`를 켜지 않는 것이 안전합니다.
+### Sync Behavior
 
-#### 저장소 준비
+The emulator compares local documents with remote GitHub documents and creates a sync plan.
 
-GitHub 저장소에는 문서가 들어갈 `documents/` 폴더가 필요합니다. 폴더가 비어 있으면 Git은 빈 폴더만 따로 저장하지 않으므로, 필요하면 `.gitkeep` 같은 파일을 먼저 넣어둘 수 있습니다. 에뮬레이터는 `.txt` 문서만 동기화 대상으로 봅니다.
-
-권장 구조:
-
-```text
-repository-root/
-  documents/
-    doc0001.txt
-    doc0002.txt
-```
-
-원격에 문서가 하나도 없고 로컬 에뮬레이터에 문서가 있으면, 첫 동기화 때 로컬 문서를 업로드하려고 합니다.
-
-#### 웹 화면에서 연결하는 순서
-
-1. 에뮬레이터에서 `Web` 버튼을 누르거나, 메뉴의 `Network`를 통해 웹 화면을 엽니다.
-2. 장치 화면에 표시된 4자리 PIN을 웹 화면의 PIN 입력칸에 입력합니다.
-3. `Open`을 눌러 웹 관리 화면을 엽니다.
-4. `Settings & Update` 탭으로 이동합니다.
-5. `GitHub Sync` 카드에서 `Owner`, `Repository`, `Branch`, `Token`을 입력합니다.
-6. 토큰을 브라우저에 저장하려면 `Save token on this computer only`를 체크합니다.
-7. `Save GitHub Settings`를 누릅니다.
-8. `Sync Now`를 누릅니다.
-
-`Save GitHub Settings`는 설정을 저장하는 단계이고, 실제 문서 동기화는 `Sync Now`에서 실행됩니다.
-
-#### 토큰 저장 방식
-
-| 방식 | 설명 |
+| Situation | Result |
 | --- | --- |
-| 저장 토큰 | `Save token on this computer only`를 체크하면 브라우저 저장소에 토큰을 저장합니다. 다음 실행에서도 남을 수 있습니다. |
-| 세션 토큰 | 체크하지 않으면 현재 브라우저 세션에서만 사용합니다. 새로고침이나 브라우저 상태에 따라 다시 입력해야 할 수 있습니다. |
-| Delete token | 저장 토큰과 세션 토큰을 모두 지웁니다. |
+| Local `.txt` document exists only locally | Upload to GitHub `documents/` |
+| Remote `.txt` document exists only on GitHub | Download into emulator storage |
+| Same document exists on both sides | Compare content and update according to sync logic |
+| Deleted document is detected | Apply delete plan when supported by the current sync state |
 
-토큰 입력칸을 비워 둔 채 저장하면 기존 저장 토큰을 유지하려고 합니다. 저장 토큰을 세션 토큰으로 바꾸거나 삭제하는 동작은 `Save token on this computer only` 체크 상태와 `Delete token` 버튼에 따라 달라집니다.
+The sync log shows upload, download, delete, and error results.
 
-#### 동기화 규칙
+### GitHub Sync From Device Menu
 
-동기화는 로컬 문서 목록과 GitHub 원격 문서 목록을 비교해 계획을 만듭니다.
+The device-side `Sync` menu opens the network / sync status screen.
 
-| 상황 | 동작 |
+Common controls:
+
+| Input | Action |
 | --- | --- |
-| 로컬에만 있는 `.txt` 문서 | GitHub `documents/` 폴더로 업로드 |
-| 원격에만 있는 `.txt` 문서 | 동기화 상태에 따라 원격 삭제 대상으로 계획될 수 있음 |
-| 로컬과 원격 둘 다 있고 내용이 같음 | 아무 작업 안 함 |
-| 로컬과 원격 둘 다 있고 내용이 다름 | 마지막 동기화 상태를 참고해 업로드 또는 다운로드 |
+| `Enter` | Run GitHub sync |
+| `Esc` / `Menu` | Return to menu or writing screen |
+| `Ctrl + Esc` / `Ctrl + Menu` | Turn off network mode and return to writing |
 
-에뮬레이터는 내부적으로 각 문서의 blob SHA를 비교합니다. 마지막 동기화 상태는 브라우저 저장 상태 또는 선택한 로컬 SD 루트의 `ize_compose/github_sync_state.txt`에 저장될 수 있습니다.
+The emulator uses a virtual Wi-Fi state. SSID and password inputs are simulated and can accept arbitrary values. Internet access depends on the browser and the computer network connection, not on real device Wi-Fi hardware.
 
-현재 구현은 충돌 해결 UI를 따로 제공하지 않습니다. 로컬과 원격이 동시에 바뀐 경우, 코드의 계획 규칙에 따라 한쪽으로 덮어쓸 수 있습니다. 중요한 문서는 동기화 전에 별도로 백업하는 것이 안전합니다.
+### GitHub Sync Troubleshooting
 
-#### Sync 화면에서 쓰는 키
-
-장치 화면의 `Sync` 메뉴에 들어가면 다음 키를 사용할 수 있습니다.
-
-| 키 | 동작 |
+| Message | Meaning |
 | --- | --- |
-| `Enter` | GitHub 동기화 실행 |
-| `G` | 웹 설정 화면 열기 |
-| `W` | Wi-Fi 웹 화면 열기 |
-| `Esc` | Sync 화면 닫기 |
+| `Token required` | Paste a token or use a saved token |
+| `GitHub repository info missing` | Owner, Repository, Branch, or Token is missing |
+| `GitHub sync failed` | GitHub API call failed. Check token permission, repository name, branch name, and network access |
+| `Not Found` | Repository, branch, path, or token permission is wrong |
+| `Bad credentials` | Token is invalid, expired, revoked, or pasted incorrectly |
 
-Sync 화면에는 네트워크 상태, 저장소 정보, 브랜치, 경로, 업로드/다운로드/삭제 로그가 표시됩니다.
+Security notes:
 
-#### 자주 나오는 실패 원인
+- Do not write GitHub tokens into documents, README files, screenshots, or public repositories.
+- Use a private repository for personal documents.
+- If using a shared computer, avoid saving the token in the browser.
+- Press `Delete token` after using a shared computer.
 
-| 메시지/상황 | 의미와 확인할 것 |
+## Simulated Network
+
+The emulator does not control real Wi-Fi hardware.
+
+Network behavior is simulated:
+
+| Item | Emulator behavior |
 | --- | --- |
-| `Browser network offline` | 브라우저가 오프라인으로 판단했습니다. 컴퓨터 인터넷 연결을 확인합니다. |
-| `GitHub repository info missing` | Owner, Repository, Branch, Token 중 필요한 값이 비어 있습니다. |
-| `Token is required.` | 토큰이 없거나 저장되지 않았습니다. |
-| `GitHub sync failed` | GitHub API 호출이 실패했습니다. 토큰 권한, 저장소 이름, 브랜치 이름, 네트워크 상태를 확인합니다. |
-| 404 계열 실패 | 저장소 이름/Owner/브랜치가 틀렸거나 토큰이 해당 저장소를 볼 권한이 없습니다. |
-| 401/403 계열 실패 | 토큰이 없거나 권한이 부족하거나 만료됐을 가능성이 큽니다. |
+| SSID | Virtual value shown in the UI |
+| Password | Any value can be entered for simulation |
+| Internet | Uses the browser/computer network connection |
+| PIN | Four-digit device screen PIN is required for the web interface |
+| GitHub API | Real browser `fetch` requests to GitHub |
 
-#### 보안 주의
+## Keyboard, Mouse, And Sound
 
-- GitHub 토큰은 절대 문서 파일이나 공개 저장소에 적지 않습니다.
-- 저장 토큰은 현재 브라우저에 남습니다.
-- 공용 컴퓨터나 공유 브라우저에서는 세션 토큰으로만 쓰고, 작업 후 `Delete token`을 누르는 것이 안전합니다.
-- private 저장소를 쓰는 경우 토큰 권한을 필요한 저장소 하나로 제한하는 것이 좋습니다.
+The emulator accepts:
 
-## 네트워크 시뮬레이션
-
-메뉴의 `Network` 항목에서 네트워크 모드를 선택할 수 있습니다.
-
-| 모드 | 설명 |
+| Input source | Behavior |
 | --- | --- |
-| Off | 네트워크 꺼짐 |
-| WiFi | 가상 Wi-Fi 목록 표시 후 연결 |
-| WebServer | 10자리 숫자 비밀번호 입력 후 웹 서버 모드 |
+| Physical keyboard | Main input path |
+| On-screen keyboard click | Sends the same logical key input |
+| Power switch click | Toggles power / sleep behavior |
+| Web UI buttons | Control web-side document and settings actions |
 
-Wi-Fi 모드에서는 가상의 SSID 목록이 표시됩니다. 비밀번호는 아무 값이나 입력하고 `Enter`를 누르면 연결된 것으로 처리됩니다.
+Keyboard and power sounds are generated in the browser with Web Audio. They are not external sound files.
 
-WebServer 모드는 10자리 숫자를 요구합니다. 10자리를 입력하고 `Enter`를 누르면 웹 화면이 열립니다.
+## Differences From Firmware 1.4.1
 
-네트워크 상태 화면에서는 PIN과 연결 상태를 표시합니다. 실제 네트워크 장치를 제어하지는 않습니다.
+The emulator tries to match the visible behavior and user experience of firmware `1.4.1`, but it is still a browser simulation.
 
-네트워크 화면 조작:
-
-| 화면 | 키 | 동작 |
+| Area | Emulator | Firmware |
 | --- | --- | --- |
-| Wi-Fi 목록 | `↑` / `↓` | 가상 SSID 선택 이동 |
-| Wi-Fi 목록 | `Enter` | 선택한 SSID의 비밀번호 입력 화면으로 이동 |
-| Wi-Fi 목록 | `Tab` / `Esc` | 취소하고 글쓰기 화면으로 복귀 |
-| Wi-Fi 비밀번호 | 일반 문자 | 비밀번호 입력 |
-| Wi-Fi 비밀번호 | `Backspace` | 입력한 비밀번호 한 글자 삭제 |
-| Wi-Fi 비밀번호 | `Enter` | 아무 비밀번호나 연결 처리 후 웹 화면 열기 |
-| Wi-Fi 비밀번호 | `Tab` / `Esc` | 취소하고 글쓰기 화면으로 복귀 |
-| WebServer 비밀번호 | 숫자 | 10자리 숫자 비밀번호 입력 |
-| WebServer 비밀번호 | `Backspace` | 입력한 숫자 한 글자 삭제 |
-| WebServer 비밀번호 | `Enter` | 10자리 입력 후 WebServer 시작 |
-| WebServer 비밀번호 | `Tab` / `Esc` | 취소하고 메뉴로 복귀 |
-| 네트워크 상태 | `Ctrl + Esc` / `Ctrl + Menu` | 네트워크 끄고 글쓰기 화면으로 복귀 |
+| Display | HTML canvas rendering | Physical e-ink display |
+| Keyboard | Browser keyboard events and clickable keys | Physical keyboard matrix input |
+| Sound | Web Audio generated sounds | Hardware-dependent implementation |
+| Storage | Browser localStorage and optional File System Access API | SD card / firmware filesystem |
+| Folder permission | Browser prompts after file open and first power-on | Not applicable in the same way |
+| Network | Simulated Wi-Fi state plus browser internet | Device Wi-Fi stack |
+| Web interface | Browser modal/page simulation | Device-hosted web interface |
+| PIN | Four-digit `state.webPin` shown on screen | Firmware implementation |
+| GitHub Sync | Browser `fetch` calls to GitHub REST API | Firmware network implementation |
+| Firmware update | Visual placeholder / simulated UI | Actual firmware update path |
+| Font / image upload | Visual placeholder / simulated UI | Actual SD/resource update path |
 
-## 사이드 패널 기능
+Known emulator limitations:
 
-사이드 패널은 실제 장치에는 없는 브라우저용 보조 UI입니다.
+- Simulated e-ink refresh cannot perfectly match physical panel artifacts.
+- Browser font rendering can differ by operating system and installed fonts.
+- GitHub Sync needs real network access and a real token.
+- Some firmware settings are visible before they are fully connected to emulator behavior.
+- Browser security rules can affect local file and folder access.
 
-| 버튼/항목 | 설명 |
+## File Reference
+
+| File | Purpose |
 | --- | --- |
-| Menu | 메뉴 열기/닫기 |
-| Save | 현재 문서 저장 |
-| Sleep | 잠자기 |
-| New | 새 문서 생성 |
-| Search | 검색 모드 |
-| Reset | 브라우저 저장 상태를 기본값으로 초기화 |
-| Web | 웹 관리 화면 열기 |
-| Text size | 글자 크기 조절 |
-| Line space | 줄 간격 조절 |
-| Language | 입력 언어 선택 |
-| Documents | 문서 목록 표시 |
-| Import Text > Load | 입력 상자의 내용을 현재 문서로 교체 |
-| Import Text > Append | 입력 상자의 내용을 입력 큐로 추가 |
+| `codes/index.html` | Screen, state, menu, web UI, document management, network simulation |
+| `codes/key-engine.js` | Character composition and keyboard processing helper |
+| `codes/keyboard-layouts.js` | Keyboard layout definitions |
+| `others/initial.png` | Initial / sleep screen image |
+| `ize-compose-emulator.md` | Emulator documentation |
 
-## 실제 펌웨어 1.4.1과 다른 점
-
-이 에뮬레이터는 실제 펌웨어와 최대한 비슷한 화면/흐름을 목표로 하지만, 다음 차이가 있습니다.
-
-| 영역 | 에뮬레이터 | 실제 펌웨어 |
-| --- | --- | --- |
-| 화면 | HTML Canvas에 렌더링 | 실제 전자잉크 패널 |
-| 저장소 | `localStorage`, IndexedDB, 선택적 로컬 폴더 | SD 카드/장치 파일 시스템 |
-| 키보드 | 브라우저 키 이벤트와 클릭 가능한 HTML 키 | 실제 키보드 스캔/하드웨어 입력 |
-| 소리 | Web Audio 합성음 | 실제 장치 하드웨어 구성에 따름 |
-| Wi-Fi | 가상 SSID와 가상 연결 | 실제 Wi-Fi 스캔/접속 |
-| WebServer | 브라우저 모달로 구현 | 실제 HTTP 서버 |
-| PIN | 화면에 표시된 4자리 `state.webPin` 확인 | 펌웨어 구현에 따름 |
-| 펌웨어 업데이트 | 현재 시뮬레이션 | 실제 바이너리 업데이트 |
-| 배터리 | 고정/시뮬레이션 표시 | 실제 배터리 측정 |
-| 전자잉크 잔상/클리어 | 시간과 색상 플래시로 모사 | 실제 패널 refresh 동작 |
-| GitHub Sync | 브라우저 fetch로 GitHub API 호출 | 펌웨어 네트워크 스택 구현에 따름 |
-
-확인된 차이점은 문서에 명시하는 것을 원칙으로 합니다. 펌웨어에 있는 모든 내부 타이밍, 전원 상태, 네트워크 실패 조건, 파일 권한 실패 조건을 1:1로 보장하지는 않습니다.
-
-## 알려진 제한
-
-- 실제 모바일 브라우저, 데스크톱 브라우저, 브라우저 엔진마다 오디오 시작 정책과 파일 접근 권한 UI가 다를 수 있습니다.
-- File System Access API는 모든 브라우저에서 지원되지 않습니다.
-- GitHub Sync는 실제 토큰과 네트워크 권한이 필요합니다.
-- 웹의 Firmware Update, Font/Image Upload, Online Firmware Update는 실제 업데이트를 수행하지 않습니다.
-- 문서 경로는 현재 웹 UI에서 `documents`로 고정되어 있습니다.
-- 전자잉크 화면의 글꼴과 글자 폭은 Canvas 측정값을 사용하므로 실제 패널/펌웨어 글꼴과 완전히 같지 않을 수 있습니다.
-
-## 개발자가 확인할 주요 위치
-
-| 파일 | 내용 |
-| --- | --- |
-| `codes/index.html` | 화면, 상태, 메뉴, 웹 UI, 문서 관리, 네트워크 시뮬레이션 |
-| `codes/key-engine.js` | 한글 조합 엔진 |
-| `codes/keyboard-layouts.js` | 키보드 레이아웃 데이터 |
-| `others/initial.png` | 초기/잠자기 화면 이미지 |
-
-문서에 적힌 동작은 `codes/index.html` 기준으로 정리했습니다. 기능을 바꾸면 이 문서도 함께 갱신해야 합니다.
+Update this document whenever emulator behavior changes.
