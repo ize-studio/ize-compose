@@ -97,7 +97,7 @@ Writing shortcuts:
 | `Ctrl + Space` | Toggle English / Korean input |
 | `Esc` or `Menu` | Open menu |
 
-Because this is a browser-based emulator, some physical keyboard shortcuts that use `Alt` or `Ctrl` may be intercepted by the browser or operating system before they reach the emulator. The exact behavior depends on the browser, OS, and active browser focus. If a shortcut is taken by the browser, use the on-screen emulator key or the emulator menu instead.
+Because this is a browser-based emulator, some physical keyboard shortcuts that use `Alt` or `Ctrl` may be intercepted by the browser or operating system before they reach the emulator. The exact behavior depends on the browser, OS, and active browser focus. If a shortcut is taken by the browser, use the on-screen emulator key or the emulator menu instead. A tablet or other touchscreen device is recommended when you want to avoid physical keyboard shortcut conflicts.
 
 The status bar shows writing-related state such as input language, character count, word count, current file name, save status, and a simulated battery indicator.
 
