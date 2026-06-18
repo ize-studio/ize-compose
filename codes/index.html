@@ -1371,6 +1371,10 @@
     let saveNoticeTimer = null;
     let audioContext = null;
     let lastKeySoundAt = 0;
+    let accentBaseChar = "";
+    let accentCycleIndex = 0;
+    let lastAccentCandidateAt = 0;
+    let virtualAltHeld = false;
     const virtualModifiers = {
       ctrl: false,
       shift: false,
@@ -1881,6 +1885,67 @@
       playTone({ frequency: second, duration: 0.09, volume: 0.045, type: "triangle", delay: 0.07 });
     }
 
+    const ACCENT_CYCLE_WINDOW_MS = 3000;
+    const ACCENT_CYCLES = {
+      a: ["á", "à", "â", "ä", "ã", "æ", "a"],
+      A: ["Á", "À", "Â", "Ä", "Ã", "Æ", "A"],
+      e: ["é", "è", "ê", "ë", "e"],
+      E: ["É", "È", "Ê", "Ë", "E"],
+      i: ["í", "ì", "î", "ï", "ı", "i"],
+      I: ["Í", "Ì", "Î", "Ï", "İ", "I"],
+      o: ["ó", "ò", "ô", "ö", "õ", "œ", "o"],
+      O: ["Ó", "Ò", "Ô", "Ö", "Õ", "Œ", "O"],
+      u: ["ú", "ù", "û", "ü", "u"],
+      U: ["Ú", "Ù", "Û", "Ü", "U"],
+      c: ["ç", "ć", "č", "c"],
+      C: ["Ç", "Ć", "Č", "C"],
+      n: ["ñ", "n"],
+      N: ["Ñ", "N"],
+      s: ["ß", "š", "ś", "ş", "s"],
+      S: ["Š", "Ś", "Ş", "S"],
+      d: ["đ", "d"],
+      D: ["Đ", "D"],
+      z: ["ž", "ź", "z"],
+      Z: ["Ž", "Ź", "Z"],
+      g: ["ğ", "g"],
+      G: ["Ğ", "G"]
+    };
+
+    function isAccentCycleLayout() {
+      return state.language === "KB_QWERTY" || state.language === "KB_DVORAK";
+    }
+
+    function noteAccentCandidate(inserted) {
+      if (isAccentCycleLayout() && /^[A-Za-z]$/.test(inserted)) {
+        accentBaseChar = inserted;
+        accentCycleIndex = 0;
+        lastAccentCandidateAt = performance.now();
+      } else if (inserted && inserted !== " " && inserted !== "\n" && inserted !== "\t") {
+        accentBaseChar = "";
+      }
+    }
+
+    function applyAccentCycle() {
+      if (!isAccentCycleLayout() || !accentBaseChar || state.cursor <= 0) return false;
+      if (performance.now() - lastAccentCandidateAt > ACCENT_CYCLE_WINDOW_MS) return false;
+      const cycle = ACCENT_CYCLES[accentBaseChar];
+      if (!cycle) return false;
+      accentCycleIndex += 1;
+      const nextChar = cycle[(accentCycleIndex - 1) % cycle.length];
+      const before = Array.from(state.text.slice(0, state.cursor));
+      if (!before.length) return false;
+      before.pop();
+      const newBefore = before.join("") + nextChar;
+      state.text = newBefore + state.text.slice(state.cursor);
+      state.cursor = newBefore.length;
+      state.searchMatchStart = -1;
+      lastAccentCandidateAt = performance.now();
+      syncActiveDoc();
+      persist();
+      render();
+      return true;
+    }
+
     function mappedKeyValue(key, { shift = false, alt = false, caps = false } = {}) {
       if (key.length !== 1) return key;
       const baseKey = key.toLowerCase();
@@ -1935,6 +2000,7 @@
       } else {
         insertText(processed);
       }
+      noteAccentCandidate(processed);
     }
 
     function activeDoc() {
@@ -3532,6 +3598,12 @@
     function clearMomentaryModifiers() {
       virtualModifiers.ctrl = false;
       virtualModifiers.shift = false;
+      if (!virtualAltHeld) virtualModifiers.alt = false;
+      updateVirtualModifierKeys();
+    }
+
+    function releaseVirtualAlt() {
+      virtualAltHeld = false;
       virtualModifiers.alt = false;
       updateVirtualModifierKeys();
     }
@@ -3662,6 +3734,14 @@
       if (button.dataset.modifier) {
         if (!options.visualHandled) flashKey(button.dataset.modifier);
         const modifier = button.dataset.modifier;
+        if (modifier === "alt") {
+          virtualAltHeld = Boolean(options.holdModifier);
+          virtualModifiers.alt = true;
+          applyAccentCycle();
+          updateVirtualModifierKeys();
+          screen.focus();
+          return;
+        }
         virtualModifiers[modifier] = !virtualModifiers[modifier];
         if (modifier === "caps") {
           setStatus("Caps Lock " + (virtualModifiers.caps ? "on" : "off") + ".");
@@ -3987,6 +4067,7 @@
       if (isCtrlPhysicalKey(event, ["s", "n"])) return true;
       if (state.mode === "typing") {
         return (
+          event.key === "Alt" ||
           isCtrlPhysicalKey(event, ["s", "n", "f", "l"]) ||
           isCtrlSpace(event) ||
           isCtrlArrow(event) ||
@@ -4043,6 +4124,11 @@
         virtualModifiers.caps = !virtualModifiers.caps;
         updateVirtualModifierKeys();
         render();
+        return;
+      }
+      if (event.key === "Alt") {
+        event.preventDefault();
+        if (!event.repeat) applyAccentCycle();
         return;
       }
       if (isCtrlPhysicalKey(event, ["s"])) {
@@ -4110,21 +4196,31 @@
           return;
         }
         pressVirtualKey(button);
+        if (button.dataset.modifier === "alt") {
+          releaseVirtualAlt();
+        }
       });
       button.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         event.stopPropagation();
         button.dataset.pointerHandled = "1";
         button.classList.add("flash");
-        pressVirtualKey(button, { visualHandled: true });
+        pressVirtualKey(button, { visualHandled: true, holdModifier: true });
       });
       button.addEventListener("pointerup", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (button.dataset.modifier === "alt") releaseVirtualAlt();
         button.classList.remove("flash");
       });
-      button.addEventListener("pointerleave", () => button.classList.remove("flash"));
-      button.addEventListener("pointercancel", () => button.classList.remove("flash"));
+      button.addEventListener("pointerleave", () => {
+        if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        button.classList.remove("flash");
+      });
+      button.addEventListener("pointercancel", () => {
+        if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        button.classList.remove("flash");
+      });
     });
 
     screen.addEventListener("paste", (event) => {
