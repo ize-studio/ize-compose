@@ -4,7 +4,7 @@ Ize Compose Emulator is a browser-based HTML emulator for the Ize Compose / Zero
 
 This emulator is not a replacement for the firmware. It is a simulation for checking and testing the main user experience in a browser.
 
-Firmware reference: `1.4.1`.
+Firmware reference: `1.4.1`. [View original firmware](https://github.com/ize-studio/ize-compose/tree/main).
 
 ## Repository Layout
 
