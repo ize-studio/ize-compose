@@ -1435,7 +1435,7 @@
         syncStatus: "Waiting.",
         syncLog: "Waiting...",
         pendingText: "",
-        typingDelayMs: 750,
+        typingDelayMs: 1050,
         previousEnglishLanguage: "KB_QWERTY",
         status: "Power off."
       };
@@ -1454,7 +1454,7 @@
         if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
         if (typeof next.fontSize !== "number" || next.fontSize === 16) next.fontSize = 20;
         if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
-        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350 || next.typingDelayMs === 550) next.typingDelayMs = 750;
+        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350 || next.typingDelayMs === 550 || next.typingDelayMs === 750) next.typingDelayMs = 1050;
         next.menuIndex = 0;
         next.menuFocusSide = 0;
         next.deleteAskActive = false;
