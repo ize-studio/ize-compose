@@ -33,6 +33,8 @@ The preview image is a browser-rendered capture of `codes/index.html` and is sto
 
 Do not open each file in GitHub preview and save it one by one. Download the repository as a ZIP file, unzip it, and keep all files together in the extracted folder.
 
+Repository code page: [ize-studio/ize-compose emulator branch](https://github.com/ize-studio/ize-compose/tree/emulator)
+
 Download steps:
 
 1. Open the GitHub repository page.
