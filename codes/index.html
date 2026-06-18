@@ -166,6 +166,47 @@
       grid-template-columns: repeat(24, minmax(0, 1fr));
     }
 
+    .touchscreen-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: clamp(5px, 0.7vw, 9px);
+      color: #fff;
+      font-size: clamp(9px, 1vw, 13px);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .touchscreen-button {
+      width: clamp(16px, 1.8vw, 24px);
+      height: clamp(16px, 1.8vw, 24px);
+      min-height: 0;
+      padding: 0;
+      border-radius: 3px;
+      border: 1px solid #6f6f6f;
+      background: linear-gradient(145deg, #f5f5f0, #8b8b86 60%, #d7d7d1);
+      box-shadow:
+        inset 0 1px 1px rgba(255,255,255,0.7),
+        0 2px 4px rgba(0,0,0,0.45);
+    }
+
+    .touchscreen-light {
+      width: clamp(12px, 1.25vw, 18px);
+      height: clamp(12px, 1.25vw, 18px);
+      border-radius: 3px;
+      border: 1px solid #5c5c5c;
+      background: #030303;
+      box-shadow: inset 0 0 4px rgba(0,0,0,0.9);
+    }
+
+    .touchscreen-toggle.active .touchscreen-light {
+      background: #33d15a;
+      box-shadow:
+        inset 0 0 3px rgba(255,255,255,0.52),
+        0 0 8px rgba(51,209,90,0.75);
+    }
+
     .key-row.offset-half {
       padding-left: 0;
       padding-right: 0;
@@ -1092,6 +1133,11 @@
               <button class="key arrow-key" data-key="ArrowRight">&rarr;</button>
             </div>
           </div>
+          <div class="touchscreen-toggle" id="touchscreenToggle">
+            <button id="touchscreenButton" class="touchscreen-button" type="button" aria-label="Touchscreen mode"></button>
+            <span>터치스크린</span>
+            <span id="touchscreenLight" class="touchscreen-light" aria-hidden="true"></span>
+          </div>
           <div class="deck-label">Click keys to drive the same menu and typing paths as the physical keyboard.</div>
         </div>
       </div>
@@ -1342,6 +1388,9 @@
       webLetterSpacing: document.getElementById("webLetterSpacing"),
       powerSwitch: document.getElementById("powerSwitch"),
       powerState: document.getElementById("powerState"),
+      touchscreenToggle: document.getElementById("touchscreenToggle"),
+      touchscreenButton: document.getElementById("touchscreenButton"),
+      touchscreenLight: document.getElementById("touchscreenLight"),
       localRootModal: document.getElementById("localRootModal"),
       localRootStatus: document.getElementById("localRootStatus")
     };
@@ -1375,6 +1424,9 @@
     let accentCycleIndex = 0;
     let lastAccentCandidateAt = 0;
     let virtualAltHeld = false;
+    let virtualCtrlHeld = false;
+    let virtualShiftHeld = false;
+    let passwordTouchKeys = [];
     const virtualModifiers = {
       ctrl: false,
       shift: false,
@@ -1441,6 +1493,7 @@
         pendingText: "",
         typingDelayMs: 1050,
         previousEnglishLanguage: "KB_QWERTY",
+        touchscreenMode: false,
         status: "Power off."
       };
     }
@@ -2255,7 +2308,7 @@
         revealSelectedOption(webLanguage);
       }
       document.querySelectorAll('input[name="webEnglishLayout"]').forEach((radio) => {
-        radio.checked = radio.value === (state.settingsLanguage === "KB_DVORAK" ? "KB_DVORAK" : "KB_QWERTY");
+        radio.checked = radio.value === (state.previousEnglishLanguage === "KB_DVORAK" ? "KB_DVORAK" : "KB_QWERTY");
       });
 
       document.getElementById("webPin").value = "";
@@ -3049,6 +3102,33 @@
       if (line2) drawFirmwareText(line2, MARGIN_X * UI_SCALE, (MARGIN_Y + 95) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
     }
 
+    function drawPasswordTouchKeys(yLogical) {
+      passwordTouchKeys = [];
+      const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+      const keyW = 44 * UI_SCALE;
+      const keyH = 30 * UI_SCALE;
+      const gap = 4 * UI_SCALE;
+      const totalW = digits.length * keyW + (digits.length - 1) * gap;
+      const startX = (SCREEN_W - totalW) / 2;
+      const y = yLogical * UI_SCALE;
+      screenFont();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (let i = 0; i < digits.length; i++) {
+        const x = startX + i * (keyW + gap);
+        passwordTouchKeys.push({ digit: digits[i], x, y, w: keyW, h: keyH });
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x, y, keyW, keyH);
+        ctx.strokeStyle = "#151515";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, keyW, keyH);
+        ctx.fillStyle = "#151515";
+        ctx.fillText(digits[i], x + keyW / 2, y + keyH / 2 + 1);
+      }
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+    }
+
     function firmwareFontPx() {
       const scaleTenths = Number(state.fontSize) || 20;
       return Math.max(10, Math.round(DEFAULT_SCREEN_FONT_PX * scaleTenths / 20));
@@ -3399,15 +3479,20 @@
       drawFittedText("SSID: " + selected.ssid, x, (MARGIN_Y + 35) * UI_SCALE, maxW);
       drawFittedText(state.wifiStatusMessage, x, (MARGIN_Y + 65) * UI_SCALE, maxW);
       drawFittedText("Password: " + "*".repeat(state.wifiPasswordBuffer.length) + "_", x, (MARGIN_Y + 105) * UI_SCALE, maxW);
+      drawPasswordTouchKeys(MARGIN_Y + 132);
       drawFittedText("Enter: connect / Tab or Menu: cancel", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
     }
 
     function drawWebPassword() {
-      if (!state.webServerPasswordInput) {
-        drawStatusScreenFrame("WebServer Password", "Type 10 digits", state.webServerPasswordHint);
-      } else {
-        drawStatusScreenFrame("WebServer Password", "Password: " + state.webServerPasswordInput.padEnd(10, "_"), state.webServerPasswordHint);
-      }
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      drawFirmwareText("WebServer Password", x, (MARGIN_Y + 10) * UI_SCALE, maxW, true);
+      drawFirmwareText(state.webServerPasswordInput ? "Password: " + state.webServerPasswordInput.padEnd(10, "_") : "Type 10 digits", x, (MARGIN_Y + 55) * UI_SCALE, maxW, true);
+      drawFirmwareText(state.webServerPasswordHint, x, (MARGIN_Y + 95) * UI_SCALE, maxW, true);
+      drawPasswordTouchKeys(MARGIN_Y + 132);
     }
 
     function drawNetworkStatus() {
@@ -3477,6 +3562,7 @@
       ui.statusLine.textContent = state.status;
       ui.powerSwitch.classList.toggle("on", state.powerOn);
       ui.powerState.textContent = state.powerOn ? "ON" : "OFF";
+      updateTouchscreenControl();
       persist();
     }
 
@@ -3512,6 +3598,12 @@
         const modifier = button.dataset.modifier;
         button.classList.toggle("active", Boolean(virtualModifiers[modifier]));
       });
+    }
+
+    function updateTouchscreenControl() {
+      if (!ui.touchscreenToggle) return;
+      ui.touchscreenToggle.classList.toggle("active", Boolean(state.touchscreenMode));
+      if (ui.touchscreenButton) ui.touchscreenButton.setAttribute("aria-pressed", state.touchscreenMode ? "true" : "false");
     }
 
     function keySelectorValue(value) {
@@ -3599,6 +3691,8 @@
       virtualModifiers.ctrl = false;
       virtualModifiers.shift = false;
       if (!virtualAltHeld) virtualModifiers.alt = false;
+      if (virtualCtrlHeld) virtualModifiers.ctrl = true;
+      if (virtualShiftHeld) virtualModifiers.shift = true;
       updateVirtualModifierKeys();
     }
 
@@ -3606,6 +3700,20 @@
       virtualAltHeld = false;
       virtualModifiers.alt = false;
       updateVirtualModifierKeys();
+    }
+
+    function releaseTouchscreenModifier(modifier) {
+      if (state.touchscreenMode) {
+        if (modifier === "ctrl") {
+          virtualCtrlHeld = false;
+          virtualModifiers.ctrl = false;
+        }
+        if (modifier === "shift") {
+          virtualShiftHeld = false;
+          virtualModifiers.shift = false;
+        }
+        updateVirtualModifierKeys();
+      }
     }
 
     function virtualEvent(key, options = {}) {
@@ -3793,6 +3901,14 @@
           virtualAltHeld = Boolean(options.holdModifier);
           virtualModifiers.alt = true;
           applyAccentCycle();
+          updateVirtualModifierKeys();
+          screen.focus();
+          return;
+        }
+        if (state.touchscreenMode && (modifier === "ctrl" || modifier === "shift")) {
+          if (modifier === "ctrl") virtualCtrlHeld = Boolean(options.holdModifier);
+          if (modifier === "shift") virtualShiftHeld = Boolean(options.holdModifier);
+          virtualModifiers[modifier] = true;
           updateVirtualModifierKeys();
           screen.focus();
           return;
@@ -4056,6 +4172,39 @@
       render();
     }
 
+    function appendPasswordDigit(digit) {
+      if (state.mode === "wifiPassword") {
+        state.wifiPasswordBuffer += digit;
+        render();
+        return true;
+      }
+      if (state.mode === "webPassword") {
+        if (state.webServerPasswordInput.length < 10) {
+          state.webServerPasswordInput += digit;
+          state.webServerPasswordHint = state.webServerPasswordInput.length === 10 ? "Enter: start / Tab cancels" : "Numbers only / Tab cancels";
+        } else {
+          state.webServerPasswordHint = "Press Enter to start";
+        }
+        render();
+        return true;
+      }
+      return false;
+    }
+
+    function handleScreenPointerDown(event) {
+      screen.focus();
+      if (state.mode !== "wifiPassword" && state.mode !== "webPassword") return;
+      const rect = screen.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * SCREEN_W / rect.width;
+      const y = (event.clientY - rect.top) * SCREEN_H / rect.height;
+      const hit = passwordTouchKeys.find((key) => x >= key.x && x <= key.x + key.w && y >= key.y && y <= key.y + key.h);
+      if (!hit) return;
+      event.preventDefault();
+      event.stopPropagation();
+      playKeySound(hit.digit);
+      appendPasswordDigit(hit.digit);
+    }
+
     function handleNetworkStatusKey(event) {
       if (event.ctrlKey && event.key === "Escape") {
         event.preventDefault();
@@ -4226,6 +4375,8 @@
       setKeyPressed(event.key, event.code, false);
     });
 
+    screen.addEventListener("pointerdown", handleScreenPointerDown);
+
     window.addEventListener("keydown", (event) => {
       if (isBrowserEditableTarget(event.target)) return;
       if (!isEmulatorHandledPhysicalKey(event)) return;
@@ -4264,6 +4415,9 @@
         if (button.dataset.modifier === "alt") {
           releaseVirtualAlt();
         }
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) {
+          releaseTouchscreenModifier(button.dataset.modifier);
+        }
       });
       button.addEventListener("pointerdown", (event) => {
         event.preventDefault();
@@ -4276,17 +4430,35 @@
         event.preventDefault();
         event.stopPropagation();
         if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) releaseTouchscreenModifier(button.dataset.modifier);
         button.classList.remove("flash");
       });
       button.addEventListener("pointerleave", () => {
         if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) releaseTouchscreenModifier(button.dataset.modifier);
         button.classList.remove("flash");
       });
       button.addEventListener("pointercancel", () => {
         if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) releaseTouchscreenModifier(button.dataset.modifier);
         button.classList.remove("flash");
       });
     });
+
+    if (ui.touchscreenButton) {
+      ui.touchscreenButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        state.touchscreenMode = !state.touchscreenMode;
+        virtualCtrlHeld = false;
+        virtualShiftHeld = false;
+        virtualModifiers.ctrl = false;
+        virtualModifiers.shift = false;
+        updateVirtualModifierKeys();
+        updateTouchscreenControl();
+        persist();
+        screen.focus();
+      });
+    }
 
     screen.addEventListener("paste", (event) => {
       const text = event.clipboardData.getData("text");
@@ -4345,7 +4517,8 @@
       state.letterSpacing = Number(ui.webLetterSpacing ? ui.webLetterSpacing.value : state.letterSpacing || 0);
       const chosenLanguage = document.getElementById("webLanguage").value;
       const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
-      state.settingsLanguage = resolveSelectedLanguage(chosenLanguage, chosenEnglish ? chosenEnglish.value : "");
+      if (chosenEnglish && isEnglishLayout(chosenEnglish.value)) state.previousEnglishLanguage = chosenEnglish.value;
+      state.settingsLanguage = resolveSelectedLanguage(chosenLanguage, state.previousEnglishLanguage);
       setLanguage(state.settingsLanguage);
       if (hangulEngine) hangulEngine.clear();
       persist();
