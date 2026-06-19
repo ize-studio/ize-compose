@@ -1856,6 +1856,22 @@
       return options;
     }
 
+    function syncLanguageSelect(select) {
+      if (!select) return;
+      const options = languageSelectOptions();
+      const signature = options.map((layout) => layout.id + ":" + layout.name).join("|");
+      if (select.dataset.languageOptionsSignature !== signature) {
+        select.replaceChildren(...options.map((layout) => {
+          const option = document.createElement("option");
+          option.value = layout.id;
+          option.textContent = layout.name;
+          return option;
+        }));
+        select.dataset.languageOptionsSignature = signature;
+      }
+      select.value = selectedLanguageValue(state.settingsLanguage);
+    }
+
     function resolveSelectedLanguage(value, englishLayout = "") {
       if (value === "KB_ENGLISH") {
         return isEnglishLayout(englishLayout) ? englishLayout : isEnglishLayout(state.language) ? state.language : "KB_QWERTY";
@@ -1908,15 +1924,8 @@
     }
 
     function fillLanguageSelect() {
-      ui.language.innerHTML = "";
-      for (const layout of languageSelectOptions()) {
-        const option = document.createElement("option");
-        option.value = layout.id;
-        option.textContent = layout.name;
-        ui.language.append(option);
-      }
       if (!keyboardData().layouts.some((layout) => layout.id === state.settingsLanguage)) state.settingsLanguage = state.language || "KB_QWERTY";
-      ui.language.value = selectedLanguageValue(state.settingsLanguage);
+      syncLanguageSelect(ui.language);
     }
 
     function revealSelectedOption(select) {
@@ -2332,14 +2341,7 @@
 
       const webLanguage = document.getElementById("webLanguage");
       if (webLanguage) {
-        webLanguage.innerHTML = "";
-        for (const layout of languageSelectOptions()) {
-          const option = document.createElement("option");
-          option.value = layout.id;
-          option.textContent = layout.name;
-          option.selected = layout.id === selectedLanguageValue(state.settingsLanguage);
-          webLanguage.append(option);
-        }
+        syncLanguageSelect(webLanguage);
         revealSelectedOption(webLanguage);
       }
       document.querySelectorAll('input[name="webEnglishLayout"]').forEach((radio) => {
@@ -3582,7 +3584,7 @@
       ui.wordMetric.textContent = wordCount(state.text);
       ui.fontSize.value = state.fontSize;
       ui.lineSpace.value = state.lineSpace;
-      ui.language.value = selectedLanguageValue(state.settingsLanguage);
+      syncLanguageSelect(ui.language);
       ui.message.textContent = state.status;
       ui.statusLine.textContent = state.status;
       ui.powerSwitch.classList.toggle("on", state.powerOn);
