@@ -1435,6 +1435,9 @@
     const CANVAS_FONT_FAMILY = '"Noto Sans Mono", "D2Coding", "Consolas", "Noto Sans KR", monospace';
     const BASE_FONT_SIZE = 16;
     const MENU_SCALE_TENTHS = 20;
+    const SMALL_SCREEN_TEXT_MIN_SCALE = 0.88;
+    const SMALL_SCREEN_TEXT_FULL_HEIGHT = 260;
+    const SMALL_SCREEN_TEXT_MIN_HEIGHT = 140;
 
     let state = loadState();
     let githubSessionToken = "";
@@ -3142,7 +3145,15 @@
 
     function firmwareDisplayScale(scaleTenths = state.fontSize) {
       const scale = Number(scaleTenths) || MENU_SCALE_TENTHS;
-      return Math.max(0.5, Math.min(3.5, scale / 10));
+      return Math.max(0.5, Math.min(3.5, scale / 10)) * screenTextScaleMultiplier();
+    }
+
+    function screenTextScaleMultiplier() {
+      const height = screen.getBoundingClientRect().height || SMALL_SCREEN_TEXT_FULL_HEIGHT;
+      if (height >= SMALL_SCREEN_TEXT_FULL_HEIGHT) return 1;
+      if (height <= SMALL_SCREEN_TEXT_MIN_HEIGHT) return SMALL_SCREEN_TEXT_MIN_SCALE;
+      const progress = (height - SMALL_SCREEN_TEXT_MIN_HEIGHT) / (SMALL_SCREEN_TEXT_FULL_HEIGHT - SMALL_SCREEN_TEXT_MIN_HEIGHT);
+      return SMALL_SCREEN_TEXT_MIN_SCALE + (1 - SMALL_SCREEN_TEXT_MIN_SCALE) * progress;
     }
 
     function firmwareFontPx(scaleTenths = state.fontSize) {
@@ -4628,6 +4639,7 @@
       initialImagePathIndex += 1;
       loadInitialImage();
     });
+    window.addEventListener("resize", render);
     loadInitialImage();
     localRootReadyPromise = restoreLocalRootHandle().then(() => {
       if (localRootHandle) setStatus("Power off. SD root: " + state.localRootName + ".");
