@@ -3927,6 +3927,10 @@
         virtualModifiers[modifier] = !virtualModifiers[modifier];
         if (modifier === "caps") {
           setStatus("Caps Lock " + (virtualModifiers.caps ? "on" : "off") + ".");
+          updateVirtualModifierKeys();
+          render();
+          screen.focus();
+          return;
         }
         updateVirtualModifierKeys();
         screen.focus();
