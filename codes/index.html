@@ -1433,8 +1433,7 @@
     const RIGHT_EDGE_MARGIN = 35;
     const CANVAS_FONT_FAMILY = '"Noto Sans Mono", "D2Coding", "Consolas", "Noto Sans KR", monospace';
     const BASE_FONT_SIZE = 16;
-    const DEFAULT_SCREEN_FONT_PX = 23;
-    const SCREEN_FONT = DEFAULT_SCREEN_FONT_PX + "px " + CANVAS_FONT_FAMILY;
+    const SCREEN_FONT_RATIO = 0.075;
 
     let state = loadState();
     let githubSessionToken = "";
@@ -1455,7 +1454,6 @@
     let virtualAltHeld = false;
     let virtualCtrlHeld = false;
     let virtualShiftHeld = false;
-    let passwordTouchKeys = [];
     const virtualModifiers = {
       ctrl: false,
       shift: false,
@@ -3145,36 +3143,9 @@
       if (line2) drawFirmwareText(line2, MARGIN_X * UI_SCALE, (MARGIN_Y + 95) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
     }
 
-    function drawPasswordTouchKeys(yLogical) {
-      passwordTouchKeys = [];
-      const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
-      const keyW = 44 * UI_SCALE;
-      const keyH = 30 * UI_SCALE;
-      const gap = 4 * UI_SCALE;
-      const totalW = digits.length * keyW + (digits.length - 1) * gap;
-      const startX = (SCREEN_W - totalW) / 2;
-      const y = yLogical * UI_SCALE;
-      screenFont();
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      for (let i = 0; i < digits.length; i++) {
-        const x = startX + i * (keyW + gap);
-        passwordTouchKeys.push({ digit: digits[i], x, y, w: keyW, h: keyH });
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(x, y, keyW, keyH);
-        ctx.strokeStyle = "#151515";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, keyW, keyH);
-        ctx.fillStyle = "#151515";
-        ctx.fillText(digits[i], x + keyW / 2, y + keyH / 2 + 1);
-      }
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-    }
-
     function firmwareFontPx() {
       const scaleTenths = Number(state.fontSize) || 20;
-      return Math.max(Math.round(10 * UI_SCALE), Math.round(DEFAULT_SCREEN_FONT_PX * UI_SCALE * scaleTenths / 20));
+      return Math.max(Math.round(SCREEN_H * 0.03), Math.round(SCREEN_H * SCREEN_FONT_RATIO * scaleTenths / 20));
     }
 
     function screenFont() {
@@ -3522,7 +3493,6 @@
       drawFittedText("SSID: " + selected.ssid, x, (MARGIN_Y + 35) * UI_SCALE, maxW);
       drawFittedText(state.wifiStatusMessage, x, (MARGIN_Y + 65) * UI_SCALE, maxW);
       drawFittedText("Password: " + "*".repeat(state.wifiPasswordBuffer.length) + "_", x, (MARGIN_Y + 105) * UI_SCALE, maxW);
-      drawPasswordTouchKeys(MARGIN_Y + 132);
       drawFittedText("Enter: connect / Tab or Menu: cancel", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
     }
 
@@ -3535,7 +3505,6 @@
       drawFirmwareText("WebServer Password", x, (MARGIN_Y + 10) * UI_SCALE, maxW, true);
       drawFirmwareText(state.webServerPasswordInput ? "Password: " + state.webServerPasswordInput.padEnd(10, "_") : "Type 10 digits", x, (MARGIN_Y + 55) * UI_SCALE, maxW, true);
       drawFirmwareText(state.webServerPasswordHint, x, (MARGIN_Y + 95) * UI_SCALE, maxW, true);
-      drawPasswordTouchKeys(MARGIN_Y + 132);
     }
 
     function drawNetworkStatus() {
@@ -4215,39 +4184,6 @@
       render();
     }
 
-    function appendPasswordDigit(digit) {
-      if (state.mode === "wifiPassword") {
-        state.wifiPasswordBuffer += digit;
-        render();
-        return true;
-      }
-      if (state.mode === "webPassword") {
-        if (state.webServerPasswordInput.length < 10) {
-          state.webServerPasswordInput += digit;
-          state.webServerPasswordHint = state.webServerPasswordInput.length === 10 ? "Enter: start / Tab cancels" : "Numbers only / Tab cancels";
-        } else {
-          state.webServerPasswordHint = "Press Enter to start";
-        }
-        render();
-        return true;
-      }
-      return false;
-    }
-
-    function handleScreenPointerDown(event) {
-      screen.focus();
-      if (state.mode !== "wifiPassword" && state.mode !== "webPassword") return;
-      const rect = screen.getBoundingClientRect();
-      const x = (event.clientX - rect.left) * SCREEN_W / rect.width;
-      const y = (event.clientY - rect.top) * SCREEN_H / rect.height;
-      const hit = passwordTouchKeys.find((key) => x >= key.x && x <= key.x + key.w && y >= key.y && y <= key.y + key.h);
-      if (!hit) return;
-      event.preventDefault();
-      event.stopPropagation();
-      playKeySound(hit.digit);
-      appendPasswordDigit(hit.digit);
-    }
-
     function handleNetworkStatusKey(event) {
       if (event.ctrlKey && event.key === "Escape") {
         event.preventDefault();
@@ -4417,8 +4353,6 @@
     screen.addEventListener("keyup", (event) => {
       setKeyPressed(event.key, event.code, false);
     });
-
-    screen.addEventListener("pointerdown", handleScreenPointerDown);
 
     window.addEventListener("keydown", (event) => {
       if (isBrowserEditableTarget(event.target)) return;
