@@ -1433,7 +1433,7 @@
     const RIGHT_EDGE_MARGIN = 35;
     const CANVAS_FONT_FAMILY = '"Noto Sans Mono", "D2Coding", "Consolas", "Noto Sans KR", monospace';
     const BASE_FONT_SIZE = 16;
-    const SCREEN_FONT_RATIO = 0.075;
+    const MENU_SCALE_TENTHS = 20;
 
     let state = loadState();
     let githubSessionToken = "";
@@ -3143,23 +3143,27 @@
       if (line2) drawFirmwareText(line2, MARGIN_X * UI_SCALE, (MARGIN_Y + 95) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
     }
 
-    function firmwareFontPx() {
-      const scaleTenths = Number(state.fontSize) || 20;
-      return Math.max(Math.round(SCREEN_H * 0.03), Math.round(SCREEN_H * SCREEN_FONT_RATIO * scaleTenths / 20));
+    function firmwareDisplayScale(scaleTenths = state.fontSize) {
+      const scale = Number(scaleTenths) || MENU_SCALE_TENTHS;
+      return Math.max(0.5, Math.min(3.5, scale / 10));
     }
 
-    function screenFont() {
-      ctx.font = firmwareFontPx() + "px " + CANVAS_FONT_FAMILY;
+    function firmwareFontPx(scaleTenths = state.fontSize) {
+      return Math.max(8, Math.round(BASE_FONT_SIZE * firmwareDisplayScale(scaleTenths)));
+    }
+
+    function screenFont(scaleTenths = state.fontSize) {
+      ctx.font = firmwareFontPx(scaleTenths) + "px " + CANVAS_FONT_FAMILY;
       ctx.textAlign = "left";
       ctx.direction = "ltr";
     }
 
-    function firmwareFont() {
-      screenFont();
+    function firmwareFont(scaleTenths = state.fontSize) {
+      screenFont(scaleTenths);
     }
 
     function statusFont() {
-      screenFont();
+      screenFont(MENU_SCALE_TENTHS);
     }
 
     function isZeroAdvanceCodePoint(cp) {
@@ -3171,42 +3175,42 @@
         cp === 0x0E31 || (cp >= 0x0E34 && cp <= 0x0E3A) || (cp >= 0x0E47 && cp <= 0x0E4E);
     }
 
-    function firmwareCharAdvance(ch, isMenu = false) {
+    function firmwareCharAdvance(ch, isMenu = false, scaleTenths = state.fontSize) {
       const cp = ch.codePointAt(0) || 0;
       if (isZeroAdvanceCodePoint(cp)) return 0;
-      screenFont();
-      const spacing = (isMenu ? 1 : (Number(state.letterSpacing) || 0)) * UI_SCALE;
+      screenFont(scaleTenths);
+      const spacing = (isMenu ? 1 : (Number(state.letterSpacing) || 0)) * firmwareDisplayScale(scaleTenths);
       return Math.max(1, ctx.measureText(ch).width) + spacing;
     }
 
-    function firmwareTextWidth(text, isMenu = false) {
-      return Array.from(String(text || "")).reduce((sum, ch) => sum + firmwareCharAdvance(ch, isMenu), 0);
+    function firmwareTextWidth(text, isMenu = false, scaleTenths = state.fontSize) {
+      return Array.from(String(text || "")).reduce((sum, ch) => sum + firmwareCharAdvance(ch, isMenu, scaleTenths), 0);
     }
 
-    function drawFirmwareText(text, x, y, maxWidth = SCREEN_W, isMenu = false) {
-      screenFont();
+    function drawFirmwareText(text, x, y, maxWidth = SCREEN_W, isMenu = false, scaleTenths = state.fontSize) {
+      screenFont(scaleTenths);
       let cx = x;
       for (const ch of Array.from(String(text || ""))) {
-        const adv = firmwareCharAdvance(ch, isMenu);
+        const adv = firmwareCharAdvance(ch, isMenu, scaleTenths);
         if (cx + adv > x + maxWidth) break;
         if (adv > 0) ctx.fillText(ch, cx, y);
         cx += adv;
       }
     }
 
-    function fitTextToWidth(text, maxWidth) {
+    function fitTextToWidth(text, maxWidth, scaleTenths = state.fontSize) {
       const value = String(text || "");
-      if (firmwareTextWidth(value, true) <= maxWidth) return value;
+      if (firmwareTextWidth(value, true, scaleTenths) <= maxWidth) return value;
       const suffix = "..";
       let fitted = value;
-      while (Array.from(fitted).length > 0 && firmwareTextWidth(fitted + suffix, true) > maxWidth) {
+      while (Array.from(fitted).length > 0 && firmwareTextWidth(fitted + suffix, true, scaleTenths) > maxWidth) {
         fitted = Array.from(fitted).slice(0, -1).join("");
       }
       return fitted ? fitted + suffix : suffix;
     }
 
-    function drawFittedText(text, x, y, maxWidth) {
-      drawFirmwareText(fitTextToWidth(text, maxWidth), x, y, maxWidth, true);
+    function drawFittedText(text, x, y, maxWidth, scaleTenths = state.fontSize) {
+      drawFirmwareText(fitTextToWidth(text, maxWidth, scaleTenths), x, y, maxWidth, true, scaleTenths);
     }
 
     function firmwareTrueLength(text) {
@@ -3223,26 +3227,28 @@
     }
 
     function drawStatusText(text, x, y) {
-      drawFirmwareText(text, x * UI_SCALE, y * UI_SCALE, SCREEN_W, true);
+      const scale = firmwareDisplayScale(MENU_SCALE_TENTHS);
+      drawFirmwareText(text, x * scale, y * scale, SCREEN_W, true, MENU_SCALE_TENTHS);
     }
 
     function drawMenuEntry(text, x, y, isSelected, isRightSide) {
+      const scale = firmwareDisplayScale(MENU_SCALE_TENTHS);
       const logicalMaxTextWidth = isRightSide
-        ? Math.max(80, SCREEN_W / UI_SCALE - x - RIGHT_EDGE_MARGIN)
+        ? 520
         : 185;
-      const maxTextWidth = logicalMaxTextWidth * UI_SCALE;
-      const boxW = (logicalMaxTextWidth + 8) * UI_SCALE;
-      const rowH = (BASE_FONT_SIZE + state.lineSpace + 8) * UI_SCALE;
-      const drawX = x * UI_SCALE;
-      const drawY = y * UI_SCALE;
+      const maxTextWidth = logicalMaxTextWidth * scale;
+      const boxW = (isRightSide ? 540 : 190) * scale;
+      const rowH = (BASE_FONT_SIZE + state.lineSpace + 8) * scale;
+      const drawX = x * scale;
+      const drawY = y * scale;
       if (isSelected) {
         ctx.fillStyle = "#151515";
-        ctx.fillRect(drawX - 4 * UI_SCALE, drawY - (BASE_FONT_SIZE + 2) * UI_SCALE, boxW, rowH);
+        ctx.fillRect(drawX - 4 * scale, drawY - (BASE_FONT_SIZE + 2) * scale, boxW, rowH);
         ctx.fillStyle = "#ffffff";
       } else {
         ctx.fillStyle = "#151515";
       }
-      drawFittedText(text, drawX, drawY, maxTextWidth);
+      drawFittedText(text, drawX, drawY, maxTextWidth, MENU_SCALE_TENTHS);
       ctx.fillStyle = "#151515";
     }
 
@@ -3286,11 +3292,12 @@
       drawStatusBar();
       ctx.fillStyle = "#151515";
       firmwareFont(state.fontSize);
-      const marginX = MARGIN_X * 2;
-      const lineHeight = (BASE_FONT_SIZE + state.lineSpace) * UI_SCALE;
-      const textTopLimit = (STATUS_Y + 20) * UI_SCALE;
-      const textBottom = (SCREEN_H / UI_SCALE - 25) * UI_SCALE;
-      const contentRight = (SCREEN_W / UI_SCALE - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      const textScale = firmwareDisplayScale(state.fontSize);
+      const marginX = MARGIN_X * textScale;
+      const lineHeight = (BASE_FONT_SIZE + state.lineSpace) * textScale;
+      const textTopLimit = (STATUS_Y + 20) * textScale;
+      const textBottom = SCREEN_H - 25 * textScale;
+      const contentRight = SCREEN_W - RIGHT_EDGE_MARGIN * textScale;
       const maxWidth = contentRight - marginX;
       const composing = isKoreanLayout() && hangulEngine ? hangulEngine.composingText() : "";
       const renderText = state.text.slice(0, state.cursor) + composing + state.text.slice(state.cursor);
@@ -3335,8 +3342,8 @@
         const x = isRtlLayout()
           ? contentRight - lineWidth + cursorInfo.x
           : marginX + cursorInfo.x;
-        const y = textTop + row * lineHeight + 2 * UI_SCALE;
-        ctx.fillRect(x, y, 12 * UI_SCALE, 4 * UI_SCALE);
+        const y = textTop + row * lineHeight + 2 * textScale;
+        ctx.fillRect(x, y, 12 * textScale, 4 * textScale);
       }
     }
     function drawSearchHighlight(firstLine, lineHeight, top, marginX, maxWidth) {
@@ -3361,12 +3368,13 @@
     function drawMenu() {
       clearPaper();
       ctx.fillStyle = "#151515";
-      screenFont();
-      const titleX = 50 * UI_SCALE;
+      screenFont(MENU_SCALE_TENTHS);
+      const menuScale = firmwareDisplayScale(MENU_SCALE_TENTHS);
+      const titleX = 50 * menuScale;
       const leftX = 25;
       const docsX = 245;
-      drawFirmwareText("Ize Compose", titleX, 28 * UI_SCALE, 185 * UI_SCALE, true);
-      drawFirmwareText(configuredLanguageMenuLabel(), titleX, 58 * UI_SCALE, 185 * UI_SCALE, true);
+      drawFirmwareText("Ize Compose", titleX, 28 * menuScale, 185 * menuScale, true, MENU_SCALE_TENTHS);
+      drawFirmwareText(configuredLanguageMenuLabel(), titleX, 58 * menuScale, 185 * menuScale, true, MENU_SCALE_TENTHS);
       let menuY = 100;
       for (let i = 0; i < menuItems.length; i++) {
         let label = menuItems[i];
@@ -3381,10 +3389,10 @@
         menuY += BASE_FONT_SIZE + state.lineSpace + 8;
       }
       ctx.fillStyle = "#151515";
-      drawFirmwareText("v" + APP_VERSION, leftX * UI_SCALE, (SCREEN_H / UI_SCALE - 20) * UI_SCALE, 185 * UI_SCALE, true);
+      drawFirmwareText("v" + APP_VERSION, leftX * menuScale, SCREEN_H - 20 * menuScale, 185 * menuScale, true, MENU_SCALE_TENTHS);
 
       ctx.fillStyle = "#151515";
-      drawFirmwareText("=== DOCUMENTS ===", docsX * UI_SCALE, 30 * UI_SCALE, SCREEN_W - docsX * UI_SCALE - 12 * UI_SCALE, true);
+      drawFirmwareText("=== DOCUMENTS ===", docsX * menuScale, 30 * menuScale, SCREEN_W - docsX * menuScale - 12 * menuScale, true, MENU_SCALE_TENTHS);
       clampDocumentSelection();
       const docs = state.docs.slice(state.fileScrollOffset, state.fileScrollOffset + 12);
       for (let i = 0; i < docs.length; i++) {
@@ -3400,21 +3408,21 @@
         drawMenuEntry(label, docsX, y, selected, true);
       }
       if (state.deletePromptActive) {
-        const boxX = 220 * UI_SCALE;
-        const boxY = 165 * UI_SCALE;
-        const boxW = 360 * UI_SCALE;
-        const boxH = 185 * UI_SCALE;
+        const boxX = 220 * menuScale;
+        const boxY = 165 * menuScale;
+        const boxW = 360 * menuScale;
+        const boxH = 185 * menuScale;
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(boxX, boxY, boxW, boxH);
         ctx.strokeStyle = "#151515";
         ctx.strokeRect(boxX, boxY, boxW, boxH);
-        ctx.strokeRect(boxX + 3 * UI_SCALE, boxY + 3 * UI_SCALE, boxW - 6 * UI_SCALE, boxH - 6 * UI_SCALE);
+        ctx.strokeRect(boxX + 3 * menuScale, boxY + 3 * menuScale, boxW - 6 * menuScale, boxH - 6 * menuScale);
         ctx.fillStyle = "#151515";
-        drawFirmwareText("DELETE FILE", boxX + 18 * UI_SCALE, boxY + 30 * UI_SCALE, boxW - 36 * UI_SCALE, true);
-        drawFirmwareText(truncateChars(state.pendingDeleteName, 28), boxX + 18 * UI_SCALE, boxY + 62 * UI_SCALE, boxW - 36 * UI_SCALE, true);
-        drawFirmwareText("Code: " + state.deleteConfirmCode, boxX + 18 * UI_SCALE, boxY + 96 * UI_SCALE, boxW - 36 * UI_SCALE, true);
-        drawFirmwareText("Input: " + state.deleteConfirmInput + "_", boxX + 18 * UI_SCALE, boxY + 126 * UI_SCALE, boxW - 36 * UI_SCALE, true);
-        drawFirmwareText("Enter: delete / Tab: cancel", boxX + 18 * UI_SCALE, boxY + 158 * UI_SCALE, boxW - 36 * UI_SCALE, true);
+        drawFirmwareText("DELETE FILE", boxX + 18 * menuScale, boxY + 30 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText(truncateChars(state.pendingDeleteName, 28), boxX + 18 * menuScale, boxY + 62 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText("Code: " + state.deleteConfirmCode, boxX + 18 * menuScale, boxY + 96 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText("Input: " + state.deleteConfirmInput + "_", boxX + 18 * menuScale, boxY + 126 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText("Enter: delete / Tab: cancel", boxX + 18 * menuScale, boxY + 158 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
       }
     }
     function drawSearch() {
