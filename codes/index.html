@@ -1927,8 +1927,8 @@
         lower === "enter" || lower === "\n" ? 260 :
         lower === " " || lower === "space" ? 155 :
         230;
-      playTone({ frequency, duration: 0.028, volume: 0.028, type: "square" });
-      playTone({ frequency: frequency * 1.9, duration: 0.018, volume: 0.012, type: "triangle", delay: 0.004 });
+      playTone({ frequency, duration: 0.028, volume: 0.05, type: "square" });
+      playTone({ frequency: frequency * 1.9, duration: 0.018, volume: 0.022, type: "triangle", delay: 0.004 });
     }
 
     function playPowerSound(turningOn) {
