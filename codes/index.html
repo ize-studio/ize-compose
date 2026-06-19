@@ -721,6 +721,23 @@
       background: #fff;
     }
 
+    .web-pin-keypad {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin: 9px 0 10px;
+    }
+
+    .web-pin-keypad button {
+      min-width: 0;
+      min-height: 40px;
+      padding: 8px 6px;
+      color: #161616;
+      border: 1px solid #d8d8d8;
+      background: #fff;
+      font-weight: 700;
+    }
+
     .web-tabs {
       display: flex;
       gap: 8px;
@@ -1213,6 +1230,18 @@
           <h2>PIN</h2>
           <label for="webPin">Enter the PIN shown on Ize Compose.</label>
           <input id="webPin" inputmode="numeric" autocomplete="one-time-code" maxlength="4" placeholder="Shown on device screen">
+          <div class="web-pin-keypad" aria-label="PIN number keys">
+            <button type="button" data-web-pin-key="1">1</button>
+            <button type="button" data-web-pin-key="2">2</button>
+            <button type="button" data-web-pin-key="3">3</button>
+            <button type="button" data-web-pin-key="4">4</button>
+            <button type="button" data-web-pin-key="5">5</button>
+            <button type="button" data-web-pin-key="6">6</button>
+            <button type="button" data-web-pin-key="7">7</button>
+            <button type="button" data-web-pin-key="8">8</button>
+            <button type="button" data-web-pin-key="9">9</button>
+            <button type="button" data-web-pin-key="0">0</button>
+          </div>
           <p class="web-hint">Settings, updates, uploads, and document changes require this PIN.</p>
           <button id="webAuthBtn" type="button">Open</button>
           <p id="authStatus" class="web-status"></p>
@@ -2393,6 +2422,20 @@
       renderWebInterface();
       render();
     }
+
+    function appendWebPinDigit(digit) {
+      const input = document.getElementById("webPin");
+      if (!input) return;
+      input.value = (input.value.replace(/\D/g, "") + digit).slice(0, 4);
+      input.focus();
+    }
+
+    function sanitizeWebPinInput() {
+      const input = document.getElementById("webPin");
+      if (!input) return;
+      input.value = input.value.replace(/\D/g, "").slice(0, 4);
+    }
+
     function activeGithubToken() {
       return state.githubToken || githubSessionToken;
     }
@@ -3131,7 +3174,7 @@
 
     function firmwareFontPx() {
       const scaleTenths = Number(state.fontSize) || 20;
-      return Math.max(10, Math.round(DEFAULT_SCREEN_FONT_PX * scaleTenths / 20));
+      return Math.max(Math.round(10 * UI_SCALE), Math.round(DEFAULT_SCREEN_FONT_PX * UI_SCALE * scaleTenths / 20));
     }
 
     function screenFont() {
@@ -4586,6 +4629,16 @@
       render();
     });
     document.getElementById("webAuthBtn").addEventListener("click", unlockWebInterface);
+    document.getElementById("webPin").addEventListener("input", sanitizeWebPinInput);
+    document.getElementById("webPin").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        unlockWebInterface();
+      }
+    });
+    document.querySelectorAll("[data-web-pin-key]").forEach((button) => {
+      button.addEventListener("click", () => appendWebPinDigit(button.dataset.webPinKey || ""));
+    });
 
     document.getElementById("loadTextBtn").addEventListener("click", () => {
       state.text = ui.importText.value;
