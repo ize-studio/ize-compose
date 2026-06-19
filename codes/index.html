@@ -1296,7 +1296,7 @@
                 </div>
                 <div>
                   <label for="webTypingSpeed">Speed</label>
-                  <input id="webTypingSpeed" type="number" min="0" max="2000" step="1" value="200">
+                  <input id="webTypingSpeed" type="number" min="1" max="2000" step="1" value="200">
                   <p class="web-hint">Default: 200 ms. Changing this can make typing less comfortable.</p>
                 </div>
                 <div>
@@ -1539,7 +1539,8 @@
         if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
         if (typeof next.fontSize !== "number" || next.fontSize === 16) next.fontSize = 20;
         if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
-        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350 || next.typingDelayMs === 550 || next.typingDelayMs === 750 || next.typingDelayMs === 1050) next.typingDelayMs = 200;
+        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs <= 0 || next.typingDelayMs > 2000 || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350 || next.typingDelayMs === 550 || next.typingDelayMs === 750 || next.typingDelayMs === 1050) next.typingDelayMs = 200;
+        next.pendingText = "";
         next.menuIndex = 0;
         next.menuFocusSide = 0;
         next.deleteAskActive = false;
@@ -2023,7 +2024,7 @@
       lastAccentCandidateAt = performance.now();
       syncActiveDoc();
       persist();
-      render();
+      scheduleTypingRender();
       return true;
     }
 
@@ -2070,8 +2071,10 @@
         if (changed != null) {
           state.text = changed;
           state.cursor = state.text.length;
+          state.searchMatchStart = -1;
+          syncActiveDoc();
           persist();
-          render();
+          scheduleTypingRender();
           return;
         }
       }
@@ -2847,29 +2850,21 @@
       state.searchMatchStart = -1;
       syncActiveDoc();
       persist();
-      render();
+      scheduleTypingRender();
     }
 
     function queueText(text) {
       if (!text) return;
-      state.pendingText += text;
-      persist();
-      render();
-      scheduleQueuedText();
+      insertText(text);
     }
 
-    function scheduleQueuedText() {
-      if (typingTimer) return;
-      if (!state.pendingText) return;
+    function scheduleTypingRender() {
+      if (typingTimer) clearTimeout(typingTimer);
+      const delay = Math.max(1, Math.min(2000, Number(state.typingDelayMs) || 200));
       typingTimer = setTimeout(() => {
         typingTimer = null;
-        if (!state.pendingText) return;
-        const chars = Array.from(state.pendingText);
-        const next = chars.shift();
-        state.pendingText = chars.join("");
-        insertText(next);
-        scheduleQueuedText();
-      }, state.typingDelayMs);
+        render();
+      }, delay);
     }
 
     function transitionDelay(ms) {
@@ -4073,7 +4068,7 @@
           if (!baseKey || baseKey.length !== 1) return;
           const koreanKey = event.shiftKey ? applyShiftToKey(baseKey.toLowerCase()) : baseKey;
           hangulEngine.process(koreanKey);
-          render();
+          scheduleTypingRender();
         } else {
           insertMappedText(mapKeyboardEventText(event));
         }
@@ -4496,7 +4491,8 @@
       state.fontSize = Number(ui.webTextSize.value);
       state.lineSpace = Number(ui.webLineSpace.value);
       state.letterSpacing = Number(ui.webLetterSpacing ? ui.webLetterSpacing.value : state.letterSpacing || 0);
-      state.typingDelayMs = Math.max(0, Math.min(2000, Number(ui.webTypingSpeed ? ui.webTypingSpeed.value : state.typingDelayMs) || 0));
+      const typingDelay = Number(ui.webTypingSpeed ? ui.webTypingSpeed.value : state.typingDelayMs);
+      state.typingDelayMs = Number.isFinite(typingDelay) ? Math.max(1, Math.min(2000, typingDelay)) : 200;
       const chosenLanguage = document.getElementById("webLanguage").value;
       const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
       if (chosenEnglish && isEnglishLayout(chosenEnglish.value)) state.previousEnglishLanguage = chosenEnglish.value;
