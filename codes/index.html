@@ -1296,8 +1296,8 @@
                 </div>
                 <div>
                   <label for="webTypingSpeed">Speed</label>
-                  <input id="webTypingSpeed" type="number" min="0" max="2000" step="1" value="0">
-                  <p class="web-hint">Default: 0. Changing this can make typing less comfortable.</p>
+                  <input id="webTypingSpeed" type="number" min="0" max="2000" step="1" value="200">
+                  <p class="web-hint">Default: 200 ms. Changing this can make typing less comfortable.</p>
                 </div>
                 <div>
                   <label for="webRefresh">Refresh</label>
@@ -1415,6 +1415,7 @@
       webTextSize: document.getElementById("webTextSize"),
       webLineSpace: document.getElementById("webLineSpace"),
       webLetterSpacing: document.getElementById("webLetterSpacing"),
+      webTypingSpeed: document.getElementById("webTypingSpeed"),
       powerSwitch: document.getElementById("powerSwitch"),
       powerState: document.getElementById("powerState"),
       touchscreenToggle: document.getElementById("touchscreenToggle"),
@@ -2315,6 +2316,7 @@
       ui.webTextSize.value = state.fontSize;
       ui.webLineSpace.value = state.lineSpace;
       if (ui.webLetterSpacing) ui.webLetterSpacing.value = state.letterSpacing || 0;
+      if (ui.webTypingSpeed) ui.webTypingSpeed.value = state.typingDelayMs;
       const textSizeValue = document.getElementById("webTextSizeValue");
       const lineSpaceValue = document.getElementById("webLineSpaceValue");
       const letterSpacingValue = ui.webLetterSpacing ? ui.webLetterSpacing.nextElementSibling : null;
@@ -3322,12 +3324,6 @@
         } else {
           drawFirmwareText(line, marginX, y, maxWidth);
         }
-      }
-
-      if (state.pendingText) {
-        ctx.fillStyle = "#151515";
-        screenFont();
-        drawFirmwareText("buffering " + Math.min(Array.from(state.pendingText).length, 99) + " chars", marginX, textBottom + 38, maxWidth);
       }
 
       firmwareFont(state.fontSize);
@@ -4500,6 +4496,7 @@
       state.fontSize = Number(ui.webTextSize.value);
       state.lineSpace = Number(ui.webLineSpace.value);
       state.letterSpacing = Number(ui.webLetterSpacing ? ui.webLetterSpacing.value : state.letterSpacing || 0);
+      state.typingDelayMs = Math.max(0, Math.min(2000, Number(ui.webTypingSpeed ? ui.webTypingSpeed.value : state.typingDelayMs) || 0));
       const chosenLanguage = document.getElementById("webLanguage").value;
       const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
       if (chosenEnglish && isEnglishLayout(chosenEnglish.value)) state.previousEnglishLanguage = chosenEnglish.value;
