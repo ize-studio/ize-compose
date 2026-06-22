@@ -229,6 +229,7 @@
       font-size: clamp(7px, 1.05vw, 13px);
       color: #151515;
       line-height: 1;
+      white-space: pre-line;
       user-select: none;
     }
 
@@ -1812,6 +1813,11 @@
       return window.IZE_KEYBOARD_DATA || { layouts: [], maps: {} };
     }
 
+    function keyboardDataReady() {
+      const data = keyboardData();
+      return Array.isArray(data.layouts) && data.layouts.length > 0;
+    }
+
     function activeLayout() {
       const data = keyboardData();
       return data.layouts.find((layout) => layout.id === state.language) ||
@@ -1858,15 +1864,20 @@
 
     function syncLanguageSelect(select) {
       if (!select) return;
+      if (!keyboardDataReady() && select.options.length > 1) {
+        select.value = selectedLanguageValue(state.settingsLanguage);
+        return;
+      }
       const options = languageSelectOptions();
       const signature = options.map((layout) => layout.id + ":" + layout.name).join("|");
       if (select.dataset.languageOptionsSignature !== signature) {
-        select.replaceChildren(...options.map((layout) => {
+        select.innerHTML = "";
+        for (const layout of options) {
           const option = document.createElement("option");
           option.value = layout.id;
           option.textContent = layout.name;
-          return option;
-        }));
+          select.appendChild(option);
+        }
         select.dataset.languageOptionsSignature = signature;
       }
       select.value = selectedLanguageValue(state.settingsLanguage);
@@ -1924,7 +1935,7 @@
     }
 
     function fillLanguageSelect() {
-      if (!keyboardData().layouts.some((layout) => layout.id === state.settingsLanguage)) state.settingsLanguage = state.language || "KB_QWERTY";
+      if (keyboardDataReady() && !keyboardData().layouts.some((layout) => layout.id === state.settingsLanguage)) state.settingsLanguage = state.language || "KB_QWERTY";
       syncLanguageSelect(ui.language);
     }
 
@@ -2068,6 +2079,31 @@
         shift: Boolean(event.shiftKey || virtualModifiers.shift),
         alt: Boolean(event.altKey || virtualModifiers.alt),
         caps: virtualModifiers.caps
+      });
+    }
+
+    function keycapValue(key, shift = false) {
+      const value = mappedKeyValue(key, {
+        shift,
+        alt: false,
+        caps: virtualModifiers.caps
+      });
+      return value || key;
+    }
+
+    function keycapLabel(key) {
+      if (!key || key.length !== 1 || key === " ") return null;
+      const normal = keycapValue(key, false);
+      const shifted = keycapValue(key, true);
+      return shifted && shifted !== normal ? shifted + "\n" + normal : normal;
+    }
+
+    function updateKeyboardKeycaps() {
+      document.querySelectorAll(".keyboard .key[data-key]").forEach((button) => {
+        if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent;
+        const key = button.dataset.key === "Backslash" ? "\\" : button.dataset.key;
+        const label = keycapLabel(key);
+        button.textContent = label || button.dataset.defaultLabel;
       });
     }
 
@@ -2407,6 +2443,11 @@
       }
       document.getElementById("webDocsTab").classList.toggle("active", id === "webDocs");
       document.getElementById("webSettingsTab").classList.toggle("active", id === "webSettings");
+      if (id === "webSettings") {
+        const webLanguage = document.getElementById("webLanguage");
+        syncLanguageSelect(webLanguage);
+        revealSelectedOption(webLanguage);
+      }
     }
 
 
@@ -3568,6 +3609,7 @@
     }
 
     function render() {
+      updateKeyboardKeycaps();
       if (state.mode === "menu") drawMenu();
       else if (state.mode === "wifiScan") drawWifiScan();
       else if (state.mode === "wifiPassword") drawWifiPassword();
@@ -3625,6 +3667,7 @@
         const modifier = button.dataset.modifier;
         button.classList.toggle("active", Boolean(virtualModifiers[modifier]));
       });
+      updateKeyboardKeycaps();
     }
 
     function updateTouchscreenControl() {
@@ -4661,6 +4704,7 @@
       render();
     });
     fillLanguageSelect();
+    syncLanguageSelect(document.getElementById("webLanguage"));
     ensureEngines();
     renderDocs();
     render();
