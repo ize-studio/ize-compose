@@ -1,0 +1,4714 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ize Compose Inkplate Emulator</title>
+  <style>
+    :root {
+      --paper: #ffffff;
+      --ink: #151515;
+      --panel: #20242a;
+      --panel-2: #2d333b;
+      --line: #9a978b;
+      --accent: #0f766e;
+      --warn: #b45309;
+      --bg: #d8d2c3;
+      --key: #f8f7f1;
+      --eink-shadow: rgba(20, 20, 20, 0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Noto Sans KR", "Noto Sans", Arial, sans-serif;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .device-area {
+      min-width: 0;
+      min-height: calc(100vh - 36px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .device-shell {
+      position: relative;
+      aspect-ratio: 1280 / 760;
+      width: min(calc(100vw - 36px), calc((100vh - 36px) * 1280 / 760));
+      height: auto;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+
+    .top-lid {
+      position: relative;
+      padding: 0.9% 1.2% 0;
+      flex: 0 0 52%;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      border-radius: 18px 18px 0 0;
+      background:
+        radial-gradient(circle at 20% 12%, rgba(255,255,255,0.07) 0 1px, transparent 1px 8px),
+        linear-gradient(145deg, #181a1c, #060708 58%, #141719);
+    }
+
+    .brand-strip {
+      display: none;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 6px 12px;
+      color: #c9c7bc;
+      font-size: 12px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .screen-frame {
+      position: relative;
+      z-index: 1;
+      width: 36%;
+      margin: 0 auto;
+      border: 1px solid #8b8a82;
+      background:
+        linear-gradient(135deg, #f2eee0 0%, #8f918d 18%, #3d4143 42%, #d8d4c6 66%, #626463 100%);
+      padding: 4px;
+      border-radius: 5px;
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,0.36),
+        inset 0 0 8px rgba(0, 0, 0, 0.52),
+        0 5px 10px rgba(0, 0, 0, 0.34);
+    }
+
+    .screen-frame::before {
+      content: "";
+      pointer-events: none;
+      position: absolute;
+      inset: 2px;
+      border: 1px solid rgba(20, 22, 22, 0.82);
+      border-radius: 3px;
+      z-index: 1;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      image-rendering: pixelated;
+      background: #ffffff;
+    }
+
+    .screen-frame::after {
+      content: "";
+      pointer-events: none;
+      position: absolute;
+      inset: 4px;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(0,0,0,0.06), transparent 34%),
+        linear-gradient(90deg, rgba(255,255,255,0.08), rgba(0,0,0,0.05));
+      mix-blend-mode: multiply;
+      opacity: 0.45;
+      z-index: 2;
+    }
+
+    .hinge {
+      display: none;
+    }
+
+    .keyboard-deck {
+      margin-top: 0;
+      padding: 0 1.2% 1.1%;
+      flex: 1 1 auto;
+      border-radius: 0 0 18px 18px;
+      background:
+        radial-gradient(circle at 20% 12%, rgba(255,255,255,0.07) 0 1px, transparent 1px 8px),
+        linear-gradient(145deg, #111315, #050607 58%, #101214);
+    }
+
+    .keyboard {
+      display: grid;
+      gap: clamp(3px, 0.62vw, 8px);
+    }
+
+    .key-row {
+      display: grid;
+      grid-template-columns: repeat(16, minmax(0, 1fr));
+      gap: clamp(3px, 0.54vw, 7px);
+    }
+
+    .key-row.bottom-row::after {
+      content: none;
+    }
+
+    .key-row.bottom-row {
+      grid-template-columns: repeat(24, minmax(0, 1fr));
+    }
+
+    .touchscreen-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: clamp(5px, 0.7vw, 9px);
+      color: #fff;
+      font-size: clamp(9px, 1vw, 13px);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .touchscreen-button {
+      width: clamp(16px, 1.8vw, 24px);
+      height: clamp(16px, 1.8vw, 24px);
+      min-height: 0;
+      padding: 0;
+      border-radius: 3px;
+      border: 1px solid #6f6f6f;
+      background: linear-gradient(145deg, #f5f5f0, #8b8b86 60%, #d7d7d1);
+      box-shadow:
+        inset 0 1px 1px rgba(255,255,255,0.7),
+        0 2px 4px rgba(0,0,0,0.45);
+    }
+
+    .touchscreen-light {
+      width: clamp(12px, 1.25vw, 18px);
+      height: clamp(12px, 1.25vw, 18px);
+      border-radius: 3px;
+      border: 1px solid #5c5c5c;
+      background: #030303;
+      box-shadow: inset 0 0 4px rgba(0,0,0,0.9);
+    }
+
+    .touchscreen-toggle.active .touchscreen-light {
+      background: #33d15a;
+      box-shadow:
+        inset 0 0 3px rgba(255,255,255,0.52),
+        0 0 8px rgba(51,209,90,0.75);
+    }
+
+    .key-row.offset-half {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .key {
+      min-width: 0;
+      height: clamp(24px, 4.55vw, 58px);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #bdb7a7;
+      background: linear-gradient(180deg, #fffdf5, #ded8c9);
+      border-radius: 6px;
+      box-shadow:
+        inset 0 4px 4px rgba(255,255,255,0.8),
+        inset 0 -5px 6px rgba(120,110,90,0.22),
+        0 4px 0 #7f7768,
+        0 6px 8px rgba(0,0,0,0.4);
+      font-size: clamp(7px, 1.05vw, 13px);
+      color: #151515;
+      line-height: 1;
+      white-space: pre-line;
+      user-select: none;
+    }
+
+    .key.black {
+      background: linear-gradient(180deg, #25282d, #070809);
+      border-color: #2b3036;
+      color: #d9dde2;
+      box-shadow:
+        inset 0 3px 4px rgba(255,255,255,0.08),
+        inset 0 -4px 6px rgba(0,0,0,0.65),
+        0 4px 0 #020303,
+        0 6px 8px rgba(0,0,0,0.5);
+    }
+
+    .key:active,
+    .key.active {
+      transform: translateY(3px);
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,0.55),
+        inset 0 -2px 5px rgba(120,110,90,0.25),
+        0 1px 0 #7f7768,
+        0 2px 4px rgba(0,0,0,0.35);
+    }
+
+    .key.flash {
+      background: linear-gradient(180deg, #fff07b, #d4a91f);
+      border-color: #b78f12;
+      color: #151515;
+      transform: translateY(3px);
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,0.5),
+        inset 0 -2px 5px rgba(120,90,0,0.25),
+        0 1px 0 #7f6a18,
+        0 2px 4px rgba(0,0,0,0.35);
+    }
+
+    .key.black.flash {
+      background: linear-gradient(180deg, #a88cff, #5032a8);
+      border-color: #6d56c8;
+      color: #ffffff;
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,0.28),
+        inset 0 -2px 5px rgba(24,0,80,0.48),
+        0 1px 0 #25105f,
+        0 2px 4px rgba(0,0,0,0.38);
+    }
+
+    .key.wide {
+      grid-column: span 2;
+    }
+
+    .key.three-wide {
+      grid-column: span 3;
+    }
+
+    .key.extra-wide {
+      grid-column: span 5;
+    }
+
+    .key.spacebar {
+      grid-column: span 7;
+    }
+
+    .bottom-row .key {
+      grid-column: span 2;
+    }
+
+    .bottom-row .key.spacebar {
+      grid-column: span 10;
+      order: 2;
+    }
+
+    .bottom-row .arrow-key {
+      order: 5;
+      font-size: clamp(12px, 1.6vw, 20px);
+    }
+
+    .key.dark {
+      background: linear-gradient(180deg, #34383d, #17191c);
+      border-color: #555b63;
+      color: #f3f1e7;
+      box-shadow:
+        inset 0 3px 4px rgba(255,255,255,0.12),
+        inset 0 -4px 6px rgba(0,0,0,0.45),
+        0 4px 0 #050607,
+        0 6px 8px rgba(0,0,0,0.45);
+    }
+
+    .deck-label {
+      margin-top: 0;
+      color: #9d9b91;
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .side {
+      display: none;
+    }
+
+    .panel {
+      background: var(--panel);
+      color: #f4f4f4;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .emulator-hidden {
+      display: none !important;
+    }
+
+    h1, h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 13px;
+      color: #d7e1df;
+      margin-bottom: 10px;
+    }
+
+    .meta {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .metric {
+      padding: 8px;
+      background: var(--panel-2);
+      border-radius: 6px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 15px;
+      margin-top: 3px;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .power-row {
+      display: grid;
+      justify-items: center;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .power-rail {
+      position: absolute;
+      left: auto;
+      right: 8%;
+      top: 42%;
+      transform: translateY(-50%);
+      display: grid;
+      justify-items: center;
+      gap: 0;
+      z-index: 3;
+    }
+
+    .power-switch {
+      position: relative;
+      width: 38px;
+      height: 48px;
+      min-height: 48px;
+      padding: 0;
+      border-radius: 19px;
+      border: 1px solid #5e5a52;
+      background: linear-gradient(180deg, #313335, #111214);
+      box-shadow:
+        inset 0 0 10px rgba(0,0,0,0.72),
+        0 5px 9px rgba(0,0,0,0.34);
+    }
+
+    .power-switch::before {
+      content: "";
+      position: absolute;
+      left: 5px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #f8f4e8, #a99f8e);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.48);
+      top: 0;
+      transform: none;
+      transition: transform 140ms ease;
+    }
+
+    .power-switch.on::before {
+      transform: translateY(0);
+    }
+
+    .power-switch:not(.on)::before {
+      transform: translateY(15px);
+    }
+
+    .power-state {
+      display: none;
+      color: #bfc3bd;
+      font-size: 10px;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    button {
+      min-height: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: #f6f3e7;
+      color: #111;
+      border-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:not(.key):hover {
+      background: #fffaf0;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    button.warn {
+      background: var(--warn);
+      color: white;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    label {
+      font-size: 12px;
+      color: #d7e1df;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: #12161a;
+      color: #fff;
+      border-radius: 6px;
+      padding: 8px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .docs {
+      display: grid;
+      gap: 6px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .doc {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      background: var(--panel-2);
+      border-radius: 6px;
+      border: 1px solid transparent;
+    }
+
+    .doc.active {
+      border-color: var(--accent);
+    }
+
+    .doc-name {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .doc-preview {
+      font-size: 11px;
+      color: #c8c8c8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hint {
+      margin: 8px 0 0;
+      color: #d8d8d8;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .status {
+      min-height: 20px;
+      color: #e8e3d8;
+      font-size: 12px;
+    }
+
+    .terminal {
+      min-height: 118px;
+      margin: 10px 0 0;
+      padding: 10px;
+      overflow: auto;
+      border-radius: 6px;
+      background: #111;
+      color: #e9e4d8;
+      font: 12px/1.35 "Noto Sans KR", "Noto Sans", Arial, sans-serif;
+      white-space: pre-wrap;
+    }
+
+    .web-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 10;
+    }
+
+    .web-modal.open {
+      display: flex;
+    }
+
+    .local-root-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 11;
+    }
+
+    .local-root-modal.open {
+      display: flex;
+    }
+
+    .local-root-card {
+      width: min(420px, 100%);
+      padding: 18px;
+      border-radius: 8px;
+      border: 1px solid #d8d8d8;
+      background: #fff;
+      color: #161616;
+      box-shadow: 0 20px 70px rgba(0,0,0,0.35);
+      font-family: "Noto Sans KR", "Noto Sans", system-ui, -apple-system, Segoe UI, sans-serif;
+    }
+
+    .local-root-card h2 {
+      margin: 0 0 10px;
+      color: #161616;
+      font-size: 17px;
+    }
+
+    .local-root-card p {
+      margin: 0 0 14px;
+      color: #555;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .local-root-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .local-root-actions button {
+      width: auto;
+      min-height: 34px;
+      padding: 7px 12px;
+      border-radius: 6px;
+    }
+
+    .local-root-status {
+      min-height: 18px;
+      margin-top: 10px !important;
+      color: #666 !important;
+    }
+
+    .web-page {
+      width: min(960px, 100%);
+      max-height: 88vh;
+      overflow: auto;
+      background: #fff;
+      color: #161616;
+      border-radius: 8px;
+      box-shadow: 0 24px 90px rgba(0,0,0,0.42);
+      border: 1px solid #d8d8d8;
+      font-family: "Noto Sans KR", "Noto Sans", system-ui, -apple-system, Segoe UI, sans-serif;
+    }
+
+    .web-page * {
+      box-sizing: border-box;
+    }
+
+    .web-page main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 22px 18px 42px;
+    }
+
+    .web-page h1 {
+      margin: 0 0 16px;
+      font-size: 25px;
+    }
+
+    .web-page h2 {
+      margin: 0 0 12px;
+      font-size: 17px;
+    }
+
+    .web-close {
+      float: right;
+      width: auto !important;
+      min-width: 88px;
+      min-height: 34px !important;
+      margin-left: 12px;
+      padding: 6px 11px !important;
+      color: #161616 !important;
+      border: 1px solid #d8d8d8 !important;
+      background: #fff !important;
+    }
+
+    .web-card {
+      border: 1px solid #d8d8d8;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 0 0 14px;
+      background: #f7f7f4;
+    }
+
+    .web-page label {
+      display: block;
+      margin: 11px 0 6px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .web-page input,
+    .web-page select,
+    .web-page button,
+    .web-page textarea {
+      width: 100%;
+      min-height: 42px;
+      font: inherit;
+      border-radius: 6px;
+    }
+
+    .web-page input,
+    .web-page select,
+    .web-page textarea {
+      border: 1px solid #d8d8d8;
+      padding: 9px 10px;
+      background: #fff;
+      color: #161616;
+    }
+
+    .web-page textarea {
+      min-height: 130px;
+      resize: vertical;
+    }
+
+    .web-page button {
+      border: 0;
+      padding: 10px 12px;
+      color: #fff;
+      background: #111;
+      cursor: pointer;
+    }
+
+    .web-page button.secondary {
+      color: #161616;
+      border: 1px solid #d8d8d8;
+      background: #fff;
+    }
+
+    .web-pin-keypad {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin: 9px 0 10px;
+    }
+
+    .web-pin-keypad button {
+      min-width: 0;
+      min-height: 40px;
+      padding: 8px 6px;
+      color: #161616;
+      border: 1px solid #d8d8d8;
+      background: #fff;
+      font-weight: 700;
+    }
+
+    .web-tabs {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 14px;
+      padding: 0;
+    }
+
+    .web-tabs button {
+      width: auto;
+    }
+
+    .web-tabs button.active {
+      background: #444;
+    }
+
+    .web-hidden {
+      display: none !important;
+    }
+
+    .web-section.hidden,
+    .web-section:not(.active) {
+      display: none;
+    }
+
+    .web-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .web-full {
+      grid-column: 1 / -1;
+    }
+
+    .web-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 12px;
+    }
+
+    .web-card-head h2 {
+      margin: 0;
+    }
+
+    .web-head-btn {
+      width: auto !important;
+      min-width: 120px;
+      min-height: 36px !important;
+      padding: 7px 12px !important;
+    }
+
+    .web-range-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .web-range-value {
+      min-width: 90px;
+      text-align: right;
+    }
+
+    .web-radio-row {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .web-radio-row label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 0;
+      color: #161616;
+    }
+
+    .web-radio-row input {
+      width: auto;
+      min-height: auto;
+    }
+
+    #webLanguage {
+      width: 100%;
+      min-height: 230px;
+      max-height: 42vh;
+      overflow: auto;
+    }
+
+    #webLanguage option {
+      min-height: 24px;
+      padding: 4px 6px;
+      overflow-wrap: anywhere;
+    }
+
+    .web-status,
+    .web-hint {
+      color: #666;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .web-warn {
+      color: #b00020;
+      font-weight: 650;
+    }
+
+    .web-token-options {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 7px 0 4px;
+      flex-wrap: wrap;
+    }
+
+    .web-token-check {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 7px;
+      margin: 0 !important;
+      color: #b00020 !important;
+      font-size: 13px !important;
+      line-height: 1.35;
+    }
+
+    .web-token-check input {
+      width: auto !important;
+      min-height: auto !important;
+      margin: 0;
+    }
+
+    .web-token-warning {
+      color: #b00020;
+      font-weight: 700;
+    }
+
+    .web-token-delete {
+      width: auto !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      padding: 4px 10px !important;
+      border-radius: 999px !important;
+      border: 1px solid #b00020 !important;
+      background: #fff !important;
+      color: #b00020 !important;
+      font-size: 13px !important;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .web-doc-row {
+      display: grid;
+      grid-template-columns: minmax(0, 150px) minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      padding: 8px;
+      border-top: 1px solid #d8d8d8;
+    }
+
+    .web-doc-row strong,
+    .web-doc-row span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .web-doc-row button {
+      width: auto;
+      min-width: 86px;
+    }
+
+    .web-doc-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .web-doc-actions button {
+      flex: 1 1 96px;
+      min-width: 0;
+      max-width: 150px;
+    }
+
+    .web-read-page {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      padding-top: 8px;
+      border-top: 1px solid #d8d8d8;
+    }
+
+    .web-read-page button {
+      width: auto;
+      justify-self: start;
+      min-width: 88px;
+    }
+
+    .web-read-page h3 {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .web-read-page pre {
+      max-width: 100%;
+      max-height: 60vh;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid #d8d8d8;
+      border-radius: 6px;
+      background: #fff;
+      color: #161616;
+      font: 14px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .web-delete-confirm {
+      display: grid;
+      gap: 10px;
+      padding: 10px 0 2px;
+      border-top: 1px solid #d8d8d8;
+    }
+
+    .web-delete-code {
+      width: max-content;
+      padding: 8px 12px;
+      border: 1px solid #111;
+      background: #f6f6f6;
+      color: #111;
+      font: 700 30px/1.1 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      letter-spacing: 4px;
+    }
+
+    .web-delete-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .web-delete-actions button {
+      width: auto;
+      min-width: 96px;
+    }
+
+    .terminal {
+      min-height: 118px;
+      margin: 10px 0 0;
+      padding: 10px;
+      overflow: auto;
+      border-radius: 6px;
+      background: #111;
+      color: #e9e4d8;
+      font: 12px/1.35 "Noto Sans KR", "Noto Sans", Arial, sans-serif;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        min-height: 100svh;
+        align-items: flex-start;
+        padding: 14px 8px;
+      }
+
+      .device-area {
+        min-height: auto;
+        width: 100%;
+      }
+
+      .device-shell {
+        width: min(calc(100vw - 16px), calc((100svh - 28px) * 1280 / 760));
+        height: auto;
+        min-height: 0;
+      }
+
+      .key {
+        height: clamp(24px, 5.25vw, 34px);
+        border-radius: 5px;
+        font-size: clamp(7px, 2.15vw, 12px);
+        box-shadow:
+          inset 0 3px 3px rgba(255,255,255,0.75),
+          inset 0 -4px 5px rgba(120,110,90,0.22),
+          0 3px 0 #7f7768,
+          0 5px 7px rgba(0,0,0,0.36);
+      }
+
+      .keyboard {
+        gap: clamp(3px, 0.85vw, 6px);
+      }
+
+      .key-row {
+        gap: clamp(3px, 0.75vw, 5px);
+      }
+
+      .screen-frame {
+        width: 36%;
+        padding: 3px;
+      }
+
+      .power-rail {
+        right: 8.5%;
+      }
+
+      .deck-label {
+        display: none;
+      }
+
+      .web-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="device-area" aria-label="Inkplate emulator">
+      <div class="device-shell">
+        <div class="top-lid">
+          <div class="brand-strip">
+            <span>Zerowriter Ink</span>
+            <span>Inkplate 5V2</span>
+          </div>
+          <div class="screen-frame">
+            <canvas id="screen" width="960" height="540" tabindex="0" aria-label="Inkplate 5V2 screen"></canvas>
+          </div>
+          <div class="power-rail">
+            <div class="power-state">
+              <strong>Power</strong><br>
+              <span id="powerState">ON</span>
+            </div>
+            <button id="powerSwitch" class="power-switch on" aria-label="Power switch"></button>
+          </div>
+        </div>
+        <div class="hinge"></div>
+        <div class="keyboard-deck">
+          <div class="keyboard" aria-label="Clickable Zerowriter keyboard">
+            <div class="key-row">
+              <button class="key" data-key="`">~<br>`</button>
+              <button class="key" data-key="1">!<br>1</button>
+              <button class="key" data-key="2">@<br>2</button>
+              <button class="key" data-key="3">#<br>3</button>
+              <button class="key" data-key="4">$<br>4</button>
+              <button class="key" data-key="5">%<br>5</button>
+              <button class="key" data-key="6">^<br>6</button>
+              <button class="key" data-key="7">&amp;<br>7</button>
+              <button class="key" data-key="8">*<br>8</button>
+              <button class="key" data-key="9">(<br>9</button>
+              <button class="key" data-key="0">)<br>0</button>
+              <button class="key" data-key="-">_<br>-</button>
+              <button class="key" data-key="=">+<br>=</button>
+              <button class="key three-wide" data-key="Backspace">BACKSPACE</button>
+            </div>
+            <div class="key-row offset-half">
+              <button class="key wide" data-key="Tab">TAB</button>
+              <button class="key black" data-key="q">Q</button>
+              <button class="key black" data-key="w">W</button>
+              <button class="key black" data-key="e">E</button>
+              <button class="key black" data-key="r">R</button>
+              <button class="key black" data-key="t">T</button>
+              <button class="key black" data-key="y">Y</button>
+              <button class="key black" data-key="u">U</button>
+              <button class="key black" data-key="i">I</button>
+              <button class="key black" data-key="o">O</button>
+              <button class="key black" data-key="p">P</button>
+              <button class="key" data-key="[">[</button>
+              <button class="key" data-key="]">]</button>
+              <button class="key wide" data-key="Backslash">|<br>\</button>
+            </div>
+            <div class="key-row offset-half">
+              <button class="key wide" data-modifier="caps">CAPS LOCK</button>
+              <button class="key black" data-key="a">A</button>
+              <button class="key black" data-key="s">S</button>
+              <button class="key black" data-key="d">D</button>
+              <button class="key black" data-key="f">F</button>
+              <button class="key black" data-key="g">G</button>
+              <button class="key black" data-key="h">H</button>
+              <button class="key black" data-key="j">J</button>
+              <button class="key black" data-key="k">K</button>
+              <button class="key black" data-key="l">L</button>
+              <button class="key" data-key=";">;</button>
+              <button class="key" data-key="'">'</button>
+              <button class="key three-wide" data-key="Enter">RETURN</button>
+            </div>
+            <div class="key-row">
+              <button class="key three-wide" data-modifier="shift">SHIFT</button>
+              <button class="key black" data-key="z">Z</button>
+              <button class="key black" data-key="x">X</button>
+              <button class="key black" data-key="c">C</button>
+              <button class="key black" data-key="v">V</button>
+              <button class="key black" data-key="b">B</button>
+              <button class="key black" data-key="n">N</button>
+              <button class="key black" data-key="m">M</button>
+              <button class="key" data-key=",">,</button>
+              <button class="key" data-key=".">.</button>
+              <button class="key" data-key="/">/</button>
+              <button class="key three-wide" data-modifier="shift">SHIFT</button>
+            </div>
+            <div class="key-row bottom-row">
+              <button class="key" data-modifier="ctrl">CTRL</button>
+              <button class="key" data-modifier="alt">ALT</button>
+              <button class="key" data-key="Escape">MENU</button>
+              <button class="key spacebar" data-key=" "> </button>
+              <button class="key arrow-key" data-key="ArrowLeft">&larr;</button>
+              <button class="key arrow-key" data-key="ArrowUp">&uarr;</button>
+              <button class="key arrow-key" data-key="ArrowDown">&darr;</button>
+              <button class="key arrow-key" data-key="ArrowRight">&rarr;</button>
+            </div>
+          </div>
+          <div class="touchscreen-toggle" id="touchscreenToggle">
+            <button id="touchscreenButton" class="touchscreen-button" type="button" aria-label="Touchscreen mode"></button>
+            <span>터치스크린</span>
+            <span id="touchscreenLight" class="touchscreen-light" aria-hidden="true"></span>
+          </div>
+          <div class="deck-label">Click keys to drive the same menu and typing paths as the physical keyboard.</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel emulator-hidden">
+        <h1>Ize Compose Emulator</h1>
+        <p class="hint">Click the Inkplate screen, then type. Use Esc for Menu, Enter to choose, arrows to move, Ctrl+F for search, Ctrl+L for sleep.</p>
+        <div class="meta">
+          <div class="metric">Mode<strong id="modeMetric">Typing</strong></div>
+          <div class="metric">Document<strong id="docMetric">doc0001.txt</strong></div>
+          <div class="metric">Chars<strong id="charMetric">0</strong></div>
+          <div class="metric">Words<strong id="wordMetric">0</strong></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Power</h2>
+        <div class="toolbar emulator-hidden">
+          <button id="menuBtn">Menu</button>
+          <button id="saveBtn" class="primary">Save</button>
+          <button id="sleepBtn">Sleep</button>
+          <button id="newBtn">New</button>
+          <button id="searchBtn">Search</button>
+          <button id="resetBtn" class="warn">Reset</button>
+          <button id="openWebBtn">Web</button>
+        </div>
+        <p class="hint emulator-hidden" id="message">Ready.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Settings</h2>
+        <div class="field">
+          <label for="fontSize">Text size</label>
+          <input id="fontSize" type="range" min="12" max="26" value="20">
+        </div>
+        <div class="field">
+          <label for="lineSpace">Line space</label>
+          <input id="lineSpace" type="range" min="0" max="12" value="2">
+        </div>
+        <div class="field">
+          <label for="language">Language</label>
+          <select id="language">
+          </select>
+        </div>
+      </section>
+
+      <section class="panel emulator-hidden">
+        <h2>Documents</h2>
+        <div id="docs" class="docs"></div>
+      </section>
+
+      <section class="panel emulator-hidden">
+        <h2>Import Text</h2>
+        <textarea id="importText" placeholder="Paste text here, then load it into the emulator."></textarea>
+        <div class="toolbar" style="grid-template-columns: 1fr 1fr; margin-top: 8px;">
+          <button id="loadTextBtn">Load</button>
+          <button id="appendTextBtn">Append</button>
+        </div>
+        <div class="status" id="statusLine"></div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="webModal" class="web-modal" aria-hidden="true">
+    <div class="web-page" role="dialog" aria-label="Ize Compose simulated web interface">
+      <main>
+        <button id="closeWebBtn" class="web-close" type="button">Close</button>
+        <h1>Ize Compose</h1>
+
+        <section id="auth" class="web-card">
+          <h2>PIN</h2>
+          <label for="webPin">Enter the PIN shown on Ize Compose.</label>
+          <input id="webPin" inputmode="numeric" autocomplete="one-time-code" maxlength="4" placeholder="Shown on device screen">
+          <div class="web-pin-keypad" aria-label="PIN number keys">
+            <button type="button" data-web-pin-key="1">1</button>
+            <button type="button" data-web-pin-key="2">2</button>
+            <button type="button" data-web-pin-key="3">3</button>
+            <button type="button" data-web-pin-key="4">4</button>
+            <button type="button" data-web-pin-key="5">5</button>
+            <button type="button" data-web-pin-key="6">6</button>
+            <button type="button" data-web-pin-key="7">7</button>
+            <button type="button" data-web-pin-key="8">8</button>
+            <button type="button" data-web-pin-key="9">9</button>
+            <button type="button" data-web-pin-key="0">0</button>
+          </div>
+          <p class="web-hint">Settings, updates, uploads, and document changes require this PIN.</p>
+          <button id="webAuthBtn" type="button">Open</button>
+          <p id="authStatus" class="web-status"></p>
+        </section>
+
+        <section id="webApp">
+          <div class="web-tabs">
+            <button id="webDocsTab" class="active" type="button">Documents</button>
+            <button id="webSettingsTab" type="button">Settings & Update</button>
+          </div>
+
+          <section id="webDocs" class="web-section active">
+            <div class="web-card">
+              <h2>Upload Text File</h2>
+              <label for="webUploadText">Text file</label>
+              <textarea id="webUploadText" placeholder="Text saved as the next docNNNN.txt file."></textarea>
+              <p class="web-hint">Uploaded text is saved as the next docNNNN.txt file.</p>
+              <button id="webUploadBtn" type="button">Upload Text</button>
+            </div>
+            <div class="web-card">
+              <h2>Documents</h2>
+              <div id="webDocList"><p class="web-status">Loading...</p></div>
+              <div class="web-tabs" style="margin-top:12px">
+                <button class="secondary" type="button">Previous</button>
+                <button class="secondary" type="button">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="webSettings" class="web-section">
+            <div class="web-card">
+              <div class="web-card-head">
+                <h2>Environment Settings</h2>
+                <button id="webSaveSettingsBtn" class="web-head-btn" type="button">Save</button>
+              </div>
+              <div class="web-grid">
+                <div>
+                  <label for="webSleep">Sleep Timer</label>
+                  <div class="web-range-row"><select id="webSleep"><option>30 sec</option><option>1 min</option><option selected>5 min</option><option>10 min</option><option>30 min</option><option>1 hr</option><option>OFF</option></select><span class="web-range-value">5 min</span></div>
+                </div>
+                <div>
+                  <label for="webTextSize">Text Size</label>
+                  <div class="web-range-row"><input id="webTextSize" type="range" min="5" max="35" step="1"><span id="webTextSizeValue" class="web-range-value"></span></div>
+                </div>
+                <div>
+                  <label for="webLineSpace">Line Space</label>
+                  <div class="web-range-row"><input id="webLineSpace" type="range" min="0" max="30" step="1"><span id="webLineSpaceValue" class="web-range-value"></span></div>
+                </div>
+                <div>
+                  <label for="webLetterSpacing">Character Space</label>
+                  <div class="web-range-row"><input id="webLetterSpacing" type="range" min="-5" max="10" step="1" value="0"><span class="web-range-value">0</span></div>
+                </div>
+                <div>
+                  <label for="webTypingSpeed">Speed</label>
+                  <input id="webTypingSpeed" type="number" min="1" max="2000" step="1" value="200">
+                  <p class="web-hint">Default: 200 ms. Changing this can make typing less comfortable.</p>
+                </div>
+                <div>
+                  <label for="webRefresh">Refresh</label>
+                  <input id="webRefresh" type="number" min="0" max="2000" step="1" value="2000">
+                  <p class="web-hint">Default: 2000. Changing this can make refresh behavior less comfortable.</p>
+                </div>
+                <div class="web-full">
+                  <label>English Keyboard</label>
+                  <div class="web-radio-row"><label><input type="radio" name="webEnglishLayout" value="KB_QWERTY" checked>Qwerty</label><label><input type="radio" name="webEnglishLayout" value="KB_DVORAK">Dvorak</label></div>
+                </div>
+                <div class="web-full">
+                  <label for="webLanguage">Language</label>
+                  <select id="webLanguage" size="8"></select>
+                </div>
+              </div>
+              <p id="webSettingsStatus" class="web-status">Loading...</p>
+            </div>
+
+            <div class="web-grid">
+              <div class="web-card">
+                <h2>Firmware Update</h2>
+                <label for="fwFile">Firmware file</label>
+                <input id="fwFile" type="file" accept=".bin">
+                <button type="button">Upload and Update</button>
+                <p class="web-status">Waiting...</p>
+              </div>
+              <div class="web-card">
+                <h2>Font / Image Upload</h2>
+                <label for="resFile">File</label>
+                <input id="resFile" type="file" accept=".bin,.png">
+                <p class="web-hint">The filename decides the target automatically.</p>
+                <button type="button">Upload to SD</button>
+                <p class="web-status">Waiting...</p>
+              </div>
+            </div>
+
+            <div class="web-card" id="webGithub">
+              <h2>GitHub Sync</h2>
+              <label for="ghOwner">Owner</label><input id="ghOwner" name="owner" placeholder="ize-studio" required>
+              <label for="ghRepo">Repository</label><input id="ghRepo" name="repo" placeholder="private-repository" required>
+              <label for="ghBranch">Branch</label><input id="ghBranch" name="branch" placeholder="main">
+              <label for="ghPath">Document path</label><input id="ghPath" name="path" value="documents" readonly>
+              <label for="ghToken">Token</label><input id="ghToken" name="token" type="password" autocomplete="off" placeholder="Leave blank to keep saved token">
+              <div class="web-token-options">
+                <label class="web-token-check" for="ghSaveToken"><input id="ghSaveToken" type="checkbox"><span class="web-token-warning">Save token on this computer only</span></label>
+                <button id="webDeleteGithubTokenBtn" class="web-token-delete" type="button">Delete token</button>
+              </div>
+              <p id="ghTokenStatus" class="web-hint">Token required.</p>
+              <button id="webSaveGithubBtn" type="button">Save GitHub Settings</button>
+              <button id="webSyncGithubBtn" type="button" class="secondary" style="margin-top:8px">Sync Now</button>
+              <p id="githubStatus" class="web-status"></p>
+              <pre id="webSyncLog" class="terminal">Waiting...</pre>
+            </div>
+
+            <div class="web-card">
+              <h2>Online Firmware Update</h2>
+              <p id="releaseStatus" class="web-status">Checking release...</p>
+              <button id="webOnlineUpdateBtn" type="button">Online Update</button>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="localRootModal" class="local-root-modal" aria-hidden="true">
+    <div class="local-root-card" role="dialog" aria-label="Select local SD root folder">
+      <h2>Select SD root folder</h2>
+      <p>Choose the local folder that works like the device SD card root. Text documents are saved here as .txt files. Close this to keep browser-only storage.</p>
+      <div class="local-root-actions">
+        <button id="localRootSkipBtn" type="button">Close</button>
+        <button id="localRootChooseBtn" type="button">Select Folder</button>
+      </div>
+      <p id="localRootStatus" class="local-root-status"></p>
+    </div>
+  </div>
+
+  <script src="keyboard-layouts.js"></script>
+  <script src="key-engine.js"></script>
+  <script>
+    const STORAGE_KEY = "ize-compose-emulator-state-v1";
+    const LOCAL_ROOT_DB = "ize-compose-emulator-local-root";
+    const LOCAL_ROOT_STORE = "handles";
+    const APP_VERSION = "1.4.1";
+    const GITHUB_SYNC_STATE_DIR = "ize_compose";
+    const GITHUB_SYNC_STATE_FILE = "github_sync_state.txt";
+    const GITHUB_REQUEST_TIMEOUT_MS = 15000;
+    const screen = document.getElementById("screen");
+    const ctx = screen.getContext("2d");
+    const SCREEN_W = screen.width;
+    const SCREEN_H = screen.height;
+    const LOGICAL_SCREEN_H = SCREEN_H;
+    const initialImage = new Image();
+    const INITIAL_IMAGE_PATHS = ["../others/initial.png", "others/initial.png"];
+    let initialImagePathIndex = 0;
+
+    function loadInitialImage() {
+      initialImage.src = INITIAL_IMAGE_PATHS[initialImagePathIndex];
+    }
+
+    const ui = {
+      modeMetric: document.getElementById("modeMetric"),
+      docMetric: document.getElementById("docMetric"),
+      charMetric: document.getElementById("charMetric"),
+      wordMetric: document.getElementById("wordMetric"),
+      docs: document.getElementById("docs"),
+      message: document.getElementById("message"),
+      statusLine: document.getElementById("statusLine"),
+      fontSize: document.getElementById("fontSize"),
+      lineSpace: document.getElementById("lineSpace"),
+      language: document.getElementById("language"),
+      importText: document.getElementById("importText"),
+      webModal: document.getElementById("webModal"),
+      webDocList: document.getElementById("webDocList"),
+      webTextSize: document.getElementById("webTextSize"),
+      webLineSpace: document.getElementById("webLineSpace"),
+      webLetterSpacing: document.getElementById("webLetterSpacing"),
+      webTypingSpeed: document.getElementById("webTypingSpeed"),
+      powerSwitch: document.getElementById("powerSwitch"),
+      powerState: document.getElementById("powerState"),
+      touchscreenToggle: document.getElementById("touchscreenToggle"),
+      touchscreenButton: document.getElementById("touchscreenButton"),
+      touchscreenLight: document.getElementById("touchscreenLight"),
+      localRootModal: document.getElementById("localRootModal"),
+      localRootStatus: document.getElementById("localRootStatus")
+    };
+
+    const menuItems = ["Sync", "New", "Save", "Count", "Sleep", "Network"];
+    const networkModes = ["Off", "WiFi", "WebServer"];
+    const UI_SCALE = Math.min(SCREEN_W / 640, SCREEN_H / 360);
+    const MARGIN_X = 35;
+    const MARGIN_Y = 65;
+    const STATUS_Y = 30;
+    const RIGHT_EDGE_MARGIN = 35;
+    const CANVAS_FONT_FAMILY = '"Noto Sans Mono", "D2Coding", "Consolas", "Noto Sans KR", monospace';
+    const BASE_FONT_SIZE = 16;
+    const MENU_SCALE_TENTHS = 20;
+    const SMALL_SCREEN_TEXT_MIN_SCALE = 0.88;
+    const SMALL_SCREEN_TEXT_FULL_HEIGHT = 260;
+    const SMALL_SCREEN_TEXT_MIN_HEIGHT = 140;
+
+    let state = loadState();
+    let githubSessionToken = "";
+    let localRootHandle = null;
+    let localRootReadyPromise = null;
+    let localRootPromptedThisSession = false;
+    let hangulEngine = null;
+    let typingTimer = null;
+    let sleepTimer = null;
+    let powerTransitioning = false;
+    let saveNoticeUntil = 0;
+    let saveNoticeTimer = null;
+    let audioContext = null;
+    let lastKeySoundAt = 0;
+    let accentBaseChar = "";
+    let accentCycleIndex = 0;
+    let lastAccentCandidateAt = 0;
+    let virtualAltHeld = false;
+    let virtualCtrlHeld = false;
+    let virtualShiftHeld = false;
+    const virtualModifiers = {
+      ctrl: false,
+      shift: false,
+      alt: false,
+      caps: false
+    };
+    const keyFlashTimers = new WeakMap();
+
+    function defaultState() {
+      return {
+        mode: "initial",
+        text: "",
+        cursor: 0,
+        currentFileName: "doc0001.txt",
+        docs: [{ name: "doc0001.txt", text: "" }],
+        menuIndex: 0,
+        menuFocusSide: 0,
+        docIndex: 0,
+        fileScrollOffset: 0,
+        deleteAskActive: false,
+        deletePromptActive: false,
+        deleteConfirmCode: "",
+        deleteConfirmInput: "",
+        pendingDeleteName: "",
+        webDeleteName: "",
+        webDeleteCode: "",
+        webDeleteInput: "",
+        webDeleteError: "",
+        webReadName: "",
+        countMode: 2,
+        language: "KB_QWERTY",
+        settingsLanguage: "KB_QWERTY",
+        fontSize: 20,
+        lineSpace: 2,
+        letterSpacing: 0,
+        searchQuery: "",
+        searchMatchStart: -1,
+        powerOn: false,
+        localRootName: "",
+        sleepFlashFrame: 0,
+        networkMode: "Off",
+        tempNetworkMode: "Off",
+        menuEditingValue: false,
+        wifiStatusMessage: "Select Wi-Fi. Enter: connect. Tab/Menu: cancel.",
+        wifiScanSelected: 0,
+        wifiPasswordBuffer: "",
+        webServerPasswordInput: "",
+        webServerPasswordHint: "Numbers only / Tab cancels",
+        apPasswordHidden: false,
+        webPin: "0000",
+        wifiSsid: "Ize Studio",
+        wifiIp: "10.232.205.14",
+        apPassword: "0000000000",
+        githubOwner: "",
+        githubRepo: "",
+        githubBranch: "main",
+        githubPath: "documents",
+        githubToken: "",
+        githubTokenSet: false,
+        githubSyncState: [],
+        webUnlocked: false,
+        syncStatus: "Waiting.",
+        syncLog: "Waiting...",
+        pendingText: "",
+        typingDelayMs: 200,
+        previousEnglishLanguage: "KB_QWERTY",
+        touchscreenMode: false,
+        status: "Power off."
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaultState();
+        const next = { ...defaultState(), ...JSON.parse(raw) };
+        next.mode = "initial";
+        next.powerOn = false;
+        next.networkMode = "Off";
+        next.tempNetworkMode = "Off";
+        next.githubPath = "documents";
+        if (!next.settingsLanguage) next.settingsLanguage = next.language || "KB_QWERTY";
+        if (typeof next.fontSize !== "number" || next.fontSize === 16) next.fontSize = 20;
+        if (typeof next.letterSpacing !== "number") next.letterSpacing = 0;
+        if (typeof next.typingDelayMs !== "number" || next.typingDelayMs <= 0 || next.typingDelayMs > 2000 || next.typingDelayMs === 24 || next.typingDelayMs === 180 || next.typingDelayMs === 300 || next.typingDelayMs === 350 || next.typingDelayMs === 550 || next.typingDelayMs === 750 || next.typingDelayMs === 1050) next.typingDelayMs = 200;
+        next.pendingText = "";
+        next.menuIndex = 0;
+        next.menuFocusSide = 0;
+        next.deleteAskActive = false;
+        next.deletePromptActive = false;
+        next.deleteConfirmCode = "";
+        next.deleteConfirmInput = "";
+        next.pendingDeleteName = "";
+        next.webDeleteName = "";
+        next.webDeleteCode = "";
+        next.webDeleteInput = "";
+        next.webDeleteError = "";
+        next.webReadName = "";
+        if (!Array.isArray(next.githubSyncState)) next.githubSyncState = [];
+        return next;
+      } catch {
+        return defaultState();
+      }
+    }
+
+    function persist() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+    function openLocalRootDb() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(LOCAL_ROOT_DB, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore(LOCAL_ROOT_STORE);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function readLocalRootHandle() {
+      if (!("indexedDB" in window)) return null;
+      const db = await openLocalRootDb();
+      return new Promise((resolve, reject) => {
+        const request = db.transaction(LOCAL_ROOT_STORE, "readonly").objectStore(LOCAL_ROOT_STORE).get("root");
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function writeLocalRootHandle(handle) {
+      if (!("indexedDB" in window)) return;
+      const db = await openLocalRootDb();
+      await new Promise((resolve, reject) => {
+        const request = db.transaction(LOCAL_ROOT_STORE, "readwrite").objectStore(LOCAL_ROOT_STORE).put(handle, "root");
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function clearLocalRootHandle() {
+      if (!("indexedDB" in window)) return;
+      const db = await openLocalRootDb();
+      await new Promise((resolve, reject) => {
+        const request = db.transaction(LOCAL_ROOT_STORE, "readwrite").objectStore(LOCAL_ROOT_STORE).delete("root");
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function ensureLocalRootPermission() {
+      if (!localRootHandle) return false;
+      const options = { mode: "readwrite" };
+      if ((await localRootHandle.queryPermission(options)) === "granted") return true;
+      return (await localRootHandle.requestPermission(options)) === "granted";
+    }
+
+    async function restoreLocalRootHandle() {
+      try {
+        localRootHandle = await readLocalRootHandle();
+        if (localRootHandle) state.localRootName = localRootHandle.name;
+      } catch {
+        localRootHandle = null;
+      }
+    }
+
+    function showLocalRootModal() {
+      if (ui.webModal.classList.contains("open")) return;
+      localRootPromptedThisSession = true;
+      ui.localRootStatus.textContent = "";
+      ui.localRootModal.classList.add("open");
+      ui.localRootModal.setAttribute("aria-hidden", "false");
+    }
+
+    function closeLocalRootModal() {
+      ui.localRootModal.classList.remove("open");
+      ui.localRootModal.setAttribute("aria-hidden", "true");
+      screen.focus();
+    }
+
+    function safeLocalFileName(name) {
+      return String(name || nextDocName()).replace(/[\\/:*?"<>|]/g, "_");
+    }
+
+    async function readTextFileHandle(fileHandle) {
+      const file = await fileHandle.getFile();
+      return await file.text();
+    }
+
+    async function importLocalRootDocs() {
+      if (!localRootHandle || !(await ensureLocalRootPermission())) return 0;
+      const diskDocs = [];
+      for await (const [name, handle] of localRootHandle.entries()) {
+        if (handle.kind !== "file" || !name.toLowerCase().endsWith(".txt")) continue;
+        const text = await readTextFileHandle(handle);
+        diskDocs.push({ name, text });
+      }
+      diskDocs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      if (diskDocs.length) state.docs = diskDocs;
+      if (!state.docs.some((doc) => doc.name === state.currentFileName) && state.docs.length) {
+        state.currentFileName = state.docs[0].name;
+        state.text = state.docs[0].text;
+        state.cursor = state.text.length;
+      } else {
+        const current = state.docs.find((doc) => doc.name === state.currentFileName);
+        if (current) {
+          state.text = current.text;
+          state.cursor = Math.min(state.cursor, state.text.length);
+        }
+      }
+      clampDocumentSelection();
+      return diskDocs.length;
+    }
+
+    async function writeLocalDoc(doc) {
+      if (!localRootHandle || !(await ensureLocalRootPermission())) return false;
+      const handle = await localRootHandle.getFileHandle(safeLocalFileName(doc.name), { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(doc.text || "");
+      await writable.close();
+      return true;
+    }
+
+    async function writeAllLocalDocs() {
+      if (!localRootHandle || !(await ensureLocalRootPermission())) return;
+      const docs = state.docs.filter((doc) => doc.name && doc.name.endsWith(".txt"));
+      for (const doc of docs) await writeLocalDoc(doc);
+    }
+
+    async function deleteLocalDocFile(name) {
+      if (!localRootHandle || !(await ensureLocalRootPermission())) return;
+      try {
+        await localRootHandle.removeEntry(safeLocalFileName(name));
+      } catch {}
+    }
+
+    async function localAppRootDirectory(create = true) {
+      if (!localRootHandle || !(await ensureLocalRootPermission())) return null;
+      try {
+        return await localRootHandle.getDirectoryHandle(GITHUB_SYNC_STATE_DIR, { create });
+      } catch {
+        return null;
+      }
+    }
+
+    async function readGitSyncState() {
+      if (localRootHandle) {
+        const dir = await localAppRootDirectory(false);
+        if (dir) {
+          try {
+            const handle = await dir.getFileHandle(GITHUB_SYNC_STATE_FILE);
+            const text = await readTextFileHandle(handle);
+            return text.split(/\n/).map((line) => {
+              const [name, localBlobSha, remoteBlobSha] = line.replace(/\r/g, "").split("\t");
+              return name && localBlobSha != null && remoteBlobSha != null ? { name, localBlobSha, remoteBlobSha } : null;
+            }).filter(Boolean);
+          } catch {}
+        }
+      }
+      return Array.isArray(state.githubSyncState) ? state.githubSyncState.slice() : [];
+    }
+
+    async function writeGitSyncState(entries) {
+      state.githubSyncState = entries.map((entry) => ({
+        name: entry.name,
+        localBlobSha: entry.localBlobSha || "",
+        remoteBlobSha: entry.remoteBlobSha || ""
+      }));
+      if (localRootHandle) {
+        const dir = await localAppRootDirectory(true);
+        if (dir) {
+          const handle = await dir.getFileHandle(GITHUB_SYNC_STATE_FILE, { create: true });
+          const writable = await handle.createWritable();
+          await writable.write(state.githubSyncState.map((entry) => entry.name + "\t" + entry.localBlobSha + "\t" + entry.remoteBlobSha).join("\n") + "\n");
+          await writable.close();
+        }
+      }
+      persist();
+    }
+
+    function findGitSyncStateEntry(entries, name) {
+      return entries.findIndex((entry) => entry.name === name);
+    }
+
+    function upsertGitSyncState(entries, name, localBlobSha, remoteBlobSha) {
+      let index = findGitSyncStateEntry(entries, name);
+      if (index < 0) {
+        index = entries.length;
+        entries.push({ name, localBlobSha: "", remoteBlobSha: "" });
+      }
+      entries[index].localBlobSha = localBlobSha || "";
+      entries[index].remoteBlobSha = remoteBlobSha || "";
+    }
+
+    function removeGitSyncStateEntry(entries, name) {
+      const index = findGitSyncStateEntry(entries, name);
+      if (index >= 0) entries.splice(index, 1);
+    }
+
+    async function chooseLocalRootFolder() {
+      if (!("showDirectoryPicker" in window)) {
+        ui.localRootStatus.textContent = "Folder selection is not available in this browser.";
+        return;
+      }
+      let handle = null;
+      try {
+        handle = await window.showDirectoryPicker();
+      } catch (error) {
+        const name = error && error.name ? error.name : "Error";
+        const message = error && error.message ? error.message : "The browser did not return a folder handle.";
+        ui.localRootStatus.textContent = "Folder picker failed (" + name + "): " + message + " (Check whether this browser shows the folder access permission prompt.)";
+        return;
+      }
+
+      localRootHandle = handle;
+      state.localRootName = handle.name;
+      let remembered = true;
+      try {
+        await writeLocalRootHandle(handle);
+      } catch {
+        remembered = false;
+      }
+
+      try {
+        const loaded = await importLocalRootDocs();
+        await writeAllLocalDocs();
+        const rememberNote = remembered ? "" : " Used for this session only.";
+        setStatus("SD root: " + handle.name + ". Loaded " + loaded + " files." + rememberNote);
+        renderDocs();
+        renderWebInterface();
+        render();
+        closeLocalRootModal();
+      } catch (error) {
+        const message = "Folder selected, but read/write failed: " + (error && error.message ? error.message : "Unknown error");
+        ui.localRootStatus.textContent = message;
+        setStatus(message);
+        render();
+      }
+    }
+
+    function setStatus(text) {
+      state.status = text;
+      ui.message.textContent = text;
+      ui.statusLine.textContent = text;
+      persist();
+    }
+
+    function ensureEngines() {
+      if (!hangulEngine && window.IZE_KEY_ENGINE) {
+        hangulEngine = window.IZE_KEY_ENGINE.createHangulEngine({ insertText: queueText });
+      }
+    }
+
+    function keyboardData() {
+      return window.IZE_KEYBOARD_DATA || { layouts: [], maps: {} };
+    }
+
+    function keyboardDataReady() {
+      const data = keyboardData();
+      return Array.isArray(data.layouts) && data.layouts.length > 0;
+    }
+
+    function activeLayout() {
+      const data = keyboardData();
+      return data.layouts.find((layout) => layout.id === state.language) ||
+        data.layouts.find((layout) => layout.id === "KB_QWERTY") ||
+        { id: "KB_QWERTY", name: "Qwerty" };
+    }
+
+    function activeLayoutName() {
+      return activeLayout().name || activeLayout().id;
+    }
+
+    function configuredLayout() {
+      const data = keyboardData();
+      return data.layouts.find((layout) => layout.id === state.settingsLanguage) ||
+        data.layouts.find((layout) => layout.id === state.language) ||
+        data.layouts.find((layout) => layout.id === "KB_QWERTY") ||
+        { id: "KB_QWERTY", name: "Qwerty" };
+    }
+
+    function configuredLayoutName() {
+      return configuredLayout().name || configuredLayout().id;
+    }
+
+    function configuredLanguageMenuLabel() {
+      return isEnglishLayout(state.settingsLanguage) ? "English" : configuredLayoutName();
+    }
+
+    function isEnglishLayout(id = state.language) {
+      return id === "KB_QWERTY" || id === "KB_DVORAK";
+    }
+
+    function selectedLanguageValue(id = state.language) {
+      return isEnglishLayout(id) ? "KB_ENGLISH" : id;
+    }
+
+    function languageSelectOptions() {
+      const options = [{ id: "KB_ENGLISH", name: "English" }];
+      for (const layout of keyboardData().layouts) {
+        if (isEnglishLayout(layout.id)) continue;
+        options.push({ id: layout.id, name: layout.name || layout.id });
+      }
+      return options;
+    }
+
+    function syncLanguageSelect(select) {
+      if (!select) return;
+      if (!keyboardDataReady() && select.options.length > 1) {
+        select.value = selectedLanguageValue(state.settingsLanguage);
+        return;
+      }
+      const options = languageSelectOptions();
+      const signature = options.map((layout) => layout.id + ":" + layout.name).join("|");
+      if (select.dataset.languageOptionsSignature !== signature) {
+        select.innerHTML = "";
+        for (const layout of options) {
+          const option = document.createElement("option");
+          option.value = layout.id;
+          option.textContent = layout.name;
+          select.appendChild(option);
+        }
+        select.dataset.languageOptionsSignature = signature;
+      }
+      select.value = selectedLanguageValue(state.settingsLanguage);
+    }
+
+    function resolveSelectedLanguage(value, englishLayout = "") {
+      if (value === "KB_ENGLISH") {
+        return isEnglishLayout(englishLayout) ? englishLayout : isEnglishLayout(state.language) ? state.language : "KB_QWERTY";
+      }
+      return value || state.language;
+    }
+
+    function setLanguage(nextLanguage) {
+      if (isEnglishLayout(nextLanguage)) state.previousEnglishLanguage = nextLanguage;
+      state.language = nextLanguage;
+    }
+
+    function utf8LimitLabel(label, maxChars) {
+      const chars = Array.from(label);
+      return chars.length <= maxChars ? label : chars.slice(0, maxChars).join("") + "..";
+    }
+
+    function statusLanguageLabel() {
+      let label = activeLayoutName();
+      if (isEnglishLayout()) {
+        label = state.language === "KB_DVORAK" ? "Dvorak" : "Qwerty";
+        label = virtualModifiers.caps ? label.toUpperCase() : label.toLowerCase();
+      }
+      if (Array.from(label).length > 6) label = utf8LimitLabel(label, 4);
+      return "[" + label + "]";
+    }
+
+    function isKoreanLayout() {
+      return state.language === "KB_KOREAN";
+    }
+
+    function isRtlLayout() {
+      return window.IZE_RTL_LAYOUTS && window.IZE_RTL_LAYOUTS.has(state.language);
+    }
+
+    function activeLayoutMap() {
+      const data = keyboardData();
+      return data.maps[state.language] || data.maps.KB_QWERTY || [];
+    }
+
+    function defaultEnglishMap() {
+      const data = keyboardData();
+      return data.maps.KB_DEFAULT_ENGLISH || [];
+    }
+
+    function keyMapEntry(key) {
+      return activeLayoutMap().find((item) => item.key === key) ||
+        defaultEnglishMap().find((item) => item.key === key) ||
+        null;
+    }
+
+    function fillLanguageSelect() {
+      if (keyboardDataReady() && !keyboardData().layouts.some((layout) => layout.id === state.settingsLanguage)) state.settingsLanguage = state.language || "KB_QWERTY";
+      syncLanguageSelect(ui.language);
+    }
+
+    function revealSelectedOption(select) {
+      if (!select || select.selectedIndex < 0) return;
+      const selected = select.options[select.selectedIndex];
+      if (selected && typeof selected.scrollIntoView === "function") selected.scrollIntoView({ block: "nearest" });
+    }
+
+    function ensureAudioContext() {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      if (!audioContext) audioContext = new AudioCtx();
+      if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+      return audioContext;
+    }
+
+    function playTone({ frequency, duration = 0.035, volume = 0.035, type = "square", delay = 0 }) {
+      const ctx = ensureAudioContext();
+      if (!ctx) return;
+      const start = ctx.currentTime + delay;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(volume, start + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.01);
+    }
+
+    function playKeySound(key = "") {
+      const now = performance.now();
+      if (now - lastKeySoundAt < 18) return;
+      lastKeySoundAt = now;
+      const lower = String(key || "").toLowerCase();
+      const frequency = lower === "backspace" || lower === "delete" ? 190 :
+        lower === "enter" || lower === "\n" ? 260 :
+        lower === " " || lower === "space" ? 155 :
+        230;
+      playTone({ frequency, duration: 0.028, volume: 0.05, type: "square" });
+      playTone({ frequency: frequency * 1.9, duration: 0.018, volume: 0.022, type: "triangle", delay: 0.004 });
+    }
+
+    function playPowerSound(turningOn) {
+      const first = turningOn ? 180 : 260;
+      const second = turningOn ? 310 : 145;
+      playTone({ frequency: first, duration: 0.065, volume: 0.04, type: "triangle" });
+      playTone({ frequency: second, duration: 0.09, volume: 0.045, type: "triangle", delay: 0.07 });
+    }
+
+    const ACCENT_CYCLE_WINDOW_MS = 3000;
+    const ACCENT_CYCLES = {
+      a: ["á", "à", "â", "ä", "ã", "æ", "a"],
+      A: ["Á", "À", "Â", "Ä", "Ã", "Æ", "A"],
+      e: ["é", "è", "ê", "ë", "e"],
+      E: ["É", "È", "Ê", "Ë", "E"],
+      i: ["í", "ì", "î", "ï", "ı", "i"],
+      I: ["Í", "Ì", "Î", "Ï", "İ", "I"],
+      o: ["ó", "ò", "ô", "ö", "õ", "œ", "o"],
+      O: ["Ó", "Ò", "Ô", "Ö", "Õ", "Œ", "O"],
+      u: ["ú", "ù", "û", "ü", "u"],
+      U: ["Ú", "Ù", "Û", "Ü", "U"],
+      c: ["ç", "ć", "č", "c"],
+      C: ["Ç", "Ć", "Č", "C"],
+      n: ["ñ", "n"],
+      N: ["Ñ", "N"],
+      s: ["ß", "š", "ś", "ş", "s"],
+      S: ["Š", "Ś", "Ş", "S"],
+      d: ["đ", "d"],
+      D: ["Đ", "D"],
+      z: ["ž", "ź", "z"],
+      Z: ["Ž", "Ź", "Z"],
+      g: ["ğ", "g"],
+      G: ["Ğ", "G"]
+    };
+
+    function isAccentCycleLayout() {
+      return state.language === "KB_QWERTY" || state.language === "KB_DVORAK";
+    }
+
+    function noteAccentCandidate(inserted) {
+      if (isAccentCycleLayout() && /^[A-Za-z]$/.test(inserted)) {
+        accentBaseChar = inserted;
+        accentCycleIndex = 0;
+        lastAccentCandidateAt = performance.now();
+      } else if (inserted && inserted !== " " && inserted !== "\n" && inserted !== "\t") {
+        accentBaseChar = "";
+      }
+    }
+
+    function applyAccentCycle() {
+      if (!isAccentCycleLayout() || !accentBaseChar || state.cursor <= 0) return false;
+      if (performance.now() - lastAccentCandidateAt > ACCENT_CYCLE_WINDOW_MS) return false;
+      const cycle = ACCENT_CYCLES[accentBaseChar];
+      if (!cycle) return false;
+      accentCycleIndex += 1;
+      const nextChar = cycle[(accentCycleIndex - 1) % cycle.length];
+      const before = Array.from(state.text.slice(0, state.cursor));
+      if (!before.length) return false;
+      before.pop();
+      const newBefore = before.join("") + nextChar;
+      state.text = newBefore + state.text.slice(state.cursor);
+      state.cursor = newBefore.length;
+      state.searchMatchStart = -1;
+      lastAccentCandidateAt = performance.now();
+      syncActiveDoc();
+      persist();
+      scheduleTypingRender();
+      return true;
+    }
+
+    function mappedKeyValue(key, { shift = false, alt = false, caps = false } = {}) {
+      if (key.length !== 1) return key;
+      const baseKey = key.toLowerCase();
+      const entry = keyMapEntry(baseKey);
+      if (!entry) return key;
+      const normal = entry.normal == null ? "" : entry.normal;
+      const alphaOutput = /^[a-z]$/i.test(normal);
+      const useShift = alphaOutput && !alt ? Boolean(shift) !== Boolean(caps) : Boolean(shift);
+      let value = alt ? (useShift ? entry.altShift : entry.alt) : (useShift ? entry.shift : entry.normal);
+      if (value == null && useShift && !alt) value = entry.normal;
+      if (value == null && useShift && alt) value = entry.alt;
+      if (value == null && !alt) value = key;
+      return value == null ? "" : value;
+    }
+
+    function mapKeyboardText(key) {
+      return mappedKeyValue(key, {
+        shift: virtualModifiers.shift,
+        alt: virtualModifiers.alt,
+        caps: virtualModifiers.caps
+      });
+    }
+
+    function mapKeyboardEventText(event) {
+      return mappedKeyValue(physicalQwertyKey(event), {
+        shift: Boolean(event.shiftKey || virtualModifiers.shift),
+        alt: Boolean(event.altKey || virtualModifiers.alt),
+        caps: virtualModifiers.caps
+      });
+    }
+
+    function keycapValue(key, shift = false) {
+      const value = mappedKeyValue(key, {
+        shift,
+        alt: false,
+        caps: virtualModifiers.caps
+      });
+      return value || key;
+    }
+
+    function keycapLabel(key) {
+      if (!key || key.length !== 1 || key === " ") return null;
+      const normal = keycapValue(key, false);
+      const shifted = keycapValue(key, true);
+      return shifted && shifted !== normal ? shifted + "\n" + normal : normal;
+    }
+
+    function updateKeyboardKeycaps() {
+      document.querySelectorAll(".keyboard .key[data-key]").forEach((button) => {
+        if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent;
+        const key = button.dataset.key === "Backslash" ? "\\" : button.dataset.key;
+        const label = keycapLabel(key);
+        button.textContent = label || button.dataset.defaultLabel;
+      });
+    }
+
+    function processMappedText(text) {
+      if (!window.IZE_KEY_ENGINE || !window.IZE_KEY_ENGINE.processMappedText) return text;
+      return window.IZE_KEY_ENGINE.processMappedText(state.language, text);
+    }
+
+    function insertMappedText(text) {
+      if (!text) return;
+      if (window.IZE_KEY_ENGINE && state.language === "KB_ETHIOPIC") {
+        const changed = window.IZE_KEY_ENGINE.applyEthiopicVowel(state.text, text);
+        if (changed != null) {
+          state.text = changed;
+          state.cursor = state.text.length;
+          state.searchMatchStart = -1;
+          syncActiveDoc();
+          persist();
+          scheduleTypingRender();
+          return;
+        }
+      }
+      const processed = processMappedText(text);
+      if (window.IZE_KEY_ENGINE && window.IZE_KEY_ENGINE.needsDotted(state.language, state.text.slice(0, state.cursor), processed)) {
+        queueText("\u0307" + processed);
+      } else {
+        queueText(processed);
+      }
+      noteAccentCandidate(processed);
+    }
+
+    function activeDoc() {
+      let doc = state.docs.find((entry) => entry.name === state.currentFileName);
+      if (!doc) {
+        doc = { name: state.currentFileName, text: state.text };
+        state.docs.push(doc);
+      }
+      return doc;
+    }
+
+    function syncActiveDoc() {
+      const doc = activeDoc();
+      doc.text = state.text;
+      return doc;
+    }
+
+    async function saveDoc(showNotice = true) {
+      const doc = syncActiveDoc();
+      if (localRootHandle) {
+        try {
+          await writeLocalDoc(doc);
+        } catch (error) {
+          setStatus("Local save failed: " + error.message);
+          render();
+          throw error;
+        }
+      }
+      setStatus("Saved " + state.currentFileName + ".");
+      if (showNotice) showSaveNotice();
+      renderDocs();
+      render();
+    }
+    function showSaveNotice() {
+      saveNoticeUntil = Date.now() + 2000;
+      if (saveNoticeTimer) clearTimeout(saveNoticeTimer);
+      saveNoticeTimer = setTimeout(() => {
+        saveNoticeTimer = null;
+        if (Date.now() >= saveNoticeUntil) render();
+      }, 2050);
+    }
+
+    function generatePin() {
+      state.webPin = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+      return state.webPin;
+    }
+
+    function openWebInterface(mode) {
+      if (mode) state.networkMode = mode;
+      if (state.networkMode === "Off") state.networkMode = "WebServer";
+      generatePin();
+      state.webUnlocked = false;
+      state.webReadName = "";
+      clearWebDeletePrompt();
+      ui.localRootModal.classList.remove("open");
+      ui.localRootModal.setAttribute("aria-hidden", "true");
+      renderWebInterface();
+      ui.webModal.classList.add("open");
+      ui.webModal.setAttribute("aria-hidden", "false");
+      setStatus(state.networkMode + " emulator web popup ready.");
+      render();
+    }
+
+    function closeWebInterface() {
+      state.webReadName = "";
+      clearWebDeletePrompt();
+      ui.webModal.classList.remove("open");
+      ui.webModal.setAttribute("aria-hidden", "true");
+      screen.focus();
+    }
+
+    function webEscapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch]));
+    }
+
+    function webDocByName(name) {
+      return state.docs.find((doc) => doc.name === name) || null;
+    }
+
+    function openWebReadPage(name) {
+      if (!requireWebPin()) return;
+      const doc = webDocByName(name);
+      if (!doc) {
+        setStatus("File not found.");
+        renderWebInterface();
+        return;
+      }
+      clearWebDeletePrompt();
+      state.webReadName = doc.name;
+      renderWebInterface();
+    }
+
+    function closeWebReadPage() {
+      state.webReadName = "";
+      renderWebInterface();
+    }
+
+    function clearWebDeletePrompt() {
+      state.webDeleteName = "";
+      state.webDeleteCode = "";
+      state.webDeleteInput = "";
+      state.webDeleteError = "";
+    }
+
+    function startWebDeleteDoc(name) {
+      if (!requireWebPin()) return;
+      const doc = webDocByName(name);
+      if (!doc) {
+        setStatus("File not found.");
+        renderWebInterface();
+        return;
+      }
+      state.webDeleteName = doc.name;
+      state.webDeleteCode = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+      state.webDeleteInput = "";
+      state.webDeleteError = "";
+      setStatus("Delete code: " + state.webDeleteCode);
+      renderWebInterface();
+    }
+
+    async function confirmWebDeleteDoc() {
+      const target = state.webDeleteName;
+      if (!target) return;
+      if (state.webDeleteInput !== state.webDeleteCode) {
+        state.webDeleteError = "Code did not match.";
+        state.webDeleteInput = "";
+        setStatus("Delete code mismatch.");
+        renderWebInterface();
+        return;
+      }
+      await deleteDoc(target);
+      clearWebDeletePrompt();
+      renderWebInterface();
+      render();
+    }
+
+    function renderWebDeletePrompt() {
+      const doc = webDocByName(state.webDeleteName);
+      if (!doc) {
+        clearWebDeletePrompt();
+        return false;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "web-delete-confirm";
+      const title = document.createElement("h3");
+      title.textContent = "Delete document";
+      const message = document.createElement("p");
+      message.className = "web-status";
+      message.textContent = "Type the 6-digit code to delete " + doc.name + ".";
+      const code = document.createElement("div");
+      code.className = "web-delete-code";
+      code.textContent = state.webDeleteCode;
+      const input = document.createElement("input");
+      input.id = "webDeleteConfirmInput";
+      input.inputMode = "numeric";
+      input.autocomplete = "one-time-code";
+      input.maxLength = 6;
+      input.pattern = "[0-9]{6}";
+      input.placeholder = "6-digit code";
+      input.value = state.webDeleteInput || "";
+      input.addEventListener("input", () => {
+        state.webDeleteInput = input.value.replace(/\D/g, "").slice(0, 6);
+        input.value = state.webDeleteInput;
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          confirmWebDeleteDoc();
+        } else if (event.key === "Escape" || isTabKey(event)) {
+          event.preventDefault();
+          clearWebDeletePrompt();
+          setStatus("Delete canceled.");
+          renderWebInterface();
+        }
+      });
+      const error = document.createElement("p");
+      error.className = "web-warn";
+      error.textContent = state.webDeleteError || "";
+      const actions = document.createElement("div");
+      actions.className = "web-delete-actions";
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "warn";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => confirmWebDeleteDoc());
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "secondary";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => {
+        clearWebDeletePrompt();
+        setStatus("Delete canceled.");
+        renderWebInterface();
+      });
+      actions.append(del, cancel);
+      wrap.append(title, message, code, input, error, actions);
+      ui.webDocList.append(wrap);
+      setTimeout(() => input.focus(), 0);
+      return true;
+    }
+
+    function renderWebReadPage() {
+      const doc = webDocByName(state.webReadName);
+      if (!doc) {
+        state.webReadName = "";
+        return false;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "web-read-page";
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "secondary";
+      back.textContent = "Back";
+      back.addEventListener("click", closeWebReadPage);
+      const title = document.createElement("h3");
+      title.textContent = doc.name;
+      const body = document.createElement("pre");
+      body.textContent = doc.text || "";
+      wrap.append(back, title, body);
+      ui.webDocList.append(wrap);
+      return true;
+    }
+
+    function renderWebInterface() {
+      state.githubTokenSet = state.githubToken.length > 0;
+      ui.webTextSize.value = state.fontSize;
+      ui.webLineSpace.value = state.lineSpace;
+      if (ui.webLetterSpacing) ui.webLetterSpacing.value = state.letterSpacing || 0;
+      if (ui.webTypingSpeed) ui.webTypingSpeed.value = state.typingDelayMs;
+      const textSizeValue = document.getElementById("webTextSizeValue");
+      const lineSpaceValue = document.getElementById("webLineSpaceValue");
+      const letterSpacingValue = ui.webLetterSpacing ? ui.webLetterSpacing.nextElementSibling : null;
+      if (textSizeValue) textSizeValue.textContent = (Number(state.fontSize) / 10).toFixed(1) + "x";
+      if (lineSpaceValue) lineSpaceValue.textContent = String(state.lineSpace);
+      if (letterSpacingValue) letterSpacingValue.textContent = String(state.letterSpacing || 0);
+
+      const webLanguage = document.getElementById("webLanguage");
+      if (webLanguage) {
+        syncLanguageSelect(webLanguage);
+        revealSelectedOption(webLanguage);
+      }
+      document.querySelectorAll('input[name="webEnglishLayout"]').forEach((radio) => {
+        radio.checked = radio.value === (state.previousEnglishLanguage === "KB_DVORAK" ? "KB_DVORAK" : "KB_QWERTY");
+      });
+
+      document.getElementById("webPin").value = "";
+      document.getElementById("authStatus").textContent = state.webUnlocked ? "Open." : "";
+      document.getElementById("auth").classList.toggle("web-hidden", Boolean(state.webUnlocked));
+      document.getElementById("webApp").classList.toggle("web-hidden", !state.webUnlocked);
+      document.getElementById("ghOwner").value = state.githubOwner;
+      document.getElementById("ghRepo").value = state.githubRepo;
+      document.getElementById("ghBranch").value = state.githubBranch;
+      document.getElementById("ghPath").value = state.githubPath || "documents";
+      const tokenInput = document.getElementById("ghToken");
+      const saveTokenBox = document.getElementById("ghSaveToken");
+      tokenInput.value = "";
+      tokenInput.placeholder = state.githubToken ? "Saved token exists. Leave blank to keep it." : githubSessionToken ? "Session token active. Enter a new token to replace it." : "Token required";
+      if (saveTokenBox) saveTokenBox.checked = Boolean(state.githubToken);
+      document.getElementById("ghTokenStatus").textContent = state.githubToken ? "Saved token exists in this browser." : githubSessionToken ? "Token active for this browser session only." : "Token required.";
+      document.getElementById("githubStatus").textContent = state.syncStatus || "Waiting...";
+      document.getElementById("webSyncLog").textContent = state.syncLog || "Waiting...";
+      ui.webDocList.innerHTML = "";
+      if (state.webReadName && renderWebReadPage()) return;
+      if (state.webDeleteName && renderWebDeletePrompt()) return;
+      for (const doc of state.docs.slice(0, 12)) {
+        const row = document.createElement("div");
+        row.className = "web-doc-row";
+        const name = document.createElement("strong");
+        name.textContent = doc.name;
+        const preview = document.createElement("span");
+        preview.textContent = doc.text.replace(/\s+/g, " ").slice(0, 90) || "Empty document";
+        const open = document.createElement("button");
+        open.textContent = "Read";
+        open.addEventListener("click", () => openWebReadPage(doc.name));
+        const download = document.createElement("button");
+        download.textContent = "Download";
+        download.addEventListener("click", () => {
+          const blob = new Blob([doc.text || ""], { type: "text/plain;charset=utf-8" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = doc.name;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        });
+        const del = document.createElement("button");
+        del.textContent = "Delete";
+        del.className = "warn";
+        del.addEventListener("click", () => startWebDeleteDoc(doc.name));
+        const actions = document.createElement("div");
+        actions.className = "web-doc-actions";
+        actions.append(open, download, del);
+        row.append(name, preview, actions);
+        ui.webDocList.append(row);
+      }
+    }
+
+    function showWebTab(id) {
+      state.webReadName = "";
+      clearWebDeletePrompt();
+      for (const section of ["webDocs", "webSettings"]) {
+        document.getElementById(section).classList.toggle("active", section === id);
+      }
+      document.getElementById("webDocsTab").classList.toggle("active", id === "webDocs");
+      document.getElementById("webSettingsTab").classList.toggle("active", id === "webSettings");
+      if (id === "webSettings") {
+        const webLanguage = document.getElementById("webLanguage");
+        syncLanguageSelect(webLanguage);
+        revealSelectedOption(webLanguage);
+      }
+    }
+
+
+    function requireWebPin() {
+      if (state.webUnlocked) return true;
+      setStatus("PIN required.");
+      const authStatus = document.getElementById("authStatus");
+      if (authStatus) authStatus.textContent = "Enter the PIN shown on Ize Compose.";
+      return false;
+    }
+
+    function unlockWebInterface() {
+      const pin = document.getElementById("webPin").value.trim();
+      if (pin !== state.webPin) {
+        document.getElementById("authStatus").textContent = "Wrong PIN.";
+        setStatus("Wrong PIN.");
+        return;
+      }
+      state.webUnlocked = true;
+      setStatus("Web interface unlocked.");
+      renderWebInterface();
+      render();
+    }
+
+    function appendWebPinDigit(digit) {
+      const input = document.getElementById("webPin");
+      if (!input) return;
+      input.value = (input.value.replace(/\D/g, "") + digit).slice(0, 4);
+      input.focus();
+    }
+
+    function sanitizeWebPinInput() {
+      const input = document.getElementById("webPin");
+      if (!input) return;
+      input.value = input.value.replace(/\D/g, "").slice(0, 4);
+    }
+
+    function activeGithubToken() {
+      return state.githubToken || githubSessionToken;
+    }
+
+    function githubConnectionStatusLine() {
+      if (!state.githubOwner || !state.githubRepo) return "GitHub repo not set";
+      if (!activeGithubToken()) return "GitHub token not set";
+      return "GitHub: " + state.githubOwner + "/" + state.githubRepo;
+    }
+
+    function browserNetworkOnline() {
+      return typeof navigator === "undefined" || navigator.onLine !== false;
+    }
+
+    function browserNetworkStatusLine() {
+      return browserNetworkOnline() ? "Ethernet/Wi-Fi online" : "Browser network offline";
+    }
+
+    function githubConfigComplete() {
+      return Boolean(state.githubOwner && state.githubRepo && state.githubBranch && activeGithubToken());
+    }
+
+    function appendSyncLog(line) {
+      const prefix = state.syncLog && state.syncLog !== "Waiting..." ? state.syncLog + "\n" : "";
+      state.syncLog = prefix + "> " + line;
+      const box = document.getElementById("webSyncLog");
+      if (box) box.textContent = state.syncLog;
+    }
+
+    function openSyncMenu() {
+      commitComposition();
+      state.mode = "sync";
+      state.syncStatus = browserNetworkStatusLine();
+      state.syncLog = "> " + browserNetworkStatusLine() + "\n> Enter: sync";
+      renderWebInterface();
+      render();
+    }
+
+    function githubPathPrefix() {
+      return String(state.githubPath || "documents")
+        .replace(/^\/+|\/+$/g, "")
+        .split("/")
+        .filter(Boolean)
+        .map(encodeURIComponent)
+        .join("/");
+    }
+
+    function githubFileApiPath(name) {
+      const prefix = githubPathPrefix();
+      return (prefix ? prefix + "/" : "") + encodeURIComponent(name);
+    }
+
+    function githubApiHeaders() {
+      return {
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + activeGithubToken(),
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      };
+    }
+
+    function githubApiUrl(apiPath, params = {}) {
+      const url = new URL("https://api.github.com/repos/" + encodeURIComponent(state.githubOwner) + "/" + encodeURIComponent(state.githubRepo) + "/" + apiPath);
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
+      }
+      return url.toString();
+    }
+
+    async function githubJson(method, apiPath, body = null, params = {}) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), GITHUB_REQUEST_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch(githubApiUrl(apiPath, params), {
+          method,
+          headers: githubApiHeaders(),
+          body: body ? JSON.stringify(body) : null,
+          signal: controller.signal
+        });
+      } catch (error) {
+        if (error && error.name === "AbortError") throw new Error("GitHub request timed out");
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+      if (method === "GET" && response.status === 404) return null;
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!response.ok) {
+        const message = data && data.message ? data.message : response.status + " " + response.statusText;
+        throw new Error(message);
+      }
+      return data;
+    }
+
+    function encodeBase64Utf8(text) {
+      const bytes = new TextEncoder().encode(text || "");
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.slice(i, i + 0x8000));
+      }
+      return btoa(binary);
+    }
+
+    function decodeBase64Utf8(base64) {
+      const binary = atob(String(base64 || "").replace(/\s/g, ""));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    }
+
+    function hexFromBytes(bytes) {
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function githubBlobShaForContent(text) {
+      const contentBytes = new TextEncoder().encode(text || "");
+      const headerBytes = new TextEncoder().encode("blob " + contentBytes.length + "\0");
+      const payload = new Uint8Array(headerBytes.length + contentBytes.length);
+      payload.set(headerBytes, 0);
+      payload.set(contentBytes, headerBytes.length);
+      const digest = await crypto.subtle.digest("SHA-1", payload);
+      return hexFromBytes(new Uint8Array(digest));
+    }
+
+    function localTextDocs() {
+      return state.docs
+        .filter((doc) => doc.name && doc.name.toLowerCase().endsWith(".txt"))
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    }
+
+    async function fetchRemoteTextDocs() {
+      const prefix = githubPathPrefix();
+      const listing = await githubJson("GET", "contents/" + prefix, null, { ref: state.githubBranch });
+      if (!Array.isArray(listing)) return [];
+      const txtFiles = listing.filter((item) => item.type === "file" && item.name.endsWith(".txt"));
+      const remoteDocs = [];
+      for (const item of txtFiles) {
+        remoteDocs.push({ name: item.name, path: githubFileApiPath(item.name), sha: item.sha });
+      }
+      return remoteDocs;
+    }
+
+    async function fetchRemoteDocContent(remote) {
+      const file = await githubJson("GET", "contents/" + remote.path, null, { ref: state.githubBranch });
+      if (!file || !file.content) throw new Error("GitHub file payload missing for " + remote.name);
+      return { text: decodeBase64Utf8(file.content), sha: file.sha || remote.sha };
+    }
+
+    async function uploadGithubDoc(doc, localSha, existingSha = "") {
+      const apiPath = "contents/" + githubFileApiPath(doc.name);
+      const body = {
+        message: "Sync " + doc.name + " from Ize Compose emulator",
+        content: encodeBase64Utf8(doc.text || ""),
+        branch: state.githubBranch
+      };
+      if (existingSha) body.sha = existingSha;
+      const result = await githubJson("PUT", apiPath, body);
+      return result && result.content && result.content.sha ? result.content.sha : localSha;
+    }
+
+    async function deleteGithubDoc(remote) {
+      await githubJson("DELETE", "contents/" + remote.path, {
+        message: "Delete " + remote.name + " from Ize Compose emulator",
+        sha: remote.sha,
+        branch: state.githubBranch
+      });
+    }
+
+    async function syncGithubDocs() {
+      if (!browserNetworkOnline()) {
+        state.syncStatus = "Browser network offline";
+        state.syncLog = "> Browser network offline\n> Check the computer internet connection.";
+        setStatus("GitHub sync needs an internet connection.");
+        renderWebInterface();
+        render();
+        return;
+      }
+      if (!githubConfigComplete()) {
+        state.syncStatus = "GitHub repository info missing";
+        state.syncLog = "> GitHub repository info missing";
+        setStatus("GitHub repository info missing.");
+        renderWebInterface();
+        render();
+        return;
+      }
+
+      try {
+        commitComposition();
+        await saveDoc(false);
+        state.syncLog = "";
+        state.syncStatus = "GitHub syncing";
+        appendSyncLog("GitHub Sync");
+        appendSyncLog("Network: " + browserNetworkStatusLine());
+        appendSyncLog("Repository: " + state.githubOwner + "/" + state.githubRepo);
+        appendSyncLog("Branch: " + state.githubBranch);
+        appendSyncLog("Path: " + (state.githubPath || "documents"));
+        if (localRootHandle) {
+          const loaded = await importLocalRootDocs();
+          appendSyncLog("SD root: " + state.localRootName + " (scanned " + loaded + " files)");
+        }
+        renderWebInterface();
+        render();
+
+        const syncState = await readGitSyncState();
+        const remoteDocs = await fetchRemoteTextDocs();
+        const locals = localTextDocs();
+        const localShaByName = new Map();
+        for (const doc of locals) localShaByName.set(doc.name, await githubBlobShaForContent(doc.text || ""));
+        const localByName = new Map(locals.map((doc) => [doc.name, doc]));
+        const remoteByName = new Map(remoteDocs.map((doc) => [doc.name, doc]));
+        const names = Array.from(new Set([...localByName.keys(), ...remoteByName.keys()])).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        const plan = [];
+        for (const name of names) {
+          const local = localByName.get(name);
+          const remote = remoteByName.get(name);
+          const stateIndex = findGitSyncStateEntry(syncState, name);
+          const lastLocalSha = stateIndex >= 0 ? syncState[stateIndex].localBlobSha : "";
+          const lastRemoteSha = stateIndex >= 0 ? syncState[stateIndex].remoteBlobSha : "";
+          const localSha = local ? localShaByName.get(name) : "";
+          const remoteSha = remote ? remote.sha : "";
+
+          if (!local && remote) {
+            plan.push({ action: "deleteRemote", name, remote });
+          } else if (local && !remote) {
+            plan.push({ action: "upload", name, local, localSha, remoteSha: "" });
+          } else if (local && remote && localSha !== remoteSha) {
+            const localChanged = stateIndex < 0 ? true : localSha !== lastLocalSha;
+            const remoteChanged = stateIndex < 0 ? true : remoteSha !== lastRemoteSha;
+            if (!localChanged && remoteChanged) plan.push({ action: "download", name, local, remote });
+            else plan.push({ action: "upload", name, local, localSha, remoteSha });
+          } else if (local && remote) {
+            upsertGitSyncState(syncState, name, localSha, remoteSha);
+          }
+        }
+
+        const uploadCount = plan.filter((item) => item.action === "upload").length;
+        const downloadCount = plan.filter((item) => item.action === "download").length;
+        const deleteCount = plan.filter((item) => item.action === "deleteRemote").length;
+        appendSyncLog("Push " + uploadCount + " / Pull " + downloadCount + " / Delete " + deleteCount);
+
+        let uploadIndex = 0;
+        let downloadIndex = 0;
+        let deleteIndex = 0;
+        for (const item of plan) {
+          if (item.action === "deleteRemote") {
+            deleteIndex++;
+            appendSyncLog("Deleting " + deleteIndex + "/" + deleteCount + " " + item.name);
+            await deleteGithubDoc(item.remote);
+            removeGitSyncStateEntry(syncState, item.name);
+          } else if (item.action === "download") {
+            downloadIndex++;
+            appendSyncLog("Downloading " + downloadIndex + "/" + downloadCount + " " + item.name);
+            const remoteContent = await fetchRemoteDocContent(item.remote);
+            item.local.text = remoteContent.text;
+            if (item.local.name === state.currentFileName) {
+              state.text = remoteContent.text;
+              state.cursor = Math.min(state.cursor, state.text.length);
+            }
+            await writeLocalDoc(item.local);
+            upsertGitSyncState(syncState, item.name, remoteContent.sha, remoteContent.sha);
+          } else if (item.action === "upload") {
+            uploadIndex++;
+            appendSyncLog("Uploading " + uploadIndex + "/" + uploadCount + " " + item.name);
+            const finalSha = await uploadGithubDoc(item.local, item.localSha, item.remoteSha);
+            upsertGitSyncState(syncState, item.name, finalSha, finalSha);
+          }
+        }
+        await writeGitSyncState(syncState);
+        if (localRootHandle) await writeAllLocalDocs();
+        appendSyncLog("RESULT: OK");
+        state.syncStatus = "GitHub sync complete";
+        setStatus(uploadCount || downloadCount || deleteCount ? "GitHub sync complete." : "Already up to date.");
+      } catch (error) {
+        appendSyncLog("ERROR: " + error.message);
+        state.syncStatus = "GitHub sync failed";
+        setStatus("GitHub sync failed: " + error.message);
+      }
+      renderDocs();
+      renderWebInterface();
+      render();
+    }
+    function nextDocName() {
+      let max = 0;
+      for (const doc of state.docs) {
+        const match = /^doc(\d{4})\.txt$/.exec(doc.name);
+        if (match) max = Math.max(max, Number(match[1]));
+      }
+      return "doc" + String(max + 1).padStart(4, "0") + ".txt";
+    }
+
+    async function newDoc() {
+      await saveDoc();
+      state.currentFileName = nextDocName();
+      state.text = "";
+      state.cursor = 0;
+      state.docs.unshift({ name: state.currentFileName, text: "" });
+      state.docIndex = 0;
+      state.mode = "typing";
+      if (localRootHandle) await writeLocalDoc(activeDoc());
+      setStatus("Created " + state.currentFileName + ".");
+      renderDocs();
+      render();
+    }
+
+
+    function clampDocumentSelection() {
+      if (!state.docs.length) state.docs.push({ name: nextDocName(), text: "" });
+      state.docIndex = Math.max(0, Math.min(state.docs.length - 1, Number(state.docIndex) || 0));
+      const maxVisibleItems = 12;
+      const maxOffset = Math.max(0, state.docs.length - maxVisibleItems);
+      state.fileScrollOffset = Math.max(0, Math.min(maxOffset, Number(state.fileScrollOffset) || 0));
+      if (state.docIndex < state.fileScrollOffset) state.fileScrollOffset = state.docIndex;
+      if (state.docIndex >= state.fileScrollOffset + maxVisibleItems) state.fileScrollOffset = state.docIndex - maxVisibleItems + 1;
+    }
+
+    function selectedMenuDoc() {
+      clampDocumentSelection();
+      return state.docs[state.docIndex] || state.docs[0];
+    }
+
+    function startDeletePrompt(name) {
+      state.deleteAskActive = true;
+      state.deletePromptActive = false;
+      state.pendingDeleteName = name;
+      state.deleteConfirmCode = "";
+      state.deleteConfirmInput = "";
+      setStatus("Delete? Enter: code / Tab: cancel.");
+      render();
+      screen.focus();
+    }
+
+    function startDeleteCodePrompt() {
+      if (!state.pendingDeleteName) return;
+      state.deleteAskActive = false;
+      state.deletePromptActive = true;
+      state.deleteConfirmCode = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+      state.deleteConfirmInput = "";
+      setStatus("Delete code: " + state.deleteConfirmCode);
+      render();
+      screen.focus();
+    }
+
+    function cancelDeletePrompt() {
+      state.deleteAskActive = false;
+      state.deletePromptActive = false;
+      state.deleteConfirmCode = "";
+      state.deleteConfirmInput = "";
+      state.pendingDeleteName = "";
+      screen.focus();
+    }
+
+    function confirmDeletePrompt() {
+      if (state.deleteConfirmInput !== state.deleteConfirmCode) {
+        setStatus("Delete code mismatch.");
+        render();
+        return;
+      }
+      const target = state.pendingDeleteName;
+      cancelDeletePrompt();
+      deleteDoc(target);
+      state.mode = "menu";
+      clampDocumentSelection();
+      render();
+    }
+    async function loadDoc(name) {
+      await saveDoc();
+      const doc = state.docs.find((entry) => entry.name === name);
+      if (!doc) return;
+      state.currentFileName = doc.name;
+      state.text = doc.text;
+      state.cursor = state.text.length;
+      state.mode = "typing";
+      setStatus("Loaded " + doc.name + ".");
+      renderDocs();
+      render();
+      screen.focus();
+    }
+
+    async function deleteDoc(name) {
+      const wasCurrent = state.currentFileName === name;
+      state.docs = state.docs.filter((entry) => entry.name !== name);
+      try {
+        await deleteLocalDocFile(name);
+      } catch {}
+      if (!state.docs.length) {
+        const newName = nextDocName();
+        const doc = { name: newName, text: "" };
+        state.docs.push(doc);
+        if (localRootHandle) await writeLocalDoc(doc);
+      }
+      if (wasCurrent) {
+        const doc = state.docs[0];
+        state.currentFileName = doc.name;
+        state.text = doc.text;
+        state.cursor = Math.min(state.cursor, state.text.length);
+      }
+      clampDocumentSelection();
+      setStatus("Deleted " + name + ".");
+      renderDocs();
+      render();
+    }
+
+    function insertText(text) {
+      state.text = state.text.slice(0, state.cursor) + text + state.text.slice(state.cursor);
+      state.cursor += text.length;
+      state.searchMatchStart = -1;
+      syncActiveDoc();
+      persist();
+      scheduleTypingRender();
+    }
+
+    function queueText(text) {
+      if (!text) return;
+      insertText(text);
+    }
+
+    function scheduleTypingRender() {
+      if (typingTimer) clearTimeout(typingTimer);
+      const delay = Math.max(1, Math.min(2000, Number(state.typingDelayMs) || 200));
+      typingTimer = setTimeout(() => {
+        typingTimer = null;
+        render();
+      }, delay);
+    }
+
+    function transitionDelay(ms) {
+      return new Promise((resolve) => {
+        sleepTimer = setTimeout(() => {
+          sleepTimer = null;
+          resolve();
+        }, ms);
+      });
+    }
+
+    async function runSleepClearSequence() {
+      await transitionDelay(1500);
+      state.mode = "sleepFlash";
+      state.sleepFlashFrame = 1;
+      render();
+      await transitionDelay(200);
+      state.sleepFlashFrame = 0;
+      render();
+      await transitionDelay(200);
+    }
+
+    function commitComposition() {
+      if (hangulEngine) hangulEngine.flush();
+    }
+
+    function backspace() {
+      if (isKoreanLayout() && hangulEngine && hangulEngine.backspace()) {
+        persist();
+        render();
+        return;
+      }
+      if (state.cursor <= 0) return;
+      const before = Array.from(state.text.slice(0, state.cursor));
+      const removed = before.pop() || "";
+      const newStart = before.join("");
+      state.text = newStart + state.text.slice(state.cursor);
+      state.cursor -= removed.length;
+      state.searchMatchStart = -1;
+      syncActiveDoc();
+      persist();
+      render();
+    }
+
+    function moveCursor(delta) {
+      const chars = Array.from(state.text);
+      let charIndex = Array.from(state.text.slice(0, state.cursor)).length;
+      charIndex = Math.max(0, Math.min(chars.length, charIndex + delta));
+      state.cursor = chars.slice(0, charIndex).join("").length;
+      persist();
+      render();
+    }
+
+    function toggleMenu() {
+      if (!state.powerOn) return;
+      state.mode = state.mode === "menu" ? "typing" : "menu";
+      state.deleteAskActive = false;
+      state.deletePromptActive = false;
+      state.deleteConfirmCode = "";
+      state.deleteConfirmInput = "";
+      state.pendingDeleteName = "";
+      if (state.mode === "menu") {
+        state.menuIndex = 0;
+        state.menuFocusSide = 0;
+        state.menuEditingValue = false;
+        state.docIndex = 0;
+        state.fileScrollOffset = 0;
+        clampDocumentSelection();
+      }
+      persist();
+      render();
+      screen.focus();
+    }
+
+    async function enterSleep() {
+      if (powerTransitioning || sleepTimer || !state.powerOn) return;
+      powerTransitioning = true;
+      const doc = syncActiveDoc();
+      if (localRootHandle) {
+        writeLocalDoc(doc).catch((error) => {
+          if (state.powerOn) {
+            setStatus("Local save failed: " + error.message);
+            render();
+          }
+        });
+      }
+      renderDocs();
+      state.sleepFlashFrame = 0;
+      setStatus("Powering off.");
+      render();
+      await runSleepClearSequence();
+      state.mode = "sleep";
+      state.powerOn = false;
+      powerTransitioning = false;
+      setStatus("Power off.");
+      render();
+    }
+
+    async function wake() {
+      if (powerTransitioning && state.mode === "sleepFlash") return;
+      if (sleepTimer) {
+        clearTimeout(sleepTimer);
+        sleepTimer = null;
+      }
+      powerTransitioning = true;
+      await runSleepClearSequence();
+      powerTransitioning = false;
+      state.powerOn = true;
+      state.mode = "typing";
+      setStatus(localRootHandle ? "Awake. SD root: " + state.localRootName + "." : "Awake.");
+      render();
+      screen.focus();
+      if (localRootReadyPromise) {
+        try {
+          await localRootReadyPromise;
+          if (localRootHandle) {
+            setStatus("Awake. SD root: " + state.localRootName + ".");
+            render();
+          }
+        } catch {}
+      }
+      if (!localRootHandle && !localRootPromptedThisSession) showLocalRootModal();
+    }
+    function startSearch() {
+      state.mode = "search";
+      state.searchQuery = "";
+      state.searchMatchStart = -1;
+      setStatus("Search mode.");
+      render();
+      screen.focus();
+    }
+
+    function searchNext() {
+      if (!state.searchQuery) return;
+      const from = state.searchMatchStart >= 0 ? state.searchMatchStart + state.searchQuery.length : state.cursor;
+      let idx = state.text.toLowerCase().indexOf(state.searchQuery.toLowerCase(), from);
+      if (idx < 0) idx = state.text.toLowerCase().indexOf(state.searchQuery.toLowerCase(), 0);
+      state.searchMatchStart = idx;
+      if (idx >= 0) {
+        state.cursor = idx + state.searchQuery.length;
+        setStatus("Found: " + state.searchQuery + ".");
+      } else {
+        setStatus("No match: " + state.searchQuery + ".");
+      }
+      render();
+    }
+
+    function networkModeIndex(mode) {
+      const index = networkModes.indexOf(mode);
+      return index < 0 ? 0 : index;
+    }
+
+    function cycleNetworkMode(delta) {
+      const current = networkModeIndex(state.tempNetworkMode || state.networkMode || "Off");
+      state.tempNetworkMode = networkModes[(current + delta + networkModes.length) % networkModes.length];
+    }
+
+    function stopNetworkServices() {
+      state.networkMode = "Off";
+      state.tempNetworkMode = "Off";
+      state.menuEditingValue = false;
+      state.webServerPasswordInput = "";
+      state.webServerPasswordHint = "Numbers only / Tab cancels";
+      state.wifiPasswordBuffer = "";
+      state.apPasswordHidden = false;
+    }
+
+    function startWifiScanMode() {
+      stopNetworkServices();
+      state.mode = "wifiScan";
+      state.networkMode = "Off";
+      state.tempNetworkMode = "WiFi";
+      state.wifiScanSelected = 0;
+      state.wifiStatusMessage = "Select Wi-Fi. Enter: connect. Tab/Menu: cancel.";
+      persist();
+      render();
+    }
+
+    function startWebServerPasswordMode() {
+      state.mode = "webPassword";
+      state.webServerPasswordInput = "";
+      state.webServerPasswordHint = "Numbers only / Tab cancels";
+      state.tempNetworkMode = "WebServer";
+      persist();
+      render();
+    }
+
+    function applyNetworkMode() {
+      const mode = state.tempNetworkMode || "Off";
+      state.menuEditingValue = false;
+      if (mode === "Off") {
+        stopNetworkServices();
+        state.mode = "typing";
+        setStatus("Network mode: Off.");
+        render();
+      } else if (mode === "WiFi") {
+        startWifiScanMode();
+      } else {
+        startWebServerPasswordMode();
+      }
+    }
+
+    function runMenuAction() {
+      const item = menuItems[state.menuIndex];
+      if (item === "Sync") {
+        openSyncMenu();
+        return;
+      } else if (item === "New") {
+        newDoc();
+        return;
+      } else if (item === "Save") {
+        saveDoc();
+        state.mode = "typing";
+      } else if (item === "Count") {
+        state.countMode = (state.countMode + 1) % 3;
+        setStatus("Count mode: " + ["Chars", "Words", "Off"][state.countMode] + ".");
+      } else if (item === "Sleep") {
+        enterSleep();
+        return;
+      } else if (item === "Network") {
+        state.menuEditingValue = true;
+        state.tempNetworkMode = state.networkMode || "Off";
+      }
+      persist();
+      render();
+    }
+    function wordCount(text) {
+      return text.trim() ? text.trim().split(/\s+/).length : 0;
+    }
+
+    function wrapText(text, maxWidth) {
+      const logicalLines = text.split("\n");
+      const lines = [];
+      for (const logical of logicalLines) {
+        let line = "";
+        for (const ch of Array.from(logical)) {
+          const next = line + ch;
+          if (firmwareTextWidth(next) > maxWidth && line) {
+            lines.push(line);
+            line = ch;
+          } else {
+            line = next;
+          }
+        }
+        lines.push(line);
+      }
+      return lines;
+    }
+
+    function cursorLayoutFor(text, cursor, maxWidth) {
+      const before = text.slice(0, cursor);
+      const beforeLines = wrapText(before, maxWidth);
+      const row = Math.max(0, beforeLines.length - 1);
+      const colText = beforeLines[row] || "";
+      return { row, x: firmwareTextWidth(colText) };
+    }
+
+    function cursorLayout(lines, maxWidth) {
+      return cursorLayoutFor(state.text, state.cursor, maxWidth);
+    }
+
+    function clearPaper() {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    }
+
+    function drawStatusScreenFrame(title, line1, line2) {
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      screenFont();
+      drawFirmwareText(title, MARGIN_X * UI_SCALE, (MARGIN_Y + 10) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
+      if (line1) drawFirmwareText(line1, MARGIN_X * UI_SCALE, (MARGIN_Y + 55) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
+      if (line2) drawFirmwareText(line2, MARGIN_X * UI_SCALE, (MARGIN_Y + 95) * UI_SCALE, (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE, true);
+    }
+
+    function firmwareDisplayScale(scaleTenths = state.fontSize) {
+      const scale = Number(scaleTenths) || MENU_SCALE_TENTHS;
+      return Math.max(0.5, Math.min(3.5, scale / 10)) * screenTextScaleMultiplier();
+    }
+
+    function screenTextScaleMultiplier() {
+      const height = screen.getBoundingClientRect().height || SMALL_SCREEN_TEXT_FULL_HEIGHT;
+      if (height >= SMALL_SCREEN_TEXT_FULL_HEIGHT) return 1;
+      if (height <= SMALL_SCREEN_TEXT_MIN_HEIGHT) return SMALL_SCREEN_TEXT_MIN_SCALE;
+      const progress = (height - SMALL_SCREEN_TEXT_MIN_HEIGHT) / (SMALL_SCREEN_TEXT_FULL_HEIGHT - SMALL_SCREEN_TEXT_MIN_HEIGHT);
+      return SMALL_SCREEN_TEXT_MIN_SCALE + (1 - SMALL_SCREEN_TEXT_MIN_SCALE) * progress;
+    }
+
+    function firmwareFontPx(scaleTenths = state.fontSize) {
+      return Math.max(8, Math.round(BASE_FONT_SIZE * firmwareDisplayScale(scaleTenths)));
+    }
+
+    function screenFont(scaleTenths = state.fontSize) {
+      ctx.font = firmwareFontPx(scaleTenths) + "px " + CANVAS_FONT_FAMILY;
+      ctx.textAlign = "left";
+      ctx.direction = "ltr";
+    }
+
+    function firmwareFont(scaleTenths = state.fontSize) {
+      screenFont(scaleTenths);
+    }
+
+    function statusFont() {
+      screenFont(MENU_SCALE_TENTHS);
+    }
+
+    function isZeroAdvanceCodePoint(cp) {
+      return cp === 0x200B || cp === 0x200C || cp === 0x200D || cp === 0xFEFF ||
+        (cp >= 0x0300 && cp <= 0x036F) ||
+        (cp >= 0x0591 && cp <= 0x05BD) || cp === 0x05BF ||
+        (cp >= 0x05C1 && cp <= 0x05C2) || (cp >= 0x05C4 && cp <= 0x05C5) || cp === 0x05C7 ||
+        (cp >= 0x064B && cp <= 0x065F) || cp === 0x0670 || (cp >= 0x06D6 && cp <= 0x06ED) ||
+        cp === 0x0E31 || (cp >= 0x0E34 && cp <= 0x0E3A) || (cp >= 0x0E47 && cp <= 0x0E4E);
+    }
+
+    function firmwareCharAdvance(ch, isMenu = false, scaleTenths = state.fontSize) {
+      const cp = ch.codePointAt(0) || 0;
+      if (isZeroAdvanceCodePoint(cp)) return 0;
+      screenFont(scaleTenths);
+      const spacing = (isMenu ? 1 : (Number(state.letterSpacing) || 0)) * firmwareDisplayScale(scaleTenths);
+      return Math.max(1, ctx.measureText(ch).width) + spacing;
+    }
+
+    function firmwareTextWidth(text, isMenu = false, scaleTenths = state.fontSize) {
+      return Array.from(String(text || "")).reduce((sum, ch) => sum + firmwareCharAdvance(ch, isMenu, scaleTenths), 0);
+    }
+
+    function drawFirmwareText(text, x, y, maxWidth = SCREEN_W, isMenu = false, scaleTenths = state.fontSize) {
+      screenFont(scaleTenths);
+      let cx = x;
+      for (const ch of Array.from(String(text || ""))) {
+        const adv = firmwareCharAdvance(ch, isMenu, scaleTenths);
+        if (cx + adv > x + maxWidth) break;
+        if (adv > 0) ctx.fillText(ch, cx, y);
+        cx += adv;
+      }
+    }
+
+    function fitTextToWidth(text, maxWidth, scaleTenths = state.fontSize) {
+      const value = String(text || "");
+      if (firmwareTextWidth(value, true, scaleTenths) <= maxWidth) return value;
+      const suffix = "..";
+      let fitted = value;
+      while (Array.from(fitted).length > 0 && firmwareTextWidth(fitted + suffix, true, scaleTenths) > maxWidth) {
+        fitted = Array.from(fitted).slice(0, -1).join("");
+      }
+      return fitted ? fitted + suffix : suffix;
+    }
+
+    function drawFittedText(text, x, y, maxWidth, scaleTenths = state.fontSize) {
+      drawFirmwareText(fitTextToWidth(text, maxWidth, scaleTenths), x, y, maxWidth, true, scaleTenths);
+    }
+
+    function firmwareTrueLength(text) {
+      return Array.from(String(text || "")).reduce((sum, ch) => {
+        const cp = ch.codePointAt(0) || 0;
+        return sum + (cp < 0x3000 ? 1 : 2);
+      }, 0);
+    }
+
+    function truncateChars(text, maxChars) {
+      const chars = Array.from(String(text || ""));
+      if (chars.length <= maxChars) return chars.join("");
+      return chars.slice(0, Math.max(0, maxChars - 2)).join("") + "..";
+    }
+
+    function drawStatusText(text, x, y) {
+      const scale = firmwareDisplayScale(MENU_SCALE_TENTHS);
+      drawFirmwareText(text, x * scale, y * scale, SCREEN_W, true, MENU_SCALE_TENTHS);
+    }
+
+    function drawMenuEntry(text, x, y, isSelected, isRightSide) {
+      const scale = firmwareDisplayScale(MENU_SCALE_TENTHS);
+      const logicalMaxTextWidth = isRightSide
+        ? 520
+        : 185;
+      const maxTextWidth = logicalMaxTextWidth * scale;
+      const boxW = (isRightSide ? 540 : 190) * scale;
+      const rowH = (BASE_FONT_SIZE + state.lineSpace + 8) * scale;
+      const drawX = x * scale;
+      const drawY = y * scale;
+      if (isSelected) {
+        ctx.fillStyle = "#151515";
+        ctx.fillRect(drawX - 4 * scale, drawY - (BASE_FONT_SIZE + 2) * scale, boxW, rowH);
+        ctx.fillStyle = "#ffffff";
+      } else {
+        ctx.fillStyle = "#151515";
+      }
+      drawFittedText(text, drawX, drawY, maxTextWidth, MENU_SCALE_TENTHS);
+      ctx.fillStyle = "#151515";
+    }
+
+    function drawStatusBar() {
+      const hY = STATUS_Y - 6;
+      const barBottom = 39 * UI_SCALE;
+      const logicalWidth = SCREEN_W / UI_SCALE;
+      const countX = 110;
+      const batteryText = "86%";
+      const statusScale = firmwareDisplayScale(MENU_SCALE_TENTHS);
+      const batteryWidth = firmwareTrueLength(batteryText) * BASE_FONT_SIZE;
+      const batteryX = Math.max(countX + 120, (SCREEN_W - 15 * statusScale - batteryWidth * statusScale) / statusScale);
+      const savedX = batteryX - 78;
+      const saveVisible = Date.now() < saveNoticeUntil;
+      const countText = state.countMode === 0 ? "Count: " + Array.from(state.text).length :
+        state.countMode === 1 ? "Words: " + wordCount(state.text) : "";
+      const titleText = truncateChars(state.currentFileName, 14);
+      const titleWidth = firmwareTrueLength(titleText) * 8;
+      const minTitleX = countX + 95;
+      const maxTitleX = savedX - titleWidth - 8;
+      let titleX = (logicalWidth - titleWidth) / 2;
+      if (titleX < minTitleX) titleX = minTitleX;
+      if (titleX > maxTitleX) titleX = maxTitleX;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, SCREEN_W, barBottom + 1);
+      ctx.fillStyle = "#151515";
+      statusFont();
+      drawStatusText(statusLanguageLabel() + "  ", 15, hY);
+      if (countText) drawStatusText(countText, countX, hY);
+      drawStatusText(titleText, titleX, hY);
+      if (saveVisible) drawStatusText("[Saved!]", savedX, hY);
+      drawStatusText(batteryText, batteryX, hY);
+      ctx.beginPath();
+      ctx.moveTo(0, barBottom);
+      ctx.lineTo(SCREEN_W, barBottom);
+      ctx.strokeStyle = "#151515";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    function drawTyping() {
+      clearPaper();
+      drawStatusBar();
+      ctx.fillStyle = "#151515";
+      firmwareFont(state.fontSize);
+      const textScale = firmwareDisplayScale(state.fontSize);
+      const marginX = MARGIN_X * textScale;
+      const lineHeight = (BASE_FONT_SIZE + state.lineSpace) * textScale;
+      const textTopLimit = (STATUS_Y + 20) * textScale;
+      const textBottom = SCREEN_H - 25 * textScale;
+      const contentRight = SCREEN_W - RIGHT_EDGE_MARGIN * textScale;
+      const maxWidth = contentRight - marginX;
+      const composing = isKoreanLayout() && hangulEngine ? hangulEngine.composingText() : "";
+      const renderText = state.text.slice(0, state.cursor) + composing + state.text.slice(state.cursor);
+      const lines = wrapText(renderText, maxWidth);
+      const visibleLines = Math.max(1, Math.floor((textBottom - textTopLimit) / lineHeight) + 1);
+      const cursorInfo = cursorLayoutFor(renderText, state.cursor + composing.length, maxWidth);
+      const firstLine = Math.max(0, cursorInfo.row - visibleLines + 1);
+      const visible = lines.slice(firstLine, firstLine + visibleLines);
+      const textTop = textBottom - (visible.length - 1) * lineHeight;
+
+      for (let i = 0; i < visible.length; i++) {
+        const line = visible[i] || " ";
+        const y = textTop + i * lineHeight;
+        ctx.fillStyle = "#151515";
+        firmwareFont(state.fontSize);
+        if (isRtlLayout()) {
+          ctx.textAlign = "right";
+          ctx.direction = "rtl";
+          ctx.fillText(line, contentRight, y);
+          ctx.direction = "ltr";
+          ctx.textAlign = "left";
+        } else {
+          drawFirmwareText(line, marginX, y, maxWidth);
+        }
+      }
+
+      firmwareFont(state.fontSize);
+      if (state.searchMatchStart >= 0) {
+        drawSearchHighlight(firstLine, lineHeight, textTop, marginX, maxWidth);
+      }
+
+      const row = cursorInfo.row - firstLine;
+      if (row >= 0 && row < visibleLines) {
+        const lineText = visible[row] || "";
+        const lineWidth = firmwareTextWidth(lineText);
+        const x = isRtlLayout()
+          ? contentRight - lineWidth + cursorInfo.x
+          : marginX + cursorInfo.x;
+        const y = textTop + row * lineHeight + 2 * textScale;
+        ctx.fillRect(x, y, 12 * textScale, 4 * textScale);
+      }
+    }
+    function drawSearchHighlight(firstLine, lineHeight, top, marginX, maxWidth) {
+      firmwareFont(state.fontSize);
+      const before = state.text.slice(0, state.searchMatchStart);
+      const match = state.text.slice(state.searchMatchStart, state.searchMatchStart + state.searchQuery.length);
+      const beforeLines = wrapText(before, maxWidth);
+      const row = beforeLines.length - 1;
+      const linePrefix = beforeLines[row] || "";
+      const screenRow = row - firstLine;
+      if (screenRow < 0) return;
+      const x = marginX + firmwareTextWidth(linePrefix);
+      const y = top + screenRow * lineHeight - lineHeight + 10;
+      const w = Math.max(14, firmwareTextWidth(match));
+      ctx.fillStyle = "#151515";
+      ctx.fillRect(x, y, w, lineHeight);
+        ctx.fillStyle = "#ffffff";
+      drawFirmwareText(match, x, top + screenRow * lineHeight, w);
+      ctx.fillStyle = "#151515";
+    }
+
+    function drawMenu() {
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      screenFont(MENU_SCALE_TENTHS);
+      const menuScale = firmwareDisplayScale(MENU_SCALE_TENTHS);
+      const titleX = 50 * menuScale;
+      const leftX = 25;
+      const docsX = 245;
+      drawFirmwareText("Ize Compose", titleX, 28 * menuScale, 185 * menuScale, true, MENU_SCALE_TENTHS);
+      drawFirmwareText(configuredLanguageMenuLabel(), titleX, 58 * menuScale, 185 * menuScale, true, MENU_SCALE_TENTHS);
+      let menuY = 100;
+      for (let i = 0; i < menuItems.length; i++) {
+        let label = menuItems[i];
+        if (i === 3) {
+          label += state.countMode === 0 ? " [Chars]" : state.countMode === 1 ? " [Words]" : " [OFF]";
+        }
+        if (i === 5) {
+          const netStr = state.menuEditingValue && state.menuIndex === i ? (state.tempNetworkMode || state.networkMode || "Off") : (state.tempNetworkMode || state.networkMode || "Off");
+          label += state.menuEditingValue && state.menuIndex === i ? " < " + netStr + " >" : "   " + netStr + "   ";
+        }
+        drawMenuEntry(label, leftX, menuY, i === state.menuIndex && state.menuFocusSide === 0, false);
+        menuY += BASE_FONT_SIZE + state.lineSpace + 8;
+      }
+      ctx.fillStyle = "#151515";
+      drawFirmwareText("v" + APP_VERSION, leftX * menuScale, SCREEN_H - 20 * menuScale, 185 * menuScale, true, MENU_SCALE_TENTHS);
+
+      ctx.fillStyle = "#151515";
+      drawFirmwareText("=== DOCUMENTS ===", docsX * menuScale, 30 * menuScale, SCREEN_W - docsX * menuScale - 12 * menuScale, true, MENU_SCALE_TENTHS);
+      clampDocumentSelection();
+      const docs = state.docs.slice(state.fileScrollOffset, state.fileScrollOffset + 12);
+      for (let i = 0; i < docs.length; i++) {
+        const doc = docs[i];
+        const docIndex = state.fileScrollOffset + i;
+        const y = 60 + i * (BASE_FONT_SIZE + state.lineSpace + 6);
+        const selected = state.menuFocusSide === 1 && docIndex === state.docIndex;
+        const preview = Array.from(doc.text.replace(/\s+/g, " ")).slice(0, 12).join("");
+        const sizeKb = Math.max(0.1, new Blob([doc.text || ""]).size / 1024).toFixed(1);
+        let label = String(docIndex + 1) + ". " + doc.name + " [" + sizeKb + "KB] | " + preview;
+        if (selected && state.deleteAskActive) label = "Delete? Enter: code / Tab: cancel";
+        else if (selected && state.deletePromptActive) label = "Delete code required";
+        drawMenuEntry(label, docsX, y, selected, true);
+      }
+      if (state.deletePromptActive) {
+        const boxX = 220 * menuScale;
+        const boxY = 165 * menuScale;
+        const boxW = 360 * menuScale;
+        const boxH = 185 * menuScale;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.strokeStyle = "#151515";
+        ctx.strokeRect(boxX, boxY, boxW, boxH);
+        ctx.strokeRect(boxX + 3 * menuScale, boxY + 3 * menuScale, boxW - 6 * menuScale, boxH - 6 * menuScale);
+        ctx.fillStyle = "#151515";
+        drawFirmwareText("DELETE FILE", boxX + 18 * menuScale, boxY + 30 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText(truncateChars(state.pendingDeleteName, 28), boxX + 18 * menuScale, boxY + 62 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText("Code: " + state.deleteConfirmCode, boxX + 18 * menuScale, boxY + 96 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText("Input: " + state.deleteConfirmInput + "_", boxX + 18 * menuScale, boxY + 126 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+        drawFirmwareText("Enter: delete / Tab: cancel", boxX + 18 * menuScale, boxY + 158 * menuScale, boxW - 36 * menuScale, true, MENU_SCALE_TENTHS);
+      }
+    }
+    function drawSearch() {
+      drawTyping();
+      ctx.fillStyle = "#151515";
+      ctx.fillRect(110, 76, 580, 82);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(118, 84, 564, 66);
+      ctx.strokeStyle = "#151515";
+      ctx.strokeRect(118, 84, 564, 66);
+      ctx.fillStyle = "#151515";
+      screenFont();
+      drawFittedText("Search: " + state.searchQuery + "_", 142, 126, 516);
+    }
+
+    function drawSync() {
+      clearPaper();
+      drawStatusBar();
+      ctx.fillStyle = "#151515";
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      drawFirmwareText("Online Sync", x, (MARGIN_Y + 10) * UI_SCALE, maxW, true);
+      drawFittedText(githubConnectionStatusLine(), x, (MARGIN_Y + 55) * UI_SCALE, maxW);
+      drawFittedText("Network: " + state.networkMode, x, (MARGIN_Y + 85) * UI_SCALE, maxW);
+      drawFittedText("Status: " + state.syncStatus, x, (MARGIN_Y + 115) * UI_SCALE, maxW);
+      const logLines = String(state.syncLog || "Waiting...").split("\n").slice(-12);
+      for (let i = 0; i < logLines.length; i++) {
+        drawFittedText(logLines[i], x, (MARGIN_Y + 155 + i * (BASE_FONT_SIZE + state.lineSpace + 2)) * UI_SCALE, maxW);
+      }
+      drawFittedText("Enter: sync  G: GitHub settings  W: WiFi  Esc: close", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
+    }
+
+
+    function fakeWifiList() {
+      return [
+        { ssid: state.wifiSsid || "Ize Studio", rssi: -42 },
+        { ssid: "Home", rssi: -58 },
+        { ssid: "Studio_5G", rssi: -67 }
+      ];
+    }
+
+    function drawWifiScan() {
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      drawFirmwareText("=== WIFI SCAN ===", x, MARGIN_Y * UI_SCALE, maxW, true);
+      drawFittedText(state.wifiStatusMessage, x, (MARGIN_Y + 30) * UI_SCALE, maxW);
+      const list = fakeWifiList();
+      const startY = MARGIN_Y + 65;
+      for (let i = 0; i < list.length; i++) {
+        const y = (startY + i * 26) * UI_SCALE;
+        const row = (i + 1) + ". " + list[i].ssid + " (" + list[i].rssi + "dBm)";
+        if (state.wifiScanSelected === i) {
+          ctx.fillRect(x - 4 * UI_SCALE, y - (BASE_FONT_SIZE + 2) * UI_SCALE, 190 * UI_SCALE, (BASE_FONT_SIZE + state.lineSpace + 8) * UI_SCALE);
+          ctx.fillStyle = "#ffffff";
+          drawFittedText(row, x, y, maxW);
+          ctx.fillStyle = "#151515";
+        } else {
+          drawFittedText(row, x, y, maxW);
+        }
+      }
+      drawFittedText("Enter: connect / Tab or Menu: cancel", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
+    }
+
+    function drawWifiPassword() {
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      const selected = fakeWifiList()[state.wifiScanSelected] || fakeWifiList()[0];
+      drawFirmwareText("=== WIFI PASSWORD ===", x, MARGIN_Y * UI_SCALE, maxW, true);
+      drawFittedText("SSID: " + selected.ssid, x, (MARGIN_Y + 35) * UI_SCALE, maxW);
+      drawFittedText(state.wifiStatusMessage, x, (MARGIN_Y + 65) * UI_SCALE, maxW);
+      drawFittedText("Password: " + "*".repeat(state.wifiPasswordBuffer.length) + "_", x, (MARGIN_Y + 105) * UI_SCALE, maxW);
+      drawFittedText("Enter: connect / Tab or Menu: cancel", x, (SCREEN_H / UI_SCALE - 35) * UI_SCALE, maxW);
+    }
+
+    function drawWebPassword() {
+      clearPaper();
+      ctx.fillStyle = "#151515";
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      drawFirmwareText("WebServer Password", x, (MARGIN_Y + 10) * UI_SCALE, maxW, true);
+      drawFirmwareText(state.webServerPasswordInput ? "Password: " + state.webServerPasswordInput.padEnd(10, "_") : "Type 10 digits", x, (MARGIN_Y + 55) * UI_SCALE, maxW, true);
+      drawFirmwareText(state.webServerPasswordHint, x, (MARGIN_Y + 95) * UI_SCALE, maxW, true);
+    }
+
+    function drawNetworkStatus() {
+      clearPaper();
+      drawStatusBar();
+      const statusBarBottom = 45 * UI_SCALE;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, statusBarBottom, SCREEN_W, SCREEN_H - statusBarBottom);
+      ctx.fillStyle = "#151515";
+      screenFont();
+      const x = MARGIN_X * UI_SCALE;
+      const maxW = (SCREEN_W / UI_SCALE - MARGIN_X - RIGHT_EDGE_MARGIN) * UI_SCALE;
+      const infoY = (45 + 25) * UI_SCALE;
+      if (state.networkMode === "WiFi") {
+        drawFirmwareText("Wi-Fi Web Server", x, infoY, maxW, true);
+        drawFittedText("Open: emulator web popup", x, infoY + 25 * UI_SCALE, maxW);
+        drawFirmwareText("PIN: " + state.webPin, x, infoY + 50 * UI_SCALE, maxW, true);
+        drawFittedText(githubConnectionStatusLine(), x, infoY + 75 * UI_SCALE, maxW);
+        drawFirmwareText("EXIT: Ctrl + Menu", x, infoY + 100 * UI_SCALE, maxW, true);
+      } else {
+        drawFirmwareText("Web Server", x, infoY, maxW, true);
+        drawFirmwareText("EXIT: Ctrl + Menu", x, infoY + 25 * UI_SCALE, maxW, true);
+        const line = state.apPasswordHidden ? "IZEcompose connected" : "IZEcompose " + state.apPassword;
+        drawFittedText(line, x, infoY + 50 * UI_SCALE, maxW);
+        drawFirmwareText("PIN: " + state.webPin, x, infoY + 75 * UI_SCALE, maxW, true);
+      }
+    }
+    function drawSleep() {
+      drawInitial();
+    }
+
+    function drawSleepFlash() {
+      ctx.fillStyle = state.sleepFlashFrame % 2 === 0 ? "#fff" : "#000";
+      ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    }
+
+    function drawInitial() {
+      clearPaper();
+      if (initialImage.complete && initialImage.naturalWidth > 0) {
+        ctx.drawImage(initialImage, 0, 0, SCREEN_W, SCREEN_H);
+      } else {
+        ctx.fillStyle = "#151515";
+        screenFont();
+        drawFirmwareText("Ize Compose", 124 * UI_SCALE, 110 * UI_SCALE, 152 * UI_SCALE, true);
+      }
+    }
+
+    function render() {
+      updateKeyboardKeycaps();
+      if (state.mode === "menu") drawMenu();
+      else if (state.mode === "wifiScan") drawWifiScan();
+      else if (state.mode === "wifiPassword") drawWifiPassword();
+      else if (state.mode === "webPassword") drawWebPassword();
+      else if (state.mode === "network") drawNetworkStatus();
+      else if (state.mode === "search") drawSearch();
+      else if (state.mode === "sync") drawSync();
+      else if (state.mode === "sleepFlash") drawSleepFlash();
+      else if (state.mode === "initial" || state.mode === "sleep") drawInitial();
+      else drawTyping();
+      ui.modeMetric.textContent = state.mode[0].toUpperCase() + state.mode.slice(1);
+      ui.docMetric.textContent = state.currentFileName;
+      ui.charMetric.textContent = Array.from(state.text).length;
+      ui.wordMetric.textContent = wordCount(state.text);
+      ui.fontSize.value = state.fontSize;
+      ui.lineSpace.value = state.lineSpace;
+      syncLanguageSelect(ui.language);
+      ui.message.textContent = state.status;
+      ui.statusLine.textContent = state.status;
+      ui.powerSwitch.classList.toggle("on", state.powerOn);
+      ui.powerState.textContent = state.powerOn ? "ON" : "OFF";
+      updateTouchscreenControl();
+      persist();
+    }
+
+    function renderDocs() {
+      ui.docs.innerHTML = "";
+      for (const doc of state.docs) {
+        const row = document.createElement("div");
+        row.className = "doc" + (doc.name === state.currentFileName ? " active" : "");
+        const text = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "doc-name";
+        name.textContent = doc.name;
+        const preview = document.createElement("div");
+        preview.className = "doc-preview";
+        preview.textContent = doc.text.replace(/\s+/g, " ").slice(0, 80) || "Empty document";
+        text.append(name, preview);
+        const actions = document.createElement("div");
+        const open = document.createElement("button");
+        open.textContent = "Open";
+        open.addEventListener("click", () => loadDoc(doc.name));
+        const del = document.createElement("button");
+        del.textContent = "Del";
+        del.className = "warn";
+        del.addEventListener("click", () => deleteDoc(doc.name));
+        actions.append(open, del);
+        row.append(text, actions);
+        ui.docs.append(row);
+      }
+    }
+
+    function updateVirtualModifierKeys() {
+      document.querySelectorAll("[data-modifier]").forEach((button) => {
+        const modifier = button.dataset.modifier;
+        button.classList.toggle("active", Boolean(virtualModifiers[modifier]));
+      });
+      updateKeyboardKeycaps();
+    }
+
+    function updateTouchscreenControl() {
+      if (!ui.touchscreenToggle) return;
+      ui.touchscreenToggle.classList.toggle("active", Boolean(state.touchscreenMode));
+      if (ui.touchscreenButton) ui.touchscreenButton.setAttribute("aria-pressed", state.touchscreenMode ? "true" : "false");
+    }
+
+    function keySelectorValue(value) {
+      if (window.CSS && CSS.escape) return CSS.escape(value);
+      return String(value).replace(/["\\]/g, "\\$&");
+    }
+
+    function keyAliases(key, code = "") {
+      const aliases = [];
+      const add = (value) => {
+        if (value && !aliases.includes(value)) aliases.push(value);
+      };
+      const codeMap = {
+        Backquote: "`",
+        Minus: "-",
+        Equal: "=",
+        BracketLeft: "[",
+        BracketRight: "]",
+        Backslash: "Backslash",
+        Semicolon: ";",
+        Quote: "'",
+        Comma: ",",
+        Period: ".",
+        Slash: "/",
+        Space: " ",
+        Enter: "Enter",
+        Backspace: "Backspace",
+        Tab: "Tab",
+        Escape: "Escape",
+        ArrowLeft: "ArrowLeft",
+        ArrowRight: "ArrowRight",
+        ArrowUp: "ArrowUp",
+        ArrowDown: "ArrowDown"
+      };
+      if (/^Key[A-Z]$/.test(code)) add(code.slice(3).toLowerCase());
+      if (/^Digit[0-9]$/.test(code)) add(code.slice(5));
+      if (codeMap[code]) add(codeMap[code]);
+      add(key);
+      if (key && key.length === 1) add(key.toLowerCase());
+      if (key === "\\") add("Backslash");
+      if (key === "\t") add("Tab");
+      if (key === " ") add(" ");
+      if (key === "Esc") add("Escape");
+      if (key === "CapsLock") add("caps");
+      if (key === "Control") add("ctrl");
+      if (key === "Shift") add("shift");
+      if (key === "Alt") add("alt");
+      if (code === "Backslash") add("Backslash");
+      return aliases;
+    }
+
+    function findKeyButtons(key, code = "") {
+      const buttons = [];
+      for (const alias of keyAliases(key, code)) {
+        const keyButton = document.querySelector('.keyboard .key[data-key="' + keySelectorValue(alias) + '"]');
+        if (keyButton && !buttons.includes(keyButton)) buttons.push(keyButton);
+        const modifierButton = document.querySelector('.keyboard .key[data-modifier="' + keySelectorValue(alias) + '"]');
+        if (modifierButton && !buttons.includes(modifierButton)) buttons.push(modifierButton);
+      }
+      return buttons;
+    }
+
+    function flashKey(key, code = "") {
+      for (const button of findKeyButtons(key, code)) {
+        button.classList.add("flash");
+        if (keyFlashTimers.has(button)) clearTimeout(keyFlashTimers.get(button));
+        keyFlashTimers.set(button, setTimeout(() => {
+          button.classList.remove("flash");
+          keyFlashTimers.delete(button);
+        }, 130));
+      }
+    }
+
+    function setKeyPressed(key, code = "", pressed = false) {
+      for (const button of findKeyButtons(key, code)) {
+        if (keyFlashTimers.has(button)) {
+          clearTimeout(keyFlashTimers.get(button));
+          keyFlashTimers.delete(button);
+        }
+        button.classList.toggle("flash", Boolean(pressed));
+      }
+    }
+
+    function clearMomentaryModifiers() {
+      virtualModifiers.ctrl = false;
+      virtualModifiers.shift = false;
+      if (!virtualAltHeld) virtualModifiers.alt = false;
+      if (virtualCtrlHeld) virtualModifiers.ctrl = true;
+      if (virtualShiftHeld) virtualModifiers.shift = true;
+      updateVirtualModifierKeys();
+    }
+
+    function releaseVirtualAlt() {
+      virtualAltHeld = false;
+      virtualModifiers.alt = false;
+      updateVirtualModifierKeys();
+    }
+
+    function releaseTouchscreenModifier(modifier) {
+      if (state.touchscreenMode) {
+        if (modifier === "ctrl") {
+          virtualCtrlHeld = false;
+          virtualModifiers.ctrl = false;
+        }
+        if (modifier === "shift") {
+          virtualShiftHeld = false;
+          virtualModifiers.shift = false;
+        }
+        updateVirtualModifierKeys();
+      }
+    }
+
+    function virtualEvent(key, options = {}) {
+      return {
+        key,
+        ctrlKey: Boolean(options.ctrlKey),
+        altKey: Boolean(options.altKey),
+        shiftKey: Boolean(options.shiftKey),
+        metaKey: false,
+        preventDefault() {}
+      };
+    }
+
+    function isTabKey(event) {
+      return event.key === "Tab" || event.key === "\t";
+    }
+
+    function applyShiftToKey(key) {
+      if (key.length !== 1) return key;
+      const shifted = {
+        "`": "~",
+        "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
+        "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+        "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|",
+        ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?"
+      };
+      if (/[a-z]/.test(key)) return key.toUpperCase();
+      return shifted[key] || key;
+    }
+
+    function physicalQwertyKey(event) {
+      if (event.code && /^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase();
+      if (event.code && /^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+      const punctuation = {
+        Backquote: "`",
+        Minus: "-",
+        Equal: "=",
+        BracketLeft: "[",
+        BracketRight: "]",
+        Backslash: "\\",
+        Semicolon: ";",
+        Quote: "'",
+        Comma: ",",
+        Period: ".",
+        Slash: "/"
+      };
+      return punctuation[event.code] || event.key;
+    }
+
+    function isHangulJamoPhysicalKey(key) {
+      return /^[a-z]$/i.test(key);
+    }
+
+    function isCtrlSpace(event) {
+      return event.ctrlKey && (event.key === " " || event.key === "Spacebar" || event.code === "Space");
+    }
+
+    function isCtrlArrow(event) {
+      return event.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
+    }
+
+    function physicalKeyName(event) {
+      return String(physicalQwertyKey(event) || "").toLowerCase();
+    }
+
+    function isCtrlPhysicalKey(event, keys) {
+      return event.ctrlKey && keys.includes(physicalKeyName(event));
+    }
+
+    function moveCursorWord(direction) {
+      const chars = Array.from(state.text);
+      let index = Array.from(state.text.slice(0, state.cursor)).length;
+      if (direction < 0) {
+        while (index > 0 && /\s/.test(chars[index - 1])) index--;
+        while (index > 0 && !/\s/.test(chars[index - 1])) index--;
+      } else {
+        while (index < chars.length && !/\s/.test(chars[index])) index++;
+        while (index < chars.length && /\s/.test(chars[index])) index++;
+      }
+      state.cursor = chars.slice(0, index).join("").length;
+      render();
+    }
+
+    function moveCursorVerticalBoundary(direction) {
+      state.cursor = direction < 0 ? 0 : state.text.length;
+      render();
+    }
+
+    function wrappedTextSegments(text, maxWidth) {
+      const chars = Array.from(text);
+      const segments = [];
+      let start = 0;
+      let line = "";
+      for (let i = 0; i < chars.length; i++) {
+        const ch = chars[i];
+        if (ch === "\n") {
+          segments.push({ start, end: i, text: line });
+          start = i + 1;
+          line = "";
+          continue;
+        }
+        const next = line + ch;
+        if (firmwareTextWidth(next) > maxWidth && line) {
+          segments.push({ start, end: i, text: line });
+          start = i;
+          line = ch;
+        } else {
+          line = next;
+        }
+      }
+      segments.push({ start, end: chars.length, text: line });
+      return { chars, segments };
+    }
+
+    function closestCharIndexForX(chars, segment, targetX) {
+      let bestIndex = segment.start;
+      let bestDistance = Math.abs(targetX);
+      for (let index = segment.start; index <= segment.end; index++) {
+        const width = firmwareTextWidth(chars.slice(segment.start, index).join(""));
+        const distance = Math.abs(width - targetX);
+        if (distance <= bestDistance) {
+          bestDistance = distance;
+          bestIndex = index;
+        }
+      }
+      return bestIndex;
+    }
+
+    function moveCursorLine(direction) {
+      const maxWidth = (SCREEN_W / UI_SCALE - RIGHT_EDGE_MARGIN) * UI_SCALE - MARGIN_X * 2;
+      const { chars, segments } = wrappedTextSegments(state.text, maxWidth);
+      const cursorIndex = Array.from(state.text.slice(0, state.cursor)).length;
+      let row = segments.findIndex((segment) => cursorIndex >= segment.start && cursorIndex <= segment.end);
+      if (row < 0) row = segments.length - 1;
+      const current = segments[row];
+      const targetRow = Math.max(0, Math.min(segments.length - 1, row + direction));
+      const target = segments[targetRow];
+      const targetX = firmwareTextWidth(chars.slice(current.start, cursorIndex).join(""));
+      const targetIndex = closestCharIndexForX(chars, target, targetX);
+      state.cursor = chars.slice(0, targetIndex).join("").length;
+      render();
+    }
+
+    function deletePreviousWord() {
+      if (state.cursor <= 0) return;
+      if (isKoreanLayout() && hangulEngine) hangulEngine.clear();
+      const chars = Array.from(state.text);
+      const cursorIndex = Array.from(state.text.slice(0, state.cursor)).length;
+      let start = cursorIndex;
+      while (start > 0 && /\s/.test(chars[start - 1])) start--;
+      while (start > 0 && !/\s/.test(chars[start - 1])) start--;
+      state.text = chars.slice(0, start).join("") + chars.slice(cursorIndex).join("");
+      state.cursor = chars.slice(0, start).join("").length;
+      state.searchMatchStart = -1;
+      syncActiveDoc();
+      persist();
+      render();
+    }
+
+    function routeKey(key, options = {}) {
+      if (!state.powerOn) return;
+      const event = virtualEvent(key, options);
+      if (state.mode === "sleep") {
+        wake();
+      } else if (state.mode === "menu") {
+        handleMenuKey(event);
+      } else if (state.mode === "wifiScan") {
+        handleWifiScanKey(event);
+      } else if (state.mode === "wifiPassword") {
+        handleWifiPasswordKey(event);
+      } else if (state.mode === "webPassword") {
+        handleWebPasswordKey(event);
+      } else if (state.mode === "network") {
+        handleNetworkStatusKey(event);
+      } else if (state.mode === "search") {
+        handleSearchKey(event);
+      } else if (state.mode === "sync") {
+        handleSyncKey(event);
+      } else {
+        handleTypingKey(event);
+      }
+    }
+    function pressVirtualKey(button, options = {}) {
+      if (!state.powerOn) return;
+      playKeySound(button.dataset.key || button.dataset.modifier || "");
+      if (button.dataset.modifier) {
+        if (!options.visualHandled) flashKey(button.dataset.modifier);
+        const modifier = button.dataset.modifier;
+        if (modifier === "alt") {
+          virtualAltHeld = Boolean(options.holdModifier);
+          virtualModifiers.alt = true;
+          applyAccentCycle();
+          updateVirtualModifierKeys();
+          screen.focus();
+          return;
+        }
+        if (state.touchscreenMode && (modifier === "ctrl" || modifier === "shift")) {
+          if (modifier === "ctrl") virtualCtrlHeld = Boolean(options.holdModifier);
+          if (modifier === "shift") virtualShiftHeld = Boolean(options.holdModifier);
+          virtualModifiers[modifier] = true;
+          updateVirtualModifierKeys();
+          screen.focus();
+          return;
+        }
+        virtualModifiers[modifier] = !virtualModifiers[modifier];
+        if (modifier === "caps") {
+          setStatus("Caps Lock " + (virtualModifiers.caps ? "on" : "off") + ".");
+          updateVirtualModifierKeys();
+          render();
+          screen.focus();
+          return;
+        }
+        updateVirtualModifierKeys();
+        screen.focus();
+        return;
+      }
+
+      if (button.dataset.combo) {
+        const combo = button.dataset.combo;
+        if (combo === "ctrl+f") routeKey("f", { ctrlKey: true });
+        else if (combo === "ctrl+l") routeKey("l", { ctrlKey: true });
+        else if (combo === "ctrl+space") routeKey(" ", { ctrlKey: true });
+        clearMomentaryModifiers();
+        screen.focus();
+        return;
+      }
+
+      let key = button.dataset.key || "";
+      if (key === "Backslash") key = "\\";
+      if (key === "Tab") key = "\t";
+      if (!options.visualHandled) flashKey(key, button.dataset.key || "");
+      routeKey(key, { ctrlKey: virtualModifiers.ctrl, altKey: virtualModifiers.alt, shiftKey: virtualModifiers.shift });
+      clearMomentaryModifiers();
+      screen.focus();
+    }
+
+    function handleTypingKey(event) {
+      if (!state.powerOn) return;
+      if (event.key === "CapsLock") {
+        event.preventDefault();
+        virtualModifiers.caps = !virtualModifiers.caps;
+        updateVirtualModifierKeys();
+        render();
+        return;
+      }
+      if (isCtrlPhysicalKey(event, ["s"])) {
+        event.preventDefault();
+        commitComposition();
+        saveDoc();
+        return;
+      }
+      if (isCtrlPhysicalKey(event, ["n"])) {
+        event.preventDefault();
+        commitComposition();
+        newDoc();
+        return;
+      }
+      if (isCtrlPhysicalKey(event, ["f"])) {
+        event.preventDefault();
+        commitComposition();
+        startSearch();
+        return;
+      }
+      if (isCtrlPhysicalKey(event, ["l"])) {
+        event.preventDefault();
+        commitComposition();
+        enterSleep();
+        return;
+      }
+      if (isCtrlSpace(event)) {
+        event.preventDefault();
+        setLanguage(isEnglishLayout() ? state.settingsLanguage : (state.previousEnglishLanguage || "KB_QWERTY"));
+        setStatus("Language: " + activeLayoutName() + ".");
+        render();
+        return;
+      }
+      if (isTabKey(event)) {
+        event.preventDefault();
+        queueText("    ");
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        commitComposition();
+        toggleMenu();
+        return;
+      }
+      if (event.ctrlKey && event.key === "Backspace") {
+        event.preventDefault();
+        commitComposition();
+        deletePreviousWord();
+        return;
+      }
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        backspace();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitComposition();
+        queueText("\n");
+        return;
+      }
+      if (isCtrlArrow(event)) {
+        event.preventDefault();
+        commitComposition();
+        if (event.key === "ArrowLeft") moveCursorWord(-1);
+        else if (event.key === "ArrowRight") moveCursorWord(1);
+        else if (event.key === "ArrowUp") moveCursorVerticalBoundary(-1);
+        else if (event.key === "ArrowDown") moveCursorVerticalBoundary(1);
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveCursor(-1);
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveCursor(1);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveCursorLine(-1);
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveCursorLine(1);
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        state.cursor = 0;
+        render();
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        state.cursor = state.text.length;
+        render();
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && event.key.length === 1) {
+        event.preventDefault();
+        if (isKoreanLayout() && hangulEngine) {
+          const baseKey = physicalQwertyKey(event);
+          if (!baseKey || baseKey.length !== 1) return;
+          if (!isHangulJamoPhysicalKey(baseKey)) {
+            commitComposition();
+            insertMappedText(mapKeyboardEventText(event));
+            return;
+          }
+          const koreanKey = event.shiftKey ? applyShiftToKey(baseKey.toLowerCase()) : baseKey;
+          hangulEngine.process(koreanKey);
+          scheduleTypingRender();
+        } else {
+          insertMappedText(mapKeyboardEventText(event));
+        }
+      }
+    }
+
+    function handleMenuKey(event) {
+      if (state.deleteAskActive) {
+        event.preventDefault();
+        if (event.key === "Enter") startDeleteCodePrompt();
+        else if (event.key === "Escape" || isTabKey(event) || event.key === "Backspace" ||
+          event.key === "Delete" || event.key === "ArrowUp" || event.key === "ArrowDown" ||
+          event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          cancelDeletePrompt();
+        }
+        render();
+        return;
+      }
+      if (state.deletePromptActive) {
+        event.preventDefault();
+        if (event.key === "Escape" || isTabKey(event)) cancelDeletePrompt();
+        else if (event.key === "Backspace") state.deleteConfirmInput = state.deleteConfirmInput.slice(0, -1);
+        else if (event.key === "Enter") confirmDeletePrompt();
+        else if (/^[0-9]$/.test(event.key) && state.deleteConfirmInput.length < 6) state.deleteConfirmInput += event.key;
+        render();
+        return;
+      }
+      if (event.key === "Escape" || isTabKey(event)) {
+        event.preventDefault();
+        if (state.menuEditingValue) state.menuEditingValue = false;
+        else state.mode = "typing";
+      } else if (state.menuEditingValue && state.menuIndex === 5 && event.key === "ArrowLeft") {
+        event.preventDefault();
+        cycleNetworkMode(-1);
+      } else if (state.menuEditingValue && state.menuIndex === 5 && event.key === "ArrowRight") {
+        event.preventDefault();
+        cycleNetworkMode(1);
+      } else if (!state.menuEditingValue && event.key === "ArrowLeft") {
+        event.preventDefault();
+        state.menuFocusSide = 0;
+      } else if (!state.menuEditingValue && event.key === "ArrowRight") {
+        event.preventDefault();
+        state.menuFocusSide = 1;
+        clampDocumentSelection();
+      } else if (!state.menuEditingValue && event.key === "ArrowUp") {
+        event.preventDefault();
+        if (state.menuFocusSide === 1) state.docIndex = Math.max(0, state.docIndex - 1);
+        else state.menuIndex = Math.max(0, state.menuIndex - 1);
+        clampDocumentSelection();
+      } else if (!state.menuEditingValue && event.key === "ArrowDown") {
+        event.preventDefault();
+        if (state.menuFocusSide === 1) state.docIndex = Math.min(state.docs.length - 1, state.docIndex + 1);
+        else state.menuIndex = Math.min(menuItems.length - 1, state.menuIndex + 1);
+        clampDocumentSelection();
+      } else if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        if (state.menuFocusSide === 1) startDeletePrompt(selectedMenuDoc().name);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        if (state.menuFocusSide === 1) loadDoc(selectedMenuDoc().name);
+        else if (state.menuEditingValue && state.menuIndex === 5) applyNetworkMode();
+        else runMenuAction();
+        return;
+      }
+      render();
+    }
+
+    function handleWifiScanKey(event) {
+      const list = fakeWifiList();
+      if (event.key === "ArrowUp" && state.wifiScanSelected > 0) state.wifiScanSelected--;
+      else if (event.key === "ArrowDown" && state.wifiScanSelected < list.length - 1) state.wifiScanSelected++;
+      else if (isTabKey(event) || event.key === "Escape") { stopNetworkServices(); state.mode = "typing"; }
+      else if (event.key === "Enter" && list.length > 0) { state.mode = "wifiPassword"; state.wifiPasswordBuffer = ""; state.wifiStatusMessage = "Enter password. Enter: connect. Tab/Menu: cancel."; }
+      event.preventDefault();
+      render();
+    }
+
+    function handleWifiPasswordKey(event) {
+      if (isTabKey(event) || event.key === "Escape") { stopNetworkServices(); state.mode = "typing"; }
+      else if (event.key === "Backspace") state.wifiPasswordBuffer = state.wifiPasswordBuffer.slice(0, -1);
+      else if (event.key === "Enter") { state.networkMode = "WiFi"; state.tempNetworkMode = "WiFi"; state.mode = "network"; state.wifiStatusMessage = "Connected."; openWebInterface("WiFi"); return; }
+      else if (!event.ctrlKey && !event.metaKey && event.key.length === 1) state.wifiPasswordBuffer += event.key;
+      event.preventDefault();
+      render();
+    }
+
+    function handleWebPasswordKey(event) {
+      if (isTabKey(event) || event.key === "Escape") { state.webServerPasswordInput = ""; state.webServerPasswordHint = "Numbers only / Tab cancels"; state.mode = "menu"; }
+      else if (event.key === "Backspace") { state.webServerPasswordInput = state.webServerPasswordInput.slice(0, -1); state.webServerPasswordHint = "Numbers only / Tab cancels"; }
+      else if (event.key === "Enter") {
+        if (state.webServerPasswordInput.length === 10) {
+          state.apPassword = state.webServerPasswordInput;
+          state.networkMode = "WebServer";
+          state.tempNetworkMode = "WebServer";
+          state.mode = "network";
+          openWebInterface("WebServer");
+          return;
+        } else {
+          state.webServerPasswordHint = "Need 10 digits";
+        }
+      } else if (/^[0-9]$/.test(event.key)) {
+        if (state.webServerPasswordInput.length < 10) {
+          state.webServerPasswordInput += event.key;
+          state.webServerPasswordHint = state.webServerPasswordInput.length === 10 ? "Enter: start / Tab cancels" : "Numbers only / Tab cancels";
+        } else {
+          state.webServerPasswordHint = "Press Enter to start";
+        }
+      } else if (!event.ctrlKey && !event.metaKey && event.key.length === 1) {
+        state.webServerPasswordHint = "Numbers only";
+      }
+      event.preventDefault();
+      render();
+    }
+
+    function handleNetworkStatusKey(event) {
+      if (event.ctrlKey && event.key === "Escape") {
+        event.preventDefault();
+        stopNetworkServices();
+        state.mode = "typing";
+        render();
+      }
+    }
+    function handleSearchKey(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        state.mode = "typing";
+        render();
+        return;
+      }
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        state.searchQuery = state.searchQuery.slice(0, -1);
+        state.searchMatchStart = -1;
+        render();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        searchNext();
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && event.key.length === 1) {
+        event.preventDefault();
+        state.searchQuery += event.key;
+        state.searchMatchStart = -1;
+        render();
+      }
+    }
+
+    function handleSyncKey(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        state.mode = "typing";
+        render();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        syncGithubDocs();
+        return;
+      }
+      if (physicalKeyName(event) === "g") {
+        event.preventDefault();
+        openWebInterface(state.networkMode === "Off" ? "WiFi" : state.networkMode);
+        showWebTab("webSettings");
+        return;
+      }
+      if (physicalKeyName(event) === "w") {
+        event.preventDefault();
+        state.networkMode = "WiFi";
+        openWebInterface("WiFi");
+      }
+    }
+
+    function isBrowserEditableTarget(target) {
+      if (!(target instanceof Element)) return false;
+      return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    }
+
+    function isTextInputKey(event) {
+      return !event.ctrlKey && !event.metaKey && event.key.length === 1;
+    }
+
+    function isEmulatorHandledPhysicalKey(event) {
+      if (!state.powerOn) return false;
+      if (state.mode === "sleep") return true;
+      if (event.key === "CapsLock") return true;
+      if (isCtrlPhysicalKey(event, ["s", "n"])) return true;
+      if (state.mode === "typing") {
+        return (
+          event.key === "Alt" ||
+          isCtrlPhysicalKey(event, ["s", "n", "f", "l"]) ||
+          isCtrlSpace(event) ||
+          isCtrlArrow(event) ||
+          event.ctrlKey && event.key === "Backspace" ||
+          isTabKey(event) ||
+          ["Escape", "Backspace", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key) ||
+          isTextInputKey(event)
+        );
+      }
+      if (state.mode === "menu") {
+        if (state.deleteAskActive) {
+          return ["Enter", "Escape", "Backspace", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key) || isTabKey(event);
+        }
+        if (state.deletePromptActive) {
+          return ["Escape", "Backspace", "Enter"].includes(event.key) || isTabKey(event) || /^[0-9]$/.test(event.key);
+        }
+        return ["Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Backspace", "Delete", "Enter"].includes(event.key) || isTabKey(event);
+      }
+      if (state.mode === "wifiScan") {
+        return ["ArrowUp", "ArrowDown", "Escape", "Enter"].includes(event.key) || isTabKey(event);
+      }
+      if (state.mode === "wifiPassword") {
+        return ["Escape", "Backspace", "Enter"].includes(event.key) || isTabKey(event) || isTextInputKey(event);
+      }
+      if (state.mode === "webPassword") {
+        return ["Escape", "Backspace", "Enter"].includes(event.key) || isTabKey(event) || isTextInputKey(event);
+      }
+      if (state.mode === "network") {
+        return event.ctrlKey && event.key === "Escape";
+      }
+      if (state.mode === "search") {
+        return ["Escape", "Backspace", "Enter"].includes(event.key) || isTextInputKey(event);
+      }
+      if (state.mode === "sync") {
+        return ["Escape", "Enter"].includes(event.key) || ["g", "w"].includes(physicalKeyName(event));
+      }
+      return false;
+    }
+
+    function handlePhysicalKeydown(event) {
+      if (!state.powerOn) {
+        event.preventDefault();
+        return;
+      }
+      if (!event.repeat) playKeySound(event.key);
+      setKeyPressed(event.key, event.code, true);
+      if (state.mode === "sleep") {
+        event.preventDefault();
+        wake();
+        return;
+      }
+      if (event.key === "CapsLock") {
+        event.preventDefault();
+        virtualModifiers.caps = !virtualModifiers.caps;
+        updateVirtualModifierKeys();
+        render();
+        return;
+      }
+      if (event.key === "Alt") {
+        event.preventDefault();
+        if (!event.repeat) applyAccentCycle();
+        return;
+      }
+      if (isCtrlPhysicalKey(event, ["s"])) {
+        event.preventDefault();
+        commitComposition();
+        saveDoc();
+        return;
+      }
+      if (isCtrlPhysicalKey(event, ["n"])) {
+        event.preventDefault();
+        commitComposition();
+        newDoc();
+        return;
+      }
+      if (state.mode === "menu") handleMenuKey(event);
+      else if (state.mode === "wifiScan") handleWifiScanKey(event);
+      else if (state.mode === "wifiPassword") handleWifiPasswordKey(event);
+      else if (state.mode === "webPassword") handleWebPasswordKey(event);
+      else if (state.mode === "network") handleNetworkStatusKey(event);
+      else if (state.mode === "search") handleSearchKey(event);
+      else if (state.mode === "sync") handleSyncKey(event);
+      else handleTypingKey(event);
+    }
+
+    screen.addEventListener("keydown", (event) => {
+      handlePhysicalKeydown(event);
+    });
+
+    screen.addEventListener("keyup", (event) => {
+      setKeyPressed(event.key, event.code, false);
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (isBrowserEditableTarget(event.target)) return;
+      if (!isEmulatorHandledPhysicalKey(event)) return;
+      handlePhysicalKeydown(event);
+      event.stopImmediatePropagation();
+    }, true);
+
+    window.addEventListener("keyup", (event) => {
+      if (isBrowserEditableTarget(event.target)) return;
+      if (!isEmulatorHandledPhysicalKey(event)) return;
+      setKeyPressed(event.key, event.code, false);
+      event.stopImmediatePropagation();
+    }, true);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.target === screen || isBrowserEditableTarget(event.target)) return;
+      if (!isEmulatorHandledPhysicalKey(event)) return;
+      handlePhysicalKeydown(event);
+    }, true);
+
+    document.addEventListener("keyup", (event) => {
+      if (event.target === screen || isBrowserEditableTarget(event.target)) return;
+      setKeyPressed(event.key, event.code, false);
+    }, true);
+
+    document.querySelectorAll(".keyboard .key").forEach((button) => {
+      button.type = "button";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (button.dataset.pointerHandled === "1") {
+          button.dataset.pointerHandled = "";
+          return;
+        }
+        pressVirtualKey(button);
+        if (button.dataset.modifier === "alt") {
+          releaseVirtualAlt();
+        }
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) {
+          releaseTouchscreenModifier(button.dataset.modifier);
+        }
+      });
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        button.dataset.pointerHandled = "1";
+        button.classList.add("flash");
+        pressVirtualKey(button, { visualHandled: true, holdModifier: true });
+      });
+      button.addEventListener("pointerup", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) releaseTouchscreenModifier(button.dataset.modifier);
+        button.classList.remove("flash");
+      });
+      button.addEventListener("pointerleave", () => {
+        if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) releaseTouchscreenModifier(button.dataset.modifier);
+        button.classList.remove("flash");
+      });
+      button.addEventListener("pointercancel", () => {
+        if (button.dataset.modifier === "alt") releaseVirtualAlt();
+        if (state.touchscreenMode && (button.dataset.modifier === "ctrl" || button.dataset.modifier === "shift")) releaseTouchscreenModifier(button.dataset.modifier);
+        button.classList.remove("flash");
+      });
+    });
+
+    if (ui.touchscreenButton) {
+      ui.touchscreenButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        state.touchscreenMode = !state.touchscreenMode;
+        virtualCtrlHeld = false;
+        virtualShiftHeld = false;
+        virtualModifiers.ctrl = false;
+        virtualModifiers.shift = false;
+        updateVirtualModifierKeys();
+        updateTouchscreenControl();
+        persist();
+        screen.focus();
+      });
+    }
+
+    screen.addEventListener("paste", (event) => {
+      const text = event.clipboardData.getData("text");
+      if (text) {
+        event.preventDefault();
+        queueText(text);
+      }
+    });
+
+    document.getElementById("menuBtn").addEventListener("click", toggleMenu);
+    document.getElementById("saveBtn").addEventListener("click", saveDoc);
+    document.getElementById("sleepBtn").addEventListener("click", enterSleep);
+    document.getElementById("newBtn").addEventListener("click", newDoc);
+    document.getElementById("searchBtn").addEventListener("click", startSearch);
+    document.getElementById("openWebBtn").addEventListener("click", () => openWebInterface(state.networkMode === "Off" ? "WebServer" : state.networkMode));
+    ui.powerSwitch.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (state.powerOn) {
+        if (!powerTransitioning && !sleepTimer) playPowerSound(false);
+        void enterSleep();
+      } else {
+        playPowerSound(true);
+        void wake();
+      }
+    });
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      state = defaultState();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      renderDocs();
+      render();
+      screen.focus();
+    });
+
+    document.getElementById("localRootChooseBtn").addEventListener("click", chooseLocalRootFolder);
+    document.getElementById("localRootSkipBtn").addEventListener("click", closeLocalRootModal);
+    document.getElementById("closeWebBtn").addEventListener("click", closeWebInterface);
+    document.getElementById("webDocsTab").addEventListener("click", () => showWebTab("webDocs"));
+    document.getElementById("webSettingsTab").addEventListener("click", () => showWebTab("webSettings"));
+    document.getElementById("webUploadBtn").addEventListener("click", async () => {
+      if (!requireWebPin()) return;
+      const text = document.getElementById("webUploadText").value;
+      if (!text) return;
+      const name = nextDocName();
+      const doc = { name, text };
+      state.docs.unshift(doc);
+      if (localRootHandle) await writeLocalDoc(doc);
+      document.getElementById("webUploadText").value = "";
+      setStatus("Uploaded " + name + ".");
+      renderDocs();
+      renderWebInterface();
+    });
+    document.getElementById("webSaveSettingsBtn").addEventListener("click", () => {
+      if (!requireWebPin()) return;
+      state.fontSize = Number(ui.webTextSize.value);
+      state.lineSpace = Number(ui.webLineSpace.value);
+      state.letterSpacing = Number(ui.webLetterSpacing ? ui.webLetterSpacing.value : state.letterSpacing || 0);
+      const typingDelay = Number(ui.webTypingSpeed ? ui.webTypingSpeed.value : state.typingDelayMs);
+      state.typingDelayMs = Number.isFinite(typingDelay) ? Math.max(1, Math.min(2000, typingDelay)) : 200;
+      const chosenLanguage = document.getElementById("webLanguage").value;
+      const chosenEnglish = document.querySelector('input[name="webEnglishLayout"]:checked');
+      if (chosenEnglish && isEnglishLayout(chosenEnglish.value)) state.previousEnglishLanguage = chosenEnglish.value;
+      state.settingsLanguage = resolveSelectedLanguage(chosenLanguage, state.previousEnglishLanguage);
+      setLanguage(state.settingsLanguage);
+      if (hangulEngine) hangulEngine.clear();
+      persist();
+      setStatus("Settings saved from web interface.");
+      renderWebInterface();
+      render();
+    });
+    document.getElementById("webOnlineUpdateBtn").addEventListener("click", () => {
+      if (!requireWebPin()) return;
+      setStatus("Online update simulated. Firmware is unchanged.");
+      render();
+    });
+    document.getElementById("webSaveGithubBtn").addEventListener("click", () => {
+      if (!requireWebPin()) return;
+      const newToken = document.getElementById("ghToken").value.trim();
+      const saveToken = document.getElementById("ghSaveToken").checked;
+      const newOwner = document.getElementById("ghOwner").value.trim();
+      const newRepo = document.getElementById("ghRepo").value.trim();
+      if (!newOwner || !newRepo) {
+        setStatus("Owner and repository are required.");
+        renderWebInterface();
+        render();
+        return;
+      }
+      if (newToken) {
+        if (saveToken) {
+          state.githubToken = newToken;
+          githubSessionToken = "";
+        } else {
+          githubSessionToken = newToken;
+          state.githubToken = "";
+        }
+      } else if (!saveToken && state.githubToken) {
+        githubSessionToken = state.githubToken;
+        state.githubToken = "";
+      }
+      if (!activeGithubToken()) {
+        setStatus("Token is required.");
+        renderWebInterface();
+        render();
+        return;
+      }
+      state.githubOwner = newOwner;
+      state.githubRepo = newRepo;
+      state.githubBranch = document.getElementById("ghBranch").value.trim() || "main";
+      state.githubPath = document.getElementById("ghPath").value.trim() || "documents";
+      state.githubTokenSet = state.githubToken.length > 0;
+      document.getElementById("ghToken").value = "";
+      setStatus(saveToken && state.githubToken ? "GitHub settings saved with token." : "GitHub settings saved with session token.");
+      renderWebInterface();
+      render();
+    });
+    document.getElementById("webSyncGithubBtn").addEventListener("click", () => {
+      if (!requireWebPin()) return;
+      syncGithubDocs();
+    });
+    document.getElementById("webDeleteGithubTokenBtn").addEventListener("click", () => {
+      if (!requireWebPin()) return;
+      state.githubToken = "";
+      githubSessionToken = "";
+      state.githubTokenSet = false;
+      document.getElementById("ghToken").value = "";
+      setStatus("GitHub token deleted.");
+      renderWebInterface();
+      render();
+    });
+    document.getElementById("webAuthBtn").addEventListener("click", unlockWebInterface);
+    document.getElementById("webPin").addEventListener("input", sanitizeWebPinInput);
+    document.getElementById("webPin").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        unlockWebInterface();
+      }
+    });
+    document.querySelectorAll("[data-web-pin-key]").forEach((button) => {
+      button.addEventListener("click", () => appendWebPinDigit(button.dataset.webPinKey || ""));
+    });
+
+    document.getElementById("loadTextBtn").addEventListener("click", () => {
+      state.text = ui.importText.value;
+      state.cursor = state.text.length;
+      syncActiveDoc();
+      setStatus("Loaded text into screen.");
+      render();
+      screen.focus();
+    });
+
+    document.getElementById("appendTextBtn").addEventListener("click", () => {
+      queueText(ui.importText.value);
+      setStatus("Appended text.");
+      screen.focus();
+    });
+
+    ui.fontSize.addEventListener("input", () => {
+      state.fontSize = Number(ui.fontSize.value);
+      render();
+    });
+
+    ui.lineSpace.addEventListener("input", () => {
+      state.lineSpace = Number(ui.lineSpace.value);
+      render();
+    });
+
+    if (ui.webLetterSpacing) {
+      ui.webLetterSpacing.addEventListener("input", () => {
+        const value = ui.webLetterSpacing.nextElementSibling;
+        if (value) value.textContent = ui.webLetterSpacing.value;
+      });
+    }
+
+    ui.language.addEventListener("change", () => {
+      commitComposition();
+      state.settingsLanguage = resolveSelectedLanguage(ui.language.value);
+      setLanguage(state.settingsLanguage);
+      if (hangulEngine) hangulEngine.clear();
+      persist();
+      setStatus("Language: " + activeLayoutName() + ".");
+      render();
+      screen.focus();
+    });
+
+    initialImage.addEventListener("load", render);
+    initialImage.addEventListener("error", () => {
+      if (initialImagePathIndex + 1 >= INITIAL_IMAGE_PATHS.length) return;
+      initialImagePathIndex += 1;
+      loadInitialImage();
+    });
+    window.addEventListener("resize", render);
+    loadInitialImage();
+    localRootReadyPromise = restoreLocalRootHandle().then(() => {
+      if (localRootHandle) setStatus("Power off. SD root: " + state.localRootName + ".");
+      render();
+    });
+    fillLanguageSelect();
+    syncLanguageSelect(document.getElementById("webLanguage"));
+    ensureEngines();
+    renderDocs();
+    render();
+    screen.focus();
+  </script>
+</body>
+</html>
