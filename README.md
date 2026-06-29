@@ -2,9 +2,9 @@
 
 Multilingual writing firmware for the [Zerowriter Ink](https://www.zerowriter.org/) (Inkplate 5 V2). Started as a multi-language writing firmware and now supports 92 keyboard layouts across dozens of scripts.
 
-Current release: **v1.4.2**
+Current release: **v1.4.3**
 
-Firmware v1.3.x supports browser-based manual firmware update by selecting a `.bin` file on the WebServer page and uploading it to the device. Starting with v1.4.0, Ize Compose can automatically handle the full Online Update flow from GitHub Release asset download through firmware update, so install this build first and try Online Update when the official v1.4.2 release is published on June 28, 2026. The v1.4.2 firmware and web page are already built and staged in `autoupdate/`; if you want to install v1.4.2 before the official release is published, download the files from `autoupdate/` and use them manually. Use `autoupdate/izefirmware.bin` or `autoupdate/izefirmware_v1.4.2.bin` as the firmware file, and copy `autoupdate/ize_compose_1-4-2.html` to `/ize_compose/` on the SD card.
+Firmware v1.3.x supports browser-based manual firmware update by selecting a `.bin` file on the WebServer page and uploading it to the device. Starting with v1.4.0, Ize Compose can automatically handle the full Online Update flow from GitHub Release asset download through firmware update. v1.4.3 is a firmware-only fix for GitHub sync delete operations; it keeps the v1.4.2 SD browser page at `/ize_compose/ize_compose_1-4-2.html`. Use `autoupdate/izefirmware.bin` or `autoupdate/izefirmware_v1.4.3.bin` as the firmware file.
 
 Code repository: [github.com/ize-studio/ize-compose](https://github.com/ize-studio/ize-compose)
 
@@ -20,7 +20,7 @@ The Ize Compose Emulator is now available. You can preview the device screen, ke
 
 v1.3.0 adds Wi-Fi client document-server mode, splits browser support into SD-loadable files, and preserves the SD settings backup flow.
 
-v1.4.0 adds the top-level `Sync` flow for GitHub private repository sync, then turns the Wi-Fi adapter off after sync. The Bluetooth feature that acted as an external keyboard in v1.3.0 was removed because of battery-use issues. See [RELEASE_1.4.2.md](RELEASE_1.4.2.md) for the current release notes, [RELEASE_1.4.1.md](RELEASE_1.4.1.md) for the previous fixes, and [RELEASE_1.4.0.md](RELEASE_1.4.0.md) for the original v1.4.0 release.
+v1.4.0 adds the top-level `Sync` flow for GitHub private repository sync, then turns the Wi-Fi adapter off after sync. The Bluetooth feature that acted as an external keyboard in v1.3.0 was removed because of battery-use issues. See [RELEASE_1.4.3.md](RELEASE_1.4.3.md) for the current release notes, [RELEASE_1.4.2.md](RELEASE_1.4.2.md) for browser sync changes, and [RELEASE_1.4.0.md](RELEASE_1.4.0.md) for the original v1.4.0 release.
 
 For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 
@@ -76,7 +76,7 @@ For browser usage details, see [WEB_INTERFACE.md](WEB_INTERFACE.md).
 **Settings and updates**
 - Device menu keeps Sync at the top and Network near the bottom; the version line is display-only
 - The unified browser page Settings & Update tab handles sleep timer, text size, line spacing, character spacing, typing speed, refresh limit, English keyboard, language selection, uploads, online update
-- Starting with v1.4.0, the Online Update button can update both firmware and the versioned SD web page from the GitHub Release assets in one flow. v1.4.2 keeps this one-button flow, adds browser-triggered GitHub sync in Wi-Fi mode, and keeps external connection actions disabled in WebServer mode.
+- Starting with v1.4.0, the Online Update button can update both firmware and the versioned SD web page from the GitHub Release assets in one flow. v1.4.2 keeps this one-button flow, adds browser-triggered GitHub sync in Wi-Fi mode, and keeps external connection actions disabled in WebServer mode. v1.4.3 fixes GitHub sync when a sync needs to delete remote `docNNNN.txt` files.
 - The device menu header now shows the language selected in settings, even when Ctrl+Space has temporarily switched input back to English.
 - Settings are saved to device preferences and backed up to `/ize_compose/settings_backup.json`; GitHub token is included so it survives reinstall/reset restore
 - Firmware uploads use `izefirmware.bin`
@@ -308,6 +308,7 @@ Ize-compose/
   others/                 - font sources and helper tools, not compiled
   WEB_INTERFACE.md        - browser page usage guide
   INSTALL.md              - install/build notes
+  RELEASE_1.4.3.md   - v1.4.3 release notes
   RELEASE_1.4.2.md   - v1.4.2 release notes
   RELEASE_1.4.1.md   - v1.4.1 release notes
   RELEASE_1.4.0.md   - v1.4.0 release notes

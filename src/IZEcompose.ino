@@ -59,7 +59,7 @@ const uint8_t* font_indic_ptr = nullptr;
 const uint8_t* font_sea_ptr = nullptr;
 const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
-#define FIRMWARE_VERSION "v1.4.2" // Web sync button and AP-mode external action guards
+#define FIRMWARE_VERSION "v1.4.3" // GitHub sync delete tree entry fix
 #define WEB_PAGE_VERSION "1-4-2"
 const char* OFFICIAL_RELEASE_API = "https://api.github.com/repos/ize-studio/ize-compose/releases/latest";
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
@@ -3689,7 +3689,7 @@ bool runGithubDocumentSync(String& resultMessage) {
     }
     for (int i = 0; i < deleteRemoteCount; i++) {
         if (treeEntryCount > 0) treeBody += ",";
-        treeBody += "{\"path\":\"" + jsonEscape(deleteRemotePaths[i]) + "\",\"sha\":null}";
+        treeBody += "{\"path\":\"" + jsonEscape(deleteRemotePaths[i]) + "\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":null}";
         treeEntryCount++;
     }
     treeBody += "]}";
