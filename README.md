@@ -29,6 +29,10 @@ The emulator is launched from `codes/index.html`.
 
 The preview image is a browser-rendered capture of `codes/index.html` and is stored at `others/emulator-render.png`.
 
+## Recent Updates
+
+- `2026-07-05`: Suppressed browser context menus on the on-screen keyboard and touchscreen mode control so long-press touch input does not interrupt `Ctrl`, `Shift`, or other emulator key actions.
+
 ## How To Download And Run
 
 Do not open each file in GitHub preview and save it one by one. Download the repository as a ZIP file, unzip it, and keep all files together in the extracted folder.
