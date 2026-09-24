@@ -59,7 +59,7 @@ const uint8_t* font_indic_ptr = nullptr;
 const uint8_t* font_sea_ptr = nullptr;
 const uint8_t* font_misc_ptr = nullptr;
 int currentFontSlot = 1;
-#define FIRMWARE_VERSION "v1.4.3" // GitHub sync delete tree entry fix
+#define FIRMWARE_VERSION "v1.4.4" // Auto-save and update notice refresh
 #define WEB_PAGE_VERSION "1-4-2"
 const char* OFFICIAL_RELEASE_API = "https://api.github.com/repos/ize-studio/ize-compose/releases/latest";
 const char* FIRMWARE_SIGNATURE = "RUPERT_OFFICIAL_KOR";
@@ -94,6 +94,7 @@ void handleGithubSettingsSave();
 void handleGithubSyncNow();
 void sendGithubSyncLogLine(const String& line);
 bool runGithubDocumentSync(String& resultMessage);
+bool refreshReleaseUpdateNotice(String& errorMessage);
 void resetStatusScreenCache();
 void drawStatusScreenFrame(const String& title, const String& line1, const String& line2, bool forceFullRefresh = false);
 
@@ -319,6 +320,7 @@ String getKeyboardLayoutIdString(KeyboardLayoutId id);
 void preloadInitialImage();
 void refreshFileList();
 void loadFile();
+void markDocumentDirty();
 const uint8_t* loadFontToPSRAM(int slot); 
 String searchQuery = ""; 
 int searchMatchEnd = -1;  // confirmed match end position; -1 while query is only being edited
@@ -343,6 +345,9 @@ bool forceSafeFullTextRedraw = false;
 unsigned long showSavedMessageTime = 0; 
 bool savedMessageVisible = false;
 bool updateScreenDrawn = false;
+const unsigned long AUTO_SAVE_INTERVAL_MS = 180000UL;
+unsigned long lastAutoSaveMs = 0;
+bool documentDirty = false;
 
 int autoSleepIndex = 2; 
 unsigned long sleepIntervals[] = {30000, 60000, 300000, 600000, 1800000, 3600000, 0};
@@ -575,6 +580,7 @@ void doBackspace() {
         }
     } 
     if (textChanged) {
+        markDocumentDirty();
         keyEngineAfterEdit(activeEngine);
         forceSafeFullTextRedraw = true;
     }
@@ -591,6 +597,7 @@ void insertText(String str) {
         keyEngineClampCursorToUtf8Boundary();
         fullText = fullText.substring(0, cursorPos) + str + fullText.substring(cursorPos); 
         cursorPos += str.length();
+        markDocumentDirty();
         keyEngineClampCursorToUtf8Boundary();
         if (!simpleTailAppend) forceSafeFullTextRedraw = true;
     }
@@ -863,6 +870,10 @@ String menuFitToWidth(String text, int maxWidth) {
     return ellipsis;
 }
 
+void markDocumentDirty() {
+    documentDirty = true;
+}
+
 void printMenuEntry(String text, int x, int y, bool isSelected, bool isRightSide) {
     const int maxTextWidth = isRightSide ? 520 : 185;
     String displayText = (rtlTextMode && isRightSide) ? makeRtlVisualText(text) : text;
@@ -940,13 +951,39 @@ void refreshFileList() {
   }
 }
 
-void saveFile() { 
+bool saveFileInternal(bool showMessage) { 
+    if (currentFileName.length() == 0) return false;
     SdFile f; 
-    if (f.open(currentFileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) { 
-        f.write(fullText.c_str(), fullText.length()); 
-        f.sync(); f.close(); 
-    } 
-    showSavedMessageTime = millis(); savedMessageVisible = true; needUpdate = true; statusBarNeedsUpdate = true; refreshFileList(); 
+    if (!f.open(currentFileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) return false;
+    int written = f.write(fullText.c_str(), fullText.length());
+    f.sync();
+    f.close();
+    if (written != fullText.length()) return false;
+
+    documentDirty = false;
+    lastAutoSaveMs = millis();
+
+    if (showMessage) {
+        showSavedMessageTime = millis();
+        savedMessageVisible = true;
+        needUpdate = true;
+        statusBarNeedsUpdate = true;
+        refreshFileList();
+    }
+    return true;
+}
+
+bool saveFileQuiet() {
+    return saveFileInternal(false);
+}
+
+void saveFile() { 
+    saveFileInternal(true);
+}
+
+void saveCurrentDocumentQuietly() {
+    flushKorean();
+    if (documentDirty) saveFileQuiet();
 }
 
 
@@ -958,6 +995,7 @@ void moveCursorToLineStart() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -986,6 +1024,7 @@ void moveCursorToLineEnd() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -1015,6 +1054,7 @@ void moveCursorToParagraphStart() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -1036,6 +1076,7 @@ void moveCursorToParagraphEnd() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -1056,6 +1097,7 @@ void selectLeft() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -1074,6 +1116,7 @@ void selectRight() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -1100,6 +1143,7 @@ void moveCursorUp() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -1137,6 +1181,7 @@ void moveCursorDown() {
           
           fullText = fullText.substring(0, cursorPos) + composing + fullText.substring(cursorPos);
           cursorPos += composing.length(); 
+          markDocumentDirty();
           
           
           cho = -1; 
@@ -1215,11 +1260,15 @@ void loadFile() {
         needCountUpdate = true;
         lastCountRequestMs = millis();
         statusBarNeedsUpdate = true;
+        documentDirty = false;
+        lastAutoSaveMs = millis();
     }
 }
 
 void createNewDoc() { 
+    saveCurrentDocumentQuietly();
     currentFileName = nextDocFilename(); fullText = ""; cursorPos = 0; forceSafeFullTextRedraw = true; 
+    documentDirty = true;
     saveFile(); currentMode = TYPING_MODE; needUpdate = true; 
 }
 
@@ -2533,6 +2582,22 @@ bool releaseMatchesFirmware(const String& latest) {
     return comparableReleaseVersion(latest) == comparableReleaseVersion(String(FIRMWARE_VERSION));
 }
 
+bool refreshReleaseUpdateNotice(String& errorMessage) {
+    String latest, fwUrl, webUrl, webName, err;
+    if (!latestReleaseInfo(latest, fwUrl, webUrl, webName, err)) {
+        errorMessage = err;
+        return false;
+    }
+    bool firmwareAvailable = latest.length() > 0 && !releaseMatchesFirmware(latest);
+    bool webAvailable = webName.length() > 0 && webName != String("ize_compose_") + String(WEB_PAGE_VERSION) + ".html";
+    releaseUpdateAvailable = firmwareAvailable || webAvailable;
+    if (firmwareAvailable) releaseUpdateNotice = "Update available: " + latest;
+    else if (webAvailable) releaseUpdateNotice = "Web update available";
+    else releaseUpdateNotice = "";
+    errorMessage = "";
+    return true;
+}
+
 void handleReleaseStatus() {
     if (currentNetSubMode != NET_WIFI_STA || !documentAccessAllowed()) {
         server.send(403, "application/json", "{\"error\":\"WiFi mode and PIN required\"}");
@@ -2741,6 +2806,8 @@ bool connectSelectedWifi(const String& password) {
             githubSyncStatusMessage = "GitHub syncing";
             drawOnlineSyncScreen("GitHub Sync", "Syncing documents...", wifiStaIp.toString());
             bool ok = runGithubDocumentSync(message);
+            String releaseErr;
+            refreshReleaseUpdateNotice(releaseErr);
             githubSyncStatusMessage = ok ? "GitHub sync complete" : "GitHub sync failed";
             finishOnlineSyncToMenu(ok ? "Online Sync Complete" : "Online Sync Failed", message);
             return ok;
@@ -2751,6 +2818,8 @@ bool connectSelectedWifi(const String& password) {
         registerWebRoutes();
         server.begin();
         wifiStatusMessage = "Connected.";
+        String releaseErr;
+        refreshReleaseUpdateNotice(releaseErr);
         needUpdate = true;
         statusBarNeedsUpdate = false;
         return true;
@@ -2907,6 +2976,8 @@ bool writeDocTextToSd(const String& filename, const String& content, String& err
         fullText = content;
         cursorPos = min(cursorPos, (int)fullText.length());
         forceSafeFullTextRedraw = true;
+        documentDirty = false;
+        lastAutoSaveMs = millis();
     }
     return true;
 }
@@ -4301,7 +4372,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
           statusBarNeedsUpdate = true;
           continue;
       }
-      if (real == 'l' || real == 'L') { flushKorean(); isCtrlPressed = false; showInitialImage(); continue; }
+      if (real == 'l' || real == 'L') { saveCurrentDocumentQuietly(); isCtrlPressed = false; showInitialImage(); continue; }
       if (real == 'c' || real == 'C') { flushKorean(); clipboard = fullText; needUpdate = false; statusBarNeedsUpdate = false; continue; } 
       if (real == 'v' || real == 'V') { flushKorean(); insertText(clipboard); continue; } 
       
@@ -4454,7 +4525,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
             else if (leftMenuIndex == 1) createNewDoc();
             else if (leftMenuIndex == 2) { saveFile(); currentMode = TYPING_MODE; }
             else if (leftMenuIndex == 3) { countMode = (countMode + 1) % 3; saveSystemSettings(); needUpdate = true; }
-            else if (leftMenuIndex == 4) { currentMode = TYPING_MODE; showInitialImage(); ESP.restart(); }
+            else if (leftMenuIndex == 4) { currentMode = TYPING_MODE; saveCurrentDocumentQuietly(); showInitialImage(); ESP.restart(); }
             else if (leftMenuIndex == 5) { isEditingValue = true; }
             needUpdate = true;
             statusBarNeedsUpdate = true;
@@ -4480,6 +4551,7 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
           
           if (real == '\n' || k == 40) {
               if (fileCount > 0 && rightFileIndex <= fileCount) {
+                  saveCurrentDocumentQuietly();
                   currentFileName = files[rightFileIndex].name;
                   loadFile();
                   saveSystemSettings();
@@ -5156,8 +5228,15 @@ if (__atomic_load_n(&networkExitRequested, __ATOMIC_SEQ_CST)) {
     lastNetSubMode = currentNetSubMode;
   } 
   
+  if (currentMode == TYPING_MODE && currentNetSubMode == NET_MAIN && updateState == UPD_NONE && !isUpdating && documentDirty) {
+    if (millis() - lastAutoSaveMs >= AUTO_SAVE_INTERVAL_MS) {
+        saveCurrentDocumentQuietly();
+    }
+  }
+
   if (currentMode == TYPING_MODE && currentNetSubMode == NET_MAIN && updateState == UPD_NONE && autoSleepIndex != 6) {
     if (!isUpdating && (millis() - lastKeyPress > sleepIntervals[autoSleepIndex])) {
+        saveCurrentDocumentQuietly();
         showInitialImage(); 
         }
     }
